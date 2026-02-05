@@ -256,7 +256,7 @@ ${context?.categories.map((c: any) => `- ${c.main_category}: ${c.subcategories.j
       const functionCalls = response.functionCalls();
       if (functionCalls && functionCalls.length > 0) {
         const functionCall = functionCalls[0];
-        let functionResult;
+        let functionResult: { success: boolean; message: string } = { success: false, message: '不明なエラー' };
         
         console.log('Function Call:', functionCall.name, functionCall.args);
         
@@ -277,7 +277,7 @@ ${context?.categories.map((c: any) => `- ${c.main_category}: ${c.subcategories.j
         const finalResult = await chat.sendMessage([{
           functionResponse: {
             name: functionCall.name,
-            response: functionResult,
+            response: functionResult as object,
           },
         }]);
 
