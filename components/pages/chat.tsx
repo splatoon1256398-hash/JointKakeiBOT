@@ -262,14 +262,14 @@ ${context?.categories.map((c: any) => `- ${c.main_category}: ${c.subcategories.j
         
         if (functionCall.name === 'recordExpense') {
           // user_typeが「自分」の場合、selectedUserに置き換え
-          const args = { ...functionCall.args };
+          const args = { ...functionCall.args } as any;
           if (args.user_type === '自分') {
             args.user_type = selectedUser;
           }
           functionResult = await recordExpense(args);
           console.log('Record Expense Result:', functionResult);
         } else if (functionCall.name === 'addSaving') {
-          functionResult = await addSaving(functionCall.args);
+          functionResult = await addSaving(functionCall.args as any);
           console.log('Add Saving Result:', functionResult);
         }
 
