@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { MessageCircle, Send, Sparkles, Loader2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useApp } from "@/contexts/app-context";
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai';
 
 interface Message {
   id: string;
@@ -213,15 +213,15 @@ ${context?.categories.map((c: any) => `- ${c.main_category}: ${c.subcategories.j
               name: 'recordExpense',
               description: '支出を記録する',
               parameters: {
-                type: 'object',
+                type: SchemaType.OBJECT,
                 properties: {
-                  user_type: { type: 'string', description: '区分（共同/れん/あかね）' },
-                  category_main: { type: 'string', description: '大カテゴリー' },
-                  category_sub: { type: 'string', description: '小カテゴリー' },
-                  store_name: { type: 'string', description: '店名' },
-                  amount: { type: 'number', description: '金額' },
-                  date: { type: 'string', description: '日付（YYYY-MM-DD）' },
-                  memo: { type: 'string', description: 'メモ' },
+                  user_type: { type: SchemaType.STRING, description: '区分（共同/れん/あかね）' },
+                  category_main: { type: SchemaType.STRING, description: '大カテゴリー' },
+                  category_sub: { type: SchemaType.STRING, description: '小カテゴリー' },
+                  store_name: { type: SchemaType.STRING, description: '店名' },
+                  amount: { type: SchemaType.NUMBER, description: '金額' },
+                  date: { type: SchemaType.STRING, description: '日付（YYYY-MM-DD）' },
+                  memo: { type: SchemaType.STRING, description: 'メモ' },
                 },
                 required: ['user_type', 'category_main', 'category_sub', 'amount'],
               },
@@ -230,10 +230,10 @@ ${context?.categories.map((c: any) => `- ${c.main_category}: ${c.subcategories.j
               name: 'addSaving',
               description: '貯金目標に入金する',
               parameters: {
-                type: 'object',
+                type: SchemaType.OBJECT,
                 properties: {
-                  goal_name: { type: 'string', description: '目標名' },
-                  amount: { type: 'number', description: '入金額' },
+                  goal_name: { type: SchemaType.STRING, description: '目標名' },
+                  amount: { type: SchemaType.NUMBER, description: '入金額' },
                 },
                 required: ['goal_name', 'amount'],
               },
