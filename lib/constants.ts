@@ -80,19 +80,19 @@ export function getCategoryIcon(categoryMain: string): string {
 // ヘルパー関数：大カテゴリーに対応する小カテゴリーリストを取得
 export function getSubcategories(categoryMain: string): string[] {
   const category = CATEGORY_LIST.find(cat => cat.main === categoryMain);
-  return category?.sub || ["その他"];
+  return category?.sub ? [...category.sub] : ["その他"];
 }
 
 // ヘルパー関数：すべての大カテゴリー名を取得
 export function getAllMainCategories(): string[] {
-  return CATEGORY_LIST.map(cat => cat.main);
+  return [...CATEGORY_LIST.map(cat => cat.main)];
 }
 
 // ヘルパー関数：カテゴリーが有効かチェック
 export function isValidCategory(categoryMain: string, categorySub: string): boolean {
   const category = CATEGORY_LIST.find(cat => cat.main === categoryMain);
   if (!category) return false;
-  return category.sub.includes(categorySub);
+  return (category.sub as readonly string[]).includes(categorySub);
 }
 
 // Gemini用のカテゴリーリスト文字列を生成
