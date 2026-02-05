@@ -1,0 +1,253 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 9%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 9%;
+    --primary: 0 0% 9%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 0 0% 96%;
+    --secondary-foreground: 0 0% 9%;
+    --muted: 0 0% 96%;
+    --muted-foreground: 0 0% 45%;
+    --accent: 0 0% 96%;
+    --accent-foreground: 0 0% 9%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 90%;
+    --input: 0 0% 90%;
+    --ring: 0 0% 9%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 0 0% 9%;
+    --foreground: 0 0% 98%;
+    --card: 0 0% 9%;
+    --card-foreground: 0 0% 98%;
+    --popover: 0 0% 9%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 0 0% 98%;
+    --primary-foreground: 0 0% 9%;
+    --secondary: 0 0% 15%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 0 0% 15%;
+    --muted-foreground: 0 0% 64%;
+    --accent: 0 0% 15%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 63% 31%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 15%;
+    --input: 0 0% 15%;
+    --ring: 0 0% 83%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  
+  /* ガラスモーフィズム */
+  .glass {
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+  }
+  
+  .glass-dark {
+    background: rgba(15, 23, 42, 0.7);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  
+  /* スムーズスクロール */
+  html {
+    scroll-behavior: smooth;
+  }
+  
+  /* セーフエリア対応 */
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  
+  /* キラキラアニメーション */
+  @keyframes shimmer {
+    0% {
+      left: -100%;
+    }
+    100% {
+      left: 100%;
+    }
+  }
+  
+  .animate-shimmer {
+    animation: shimmer 2s infinite;
+  }
+  
+  /* グラデーションアニメーション */
+  @keyframes gradient-shift {
+    0%, 100% {
+      background-position: 0% 50%;
+    }
+    50% {
+      background-position: 100% 50%;
+    }
+  }
+  
+  .animate-gradient {
+    background-size: 200% 200%;
+    animation: gradient-shift 3s ease infinite;
+  }
+  
+  /* React Calendar カスタムスタイル（シンプル＆見やすい） */
+  .react-calendar {
+    border: none !important;
+    font-family: inherit;
+    background: rgba(255, 255, 255, 0.95) !important;
+    width: 100%;
+    border-radius: 1.5rem !important;
+    padding: 0.75rem !important;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15) !important;
+  }
+
+  .react-calendar__navigation {
+    margin-bottom: 0.5rem !important;
+    padding: 0.25rem 0 !important;
+  }
+
+  .react-calendar__navigation button {
+    color: #1e293b !important;
+    font-weight: 700 !important;
+    font-size: 1rem !important;
+    min-width: 36px !important;
+    padding: 0.5rem !important;
+  }
+
+  .react-calendar__month-view__weekdays {
+    color: #64748b !important;
+    font-weight: 700 !important;
+    font-size: 0.75rem !important;
+    text-transform: none !important;
+  }
+
+  .react-calendar__month-view__weekdays abbr {
+    text-decoration: none !important;
+  }
+
+  .react-calendar__tile {
+    padding: 0.5rem 0.25rem !important;
+    background: transparent;
+    border: none !important;
+    border-radius: 0.5rem;
+    transition: all 0.15s;
+    font-size: 0.875rem !important;
+    font-weight: 600;
+    color: #1e293b !important;
+    height: auto !important;
+    min-height: 60px !important;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 2px;
+  }
+
+  .react-calendar__tile:hover {
+    background: rgba(0, 0, 0, 0.05) !important;
+  }
+
+  .react-calendar__tile--active {
+    background: var(--theme-gradient) !important;
+    color: white !important;
+    font-weight: 800 !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  }
+
+  .react-calendar__tile--active:hover {
+    background: var(--theme-gradient) !important;
+  }
+
+  .react-calendar__tile--now {
+    background: rgba(0, 0, 0, 0.05) !important;
+    border: 2px solid var(--theme-primary) !important;
+    font-weight: 800;
+  }
+
+  /* 支出がある日を強調 */
+  .react-calendar__tile.has-expense {
+    background: var(--theme-light) !important;
+    position: relative;
+  }
+
+  .react-calendar__tile.has-expense::after {
+    content: '';
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--theme-primary);
+  }
+
+  /* 土日の色 */
+  .react-calendar__month-view__days__day--weekend {
+    color: #ef4444 !important;
+  }
+
+  .react-calendar__month-view__weekdays {
+    color: #64748b !important;
+    font-weight: 600 !important;
+    font-size: 0.875rem;
+    padding: 0.5rem 0;
+  }
+
+  .react-calendar__month-view__weekdays__weekday {
+    padding: 0.5rem 0.25rem;
+  }
+
+  .react-calendar__month-view__weekdays abbr {
+    text-decoration: none;
+  }
+
+  .react-calendar__navigation {
+    margin-bottom: 0.5rem;
+  }
+
+  .react-calendar__navigation button {
+    min-width: 44px;
+    background: transparent;
+    border-radius: 0.5rem;
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: inherit;
+  }
+
+  .react-calendar__navigation button:hover {
+    background: rgba(148, 163, 184, 0.1) !important;
+    border-radius: 0.5rem;
+  }
+
+  .react-calendar__navigation button:disabled {
+    opacity: 0.3;
+  }
+}
