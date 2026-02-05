@@ -201,7 +201,7 @@ export function Dashboard({ onNavigateToAnalysis }: DashboardProps) {
     }
   }, [refreshTrigger]);
 
-  const budget = BUDGETS[selectedUser];
+  const budget = BUDGETS[selectedUser as keyof typeof BUDGETS];
   const balance = income - monthlySpent;
 
   // 日付でグループ化
