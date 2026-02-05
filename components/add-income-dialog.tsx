@@ -25,6 +25,7 @@ const INCOME_CATEGORIES = [
 ];
 
 export function AddIncomeDialog({ open, onOpenChange, selectedUser }: AddIncomeDialogProps) {
+  const { triggerRefresh } = useApp();
   const [isSaving, setIsSaving] = useState(false);
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [categoryMain, setCategoryMain] = useState("給与・賞与");
