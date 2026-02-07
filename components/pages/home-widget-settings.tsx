@@ -1,14 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { LayoutGrid, Loader2, Save } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { LayoutGrid, Loader2, Save, Check, ChevronDown, ChevronUp } from "lucide-react";
 import { useApp } from "@/contexts/app-context";
 import { supabase } from "@/lib/supabase";
 import { WIDGET_TYPES } from "@/lib/widgets";
 
 interface WidgetSlot {
   type: string;
-  // 追加設定
   categoryMain?: string;
   categorySub?: string;
   savingGoalId?: string;
@@ -28,29 +27,37 @@ export function HomeWidgetSettings() {
   const [slots, setSlots] = useState<WidgetSlot[]>(DEFAULT_SLOTS);
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [saveSuccess, setSaveSuccess] = useState(false);
   const [categories, setCategories] = useState<{ main: string; icon: string; subs: string[] }[]>([]);
   const [savingGoals, setSavingGoals] = useState<{ id: string; name: string }[]>([]);
+  const [expandedSlot, setExpandedSlot] = useState<number | null>(null);
 
   useEffect(() => {
-    loadSettings();
-    loadCategories();
-    loadSavingGoals();
+    if (user) {
+      loadSettings();
+      loadCategories();
+      loadSavingGoals();
+    }
   }, [user]);
 
   const loadSettings = async () => {
     if (!user) return;
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("user_settings")
         .select("home_widgets")
         .eq("user_id", user.id)
         .single();
 
+      if (error && error.code !== "PGRST116") {
+        console.error("ウィジェット設定取得エラー:", error);
+      }
+
       if (data?.home_widgets && Array.isArray(data.home_widgets)) {
         setSlots(data.home_widgets as WidgetSlot[]);
       }
-    } catch {
-      // 未設定の場合はデフォルトのまま
+    } catch (err) {
+      console.error("ウィジェット設定読込エラー:", err);
     } finally {
       setIsLoading(false);
     }
@@ -76,27 +83,59 @@ export function HomeWidgetSettings() {
     }
   };
 
-  const updateSlot = (index: number, updates: Partial<WidgetSlot>) => {
+  const updateSlot = useCallback((index: number, updates: Partial<WidgetSlot>) => {
     setSlots(prev => {
       const newSlots = [...prev];
       newSlots[index] = { ...newSlots[index], ...updates };
       return newSlots;
     });
-  };
+  }, []);
+
+  const selectWidgetType = useCallback((index: number, type: string) => {
+    setSlots(prev => {
+      const newSlots = [...prev];
+      newSlots[index] = { type };
+      // payday のデフォルト値
+      if (type === "payday") {
+        newSlots[index].payday = 25;
+        newSlots[index].paydayShift = "before";
+      }
+      return newSlots;
+    });
+    setExpandedSlot(null);
+  }, []);
 
   const handleSave = async () => {
     if (!user) return;
     setIsSaving(true);
+    setSaveSuccess(false);
     try {
-      const { error } = await supabase
+      // まず既存の行があるか確認
+      const { data: existing } = await supabase
         .from("user_settings")
-        .upsert({
-          user_id: user.id,
-          home_widgets: slots,
-        }, { onConflict: "user_id" });
+        .select("user_id")
+        .eq("user_id", user.id)
+        .single();
+
+      let error;
+      if (existing) {
+        // UPDATE
+        const result = await supabase
+          .from("user_settings")
+          .update({ home_widgets: slots as unknown as Record<string, unknown>[] })
+          .eq("user_id", user.id);
+        error = result.error;
+      } else {
+        // INSERT
+        const result = await supabase
+          .from("user_settings")
+          .insert({ user_id: user.id, home_widgets: slots as unknown as Record<string, unknown>[] });
+        error = result.error;
+      }
 
       if (error) throw error;
-      alert("ホーム表示設定を保存しました！");
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 2000);
     } catch (error) {
       console.error("保存エラー:", error);
       alert("保存に失敗しました");
@@ -126,104 +165,172 @@ export function HomeWidgetSettings() {
       </div>
 
       <div className="space-y-3">
-        {slots.map((slot, index) => (
-          <div key={index} className="rounded-xl bg-black/15 border border-white/5 p-3 space-y-2">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-xs font-semibold text-white/60">カード {index + 1}</span>
-            </div>
+        {slots.map((slot, index) => {
+          const currentWidget = WIDGET_TYPES.find(w => w.value === slot.type);
+          const isExpanded = expandedSlot === index;
 
-            {/* ウィジェットタイプ選択 */}
-            <select
-              value={slot.type}
-              onChange={(e) => updateSlot(index, { type: e.target.value, categoryMain: undefined, categorySub: undefined, savingGoalId: undefined })}
-              className="w-full h-9 rounded-lg bg-black/20 border border-white/10 text-white text-sm px-3 appearance-none"
-            >
-              {WIDGET_TYPES.map(wt => (
-                <option key={wt.value} value={wt.value}>{wt.label}</option>
-              ))}
-            </select>
-
-            {/* カテゴリ選択（category_budget用） */}
-            {slot.type === "category_budget" && (
-              <div className="grid grid-cols-2 gap-2">
-                <select
-                  value={slot.categoryMain || ""}
-                  onChange={(e) => {
-                    updateSlot(index, { categoryMain: e.target.value, categorySub: undefined });
-                  }}
-                  className="h-8 rounded-lg bg-black/20 border border-white/10 text-white text-xs px-2 appearance-none"
-                >
-                  <option value="">大カテゴリー</option>
-                  {categories.map(c => (
-                    <option key={c.main} value={c.main}>{c.icon} {c.main}</option>
-                  ))}
-                </select>
-                <select
-                  value={slot.categorySub || ""}
-                  onChange={(e) => updateSlot(index, { categorySub: e.target.value })}
-                  className="h-8 rounded-lg bg-black/20 border border-white/10 text-white text-xs px-2 appearance-none"
-                >
-                  <option value="">全体</option>
-                  {(categories.find(c => c.main === slot.categoryMain)?.subs || []).map(sub => (
-                    <option key={sub} value={sub}>{sub}</option>
-                  ))}
-                </select>
+          return (
+            <div key={index} className="rounded-xl bg-black/15 border border-white/5 p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-white/60">カード {index + 1}</span>
               </div>
-            )}
 
-            {/* 貯金目標選択（saving_progress用） */}
-            {slot.type === "saving_progress" && savingGoals.length > 0 && (
-              <select
-                value={slot.savingGoalId || ""}
-                onChange={(e) => updateSlot(index, { savingGoalId: e.target.value })}
-                className="w-full h-8 rounded-lg bg-black/20 border border-white/10 text-white text-xs px-2 appearance-none"
+              {/* 現在の選択 + 展開トグル */}
+              <button
+                type="button"
+                onClick={() => setExpandedSlot(isExpanded ? null : index)}
+                className="w-full flex items-center justify-between p-2.5 rounded-lg bg-black/20 border border-white/10 hover:border-white/20 transition-colors"
               >
-                <option value="">全体の進捗</option>
-                {savingGoals.map(g => (
-                  <option key={g.id} value={g.id}>{g.name}</option>
-                ))}
-              </select>
-            )}
+                <span className="text-sm text-white font-medium">
+                  {currentWidget?.label || "未選択"}
+                </span>
+                {isExpanded ? (
+                  <ChevronUp className="h-4 w-4 text-white/40" />
+                ) : (
+                  <ChevronDown className="h-4 w-4 text-white/40" />
+                )}
+              </button>
 
-            {/* 給料日設定（payday用） */}
-            {slot.type === "payday" && (
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-[10px] text-white/40 block mb-0.5">給料日（日）</label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={31}
-                    value={slot.payday || 25}
-                    onChange={(e) => updateSlot(index, { payday: Number(e.target.value) })}
-                    className="w-full h-8 rounded-lg bg-black/20 border border-white/10 text-white text-xs px-2"
-                  />
+              {/* 展開時: ウィジェットタイプ選択グリッド */}
+              {isExpanded && (
+                <div className="grid grid-cols-2 gap-1.5 pt-1">
+                  {WIDGET_TYPES.map(wt => (
+                    <button
+                      key={wt.value}
+                      type="button"
+                      onClick={() => selectWidgetType(index, wt.value)}
+                      className={`p-2.5 rounded-lg text-xs font-semibold text-left transition-all flex items-center gap-2 ${
+                        slot.type === wt.value
+                          ? "text-white border-2"
+                          : "text-white/60 bg-black/15 border border-white/5 hover:bg-white/5"
+                      }`}
+                      style={
+                        slot.type === wt.value
+                          ? { backgroundColor: `${theme.primary}30`, borderColor: theme.primary }
+                          : {}
+                      }
+                    >
+                      {slot.type === wt.value && <Check className="h-3 w-3 flex-shrink-0" style={{ color: theme.primary }} />}
+                      <span className="truncate">{wt.label}</span>
+                    </button>
+                  ))}
                 </div>
-                <div>
-                  <label className="text-[10px] text-white/40 block mb-0.5">休日のずらし</label>
-                  <select
-                    value={slot.paydayShift || "before"}
-                    onChange={(e) => updateSlot(index, { paydayShift: e.target.value as "before" | "after" })}
-                    className="w-full h-8 rounded-lg bg-black/20 border border-white/10 text-white text-xs px-2 appearance-none"
-                  >
-                    <option value="before">前倒し</option>
-                    <option value="after">後ろ倒し</option>
-                  </select>
+              )}
+
+              {/* カテゴリ選択（category_budget用） */}
+              {slot.type === "category_budget" && (
+                <div className="space-y-1.5 pt-1">
+                  <p className="text-[10px] text-white/40">対象カテゴリ</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {categories.map(c => (
+                      <button
+                        key={c.main}
+                        type="button"
+                        onClick={() => updateSlot(index, { categoryMain: c.main, categorySub: undefined })}
+                        className={`px-2.5 py-1.5 rounded-lg text-xs transition-all ${
+                          slot.categoryMain === c.main
+                            ? "text-white font-semibold"
+                            : "text-white/50 bg-white/5 hover:bg-white/10"
+                        }`}
+                        style={slot.categoryMain === c.main ? { backgroundColor: theme.primary } : {}}
+                      >
+                        {c.icon} {c.main}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
-          </div>
-        ))}
+              )}
+
+              {/* 貯金目標選択（saving_progress用） */}
+              {slot.type === "saving_progress" && savingGoals.length > 0 && (
+                <div className="space-y-1.5 pt-1">
+                  <p className="text-[10px] text-white/40">対象の貯金目標</p>
+                  <div className="space-y-1">
+                    <button
+                      type="button"
+                      onClick={() => updateSlot(index, { savingGoalId: undefined })}
+                      className={`w-full p-2 rounded-lg text-xs text-left transition-all ${
+                        !slot.savingGoalId
+                          ? "text-white font-semibold"
+                          : "text-white/50 bg-white/5 hover:bg-white/10"
+                      }`}
+                      style={!slot.savingGoalId ? { backgroundColor: `${theme.primary}30` } : {}}
+                    >
+                      全体の進捗
+                    </button>
+                    {savingGoals.map(g => (
+                      <button
+                        key={g.id}
+                        type="button"
+                        onClick={() => updateSlot(index, { savingGoalId: g.id })}
+                        className={`w-full p-2 rounded-lg text-xs text-left transition-all ${
+                          slot.savingGoalId === g.id
+                            ? "text-white font-semibold"
+                            : "text-white/50 bg-white/5 hover:bg-white/10"
+                        }`}
+                        style={slot.savingGoalId === g.id ? { backgroundColor: `${theme.primary}30` } : {}}
+                      >
+                        {g.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 給料日設定（payday用） */}
+              {slot.type === "payday" && (
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <div>
+                    <label className="text-[10px] text-white/40 block mb-0.5">給料日（日）</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={31}
+                      value={slot.payday || 25}
+                      onChange={(e) => updateSlot(index, { payday: Number(e.target.value) })}
+                      className="w-full h-8 rounded-lg bg-black/20 border border-white/10 text-white text-xs px-2"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-white/40 block mb-0.5">休日のずらし</label>
+                    <div className="flex gap-1">
+                      {[
+                        { value: "before" as const, label: "前倒し" },
+                        { value: "after" as const, label: "後ろ倒し" },
+                      ].map(opt => (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => updateSlot(index, { paydayShift: opt.value })}
+                          className={`flex-1 h-8 rounded-lg text-xs font-semibold transition-all ${
+                            (slot.paydayShift || "before") === opt.value
+                              ? "text-white"
+                              : "text-white/50 bg-white/5"
+                          }`}
+                          style={(slot.paydayShift || "before") === opt.value ? { backgroundColor: theme.primary } : {}}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       <button
         onClick={handleSave}
         disabled={isSaving}
         className="w-full p-3 rounded-xl text-white text-sm font-semibold transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-        style={{ background: `linear-gradient(135deg, ${theme.primary}, ${theme.secondary})` }}
+        style={{ background: saveSuccess ? "#10b981" : `linear-gradient(135deg, ${theme.primary}, ${theme.secondary})` }}
       >
         {isSaving ? (
           <><Loader2 className="h-4 w-4 animate-spin" />保存中...</>
+        ) : saveSuccess ? (
+          <><Check className="h-4 w-4" />保存しました！</>
         ) : (
           <><Save className="h-4 w-4" />設定を保存</>
         )}

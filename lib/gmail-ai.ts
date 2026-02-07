@@ -17,6 +17,11 @@ interface GmailFilter {
   keyword: string;
 }
 
+export interface CategoryDefinition {
+  main_category: string;
+  subcategories: string[];
+}
+
 /**
  * フィルタを適用してメールを処理すべきか判定
  */
@@ -28,7 +33,6 @@ export function shouldProcessEmail(
   const whitelists = filters.filter((f) => f.filter_type === "WHITELIST");
   const blacklists = filters.filter((f) => f.filter_type === "BLACKLIST");
 
-  // ブラックリストチェック（一致したら除外）
   for (const bl of blacklists) {
     const target = bl.target_type === "SUBJECT" ? subject : sender;
     if (target.toLowerCase().includes(bl.keyword.toLowerCase())) {
@@ -36,7 +40,6 @@ export function shouldProcessEmail(
     }
   }
 
-  // ホワイトリストがある場合、いずれかに一致しなければ除外
   if (whitelists.length > 0) {
     const matches = whitelists.some((wl) => {
       const target = wl.target_type === "SUBJECT" ? subject : sender;
@@ -50,14 +53,16 @@ export function shouldProcessEmail(
 
 /**
  * Gemini AI でメール本文から取引情報を解析
+ * @param categories DBから取得したカテゴリ一覧。渡された場合はその中からのみ選択する
  */
 export async function parseEmailWithAI(
   emailBody: string,
-  subject: string
+  subject: string,
+  categories?: CategoryDefinition[]
 ): Promise<ParsedTransaction | null> {
   try {
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash-lite",
+      model: "gemini-2.0-flash-lite",
       generationConfig: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -76,11 +81,24 @@ export async function parseEmailWithAI(
       },
     });
 
+    // カテゴリ一覧をプロンプトに埋め込み
+    let categoryInstruction: string;
+    if (categories && categories.length > 0) {
+      const catLines = categories.map(
+        (c) => `- ${c.main_category}: [${c.subcategories.join(", ")}]`
+      );
+      categoryInstruction = `以下のカテゴリ一覧の中から **必ず** 既存の名称を使って選んでください。一覧にないカテゴリ名を生成しないでください。
+
+${catLines.join("\n")}`;
+    } else {
+      categoryInstruction = `カテゴリー（大分類）の候補：食費, 日用品費, 住居費, 水道・光熱費, 通信費, 車両, 交通費, 医療費, 教育費, 娯楽費, 被服費, 美容費, 保険料, 交際費, その他
+小分類は適切なものを推測してください。`;
+    }
+
     const prompt = `以下のメールから決済・取引情報を抽出してください。
 決済メールでない場合は is_transaction: false を返してください。
 
-カテゴリー（大分類）の候補：食費, 日用品費, 住居費, 水道・光熱費, 通信費, 車両, 交通費, 医療費, 教育費, 娯楽費, 被服費, 美容費, 保険料, 交際費, その他
-小分類は適切なものを推測してください。
+${categoryInstruction}
 
 件名: ${subject}
 
