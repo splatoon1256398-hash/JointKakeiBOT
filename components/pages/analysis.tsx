@@ -1,13 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { ChevronRight, TrendingUp, TrendingDown } from "lucide-react";
+import { ChevronRight, ChevronLeft, TrendingUp, TrendingDown } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useApp } from "@/contexts/app-context";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { CategoryDetailDialog } from "@/components/category-detail-dialog";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { ExpenseCard } from "@/components/widgets/expense-card";
 
 interface Transaction {
   id: string;
@@ -20,6 +18,8 @@ interface Transaction {
   type: string;
 }
 
+type DrillLevel = 'overview' | 'subcategory' | 'detail';
+
 const CHART_COLORS = ['#8b5cf6', '#ec4899', '#06b6d4', '#10b981', '#f59e0b', '#ef4444', '#a855f7', '#f97316'];
 
 export function Analysis() {
@@ -30,14 +30,16 @@ export function Analysis() {
   const [categoryIcons, setCategoryIcons] = useState<Record<string, string>>({});
   const [subCategoryData, setSubCategoryData] = useState<Record<string, any[]>>({});
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [detailDialogOpen, setDetailDialogOpen] = useState(false);
-  const [selectedCategory, setSelectedCategory] = useState<{ name: string; icon: string } | null>(null);
+
+  // ドリルダウン状態
+  const [drillLevel, setDrillLevel] = useState<DrillLevel>('overview');
+  const [selectedMainCategory, setSelectedMainCategory] = useState<string>('');
+  const [selectedSubCategory, setSelectedSubCategory] = useState<string>('');
 
   useEffect(() => {
     fetchData();
   }, [selectedUser]);
 
-  // refreshTriggerの変更を監視して自動更新
   useEffect(() => {
     if (refreshTrigger > 0) {
       fetchData();
@@ -47,20 +49,16 @@ export function Analysis() {
   const fetchData = async () => {
     setIsLoading(true);
     try {
-      // カテゴリーアイコンを取得
       const { data: categories } = await supabase
         .from('categories')
         .select('main_category, icon, subcategories');
       
       const icons: Record<string, string> = {};
-      const subCats: Record<string, string[]> = {};
       categories?.forEach(cat => {
         icons[cat.main_category] = cat.icon;
-        subCats[cat.main_category] = cat.subcategories;
       });
       setCategoryIcons(icons);
 
-      // 過去12ヶ月のデータを取得
       const now = new Date();
       const twelveMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 11, 1);
 
@@ -73,10 +71,10 @@ export function Analysis() {
 
       setTransactions(transactionsData || []);
 
-      // 月別収支データを作成
+      // 月別データ
       const monthlyMap: Record<string, { income: number; expense: number }> = {};
       transactionsData?.forEach(t => {
-        const month = t.date.substring(0, 7); // YYYY-MM
+        const month = t.date.substring(0, 7);
         if (!monthlyMap[month]) {
           monthlyMap[month] = { income: 0, expense: 0 };
         }
@@ -88,14 +86,12 @@ export function Analysis() {
       });
 
       const yearly = Object.entries(monthlyMap).map(([month, data]) => ({
-        month: month.substring(5) + '月', // MM月
-        収入: data.income,
+        month: month.substring(5) + '月',
         支出: data.expense,
-        収支: data.income - data.expense,
       }));
       setYearlyData(yearly);
 
-      // カテゴリー別支出データを作成（今月）
+      // カテゴリー別支出（今月）
       const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
       const categoryMap: Record<string, number> = {};
       transactionsData
@@ -104,14 +100,12 @@ export function Analysis() {
           categoryMap[t.category_main] = (categoryMap[t.category_main] || 0) + t.amount;
         });
 
-      const categoryArray = Object.entries(categoryMap).map(([name, value]) => ({
-        name,
-        value,
-        icon: icons[name] || '📦',
-      }));
+      const categoryArray = Object.entries(categoryMap)
+        .map(([name, value]) => ({ name, value, icon: icons[name] || '📦' }))
+        .sort((a, b) => b.value - a.value);
       setCategoryData(categoryArray);
 
-      // 小カテゴリー別データを準備
+      // 小カテゴリー別データ
       const subCatMap: Record<string, Record<string, number>> = {};
       transactionsData
         ?.filter(t => t.type === 'expense' && t.date >= firstDay.toISOString().split('T')[0])
@@ -125,10 +119,9 @@ export function Analysis() {
 
       const subCatData: Record<string, any[]> = {};
       Object.entries(subCatMap).forEach(([mainCat, subs]) => {
-        subCatData[mainCat] = Object.entries(subs).map(([name, value]) => ({
-          name,
-          value,
-        }));
+        subCatData[mainCat] = Object.entries(subs)
+          .map(([name, value]) => ({ name, value }))
+          .sort((a, b) => b.value - a.value);
       });
       setSubCategoryData(subCatData);
 
@@ -139,20 +132,236 @@ export function Analysis() {
     }
   };
 
-  // 指定した大カテゴリーの明細を取得
-  const getTransactionsByCategory = (mainCategory: string) => {
-    const firstDay = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  const totalExpense = categoryData.reduce((sum, c) => sum + c.value, 0);
+
+  // ドリルダウンハンドラー
+  const handleMainCategoryClick = (name: string) => {
+    setSelectedMainCategory(name);
+    setDrillLevel('subcategory');
+  };
+
+  const handleSubCategoryClick = (name: string) => {
+    setSelectedSubCategory(name);
+    setDrillLevel('detail');
+  };
+
+  const handleBack = () => {
+    if (drillLevel === 'detail') {
+      setDrillLevel('subcategory');
+      setSelectedSubCategory('');
+    } else if (drillLevel === 'subcategory') {
+      setDrillLevel('overview');
+      setSelectedMainCategory('');
+    }
+  };
+
+  // 選択されたカテゴリーのトランザクション
+  const getFilteredTransactions = () => {
+    const now = new Date();
+    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
     return transactions.filter(
-      t => t.type === 'expense' && 
-           t.category_main === mainCategory &&
-           t.date >= firstDay.toISOString().split('T')[0]
+      t => t.type === 'expense' &&
+        t.date >= firstDay &&
+        t.category_main === selectedMainCategory &&
+        (drillLevel === 'subcategory' || t.category_sub === selectedSubCategory)
     );
   };
 
-  // カテゴリーをタップしたときの処理
-  const handleCategoryClick = (categoryName: string, categoryIcon: string) => {
-    setSelectedCategory({ name: categoryName, icon: categoryIcon });
-    setDetailDialogOpen(true);
+  // Level 1: 概要（円グラフ + カテゴリーリスト）
+  const renderOverview = () => (
+    <div className="space-y-3">
+      {/* 支出ドーナツグラフ */}
+      <div className="rounded-2xl p-4" style={{ background: theme.cardBg, border: '1px solid rgba(255,255,255,0.08)' }}>
+        <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
+          <TrendingDown className="h-4 w-4 text-red-400" />
+          今月の支出内訳
+        </h3>
+        <div className="flex items-center gap-4">
+          <div className="flex-1 space-y-2">
+            {categoryData.slice(0, 6).map((cat, index) => (
+              <div key={cat.name} className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-sm flex-shrink-0" style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs text-white truncate">{cat.icon} {cat.name}</p>
+                  <p className="text-xs text-red-400 font-semibold">¥{cat.value.toLocaleString()}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="w-40 h-40 relative">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie data={categoryData} cx="50%" cy="50%" innerRadius={35} outerRadius={65} paddingAngle={3} dataKey="value" startAngle={90} endAngle={-270}>
+                  {categoryData.map((_, index) => (
+                    <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip contentStyle={{ backgroundColor: '#1f2937', border: 'none', borderRadius: '8px' }} formatter={(value: number) => `¥${value.toLocaleString()}`} />
+              </PieChart>
+            </ResponsiveContainer>
+            {/* 中央に合計 */}
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div className="text-center">
+                <p className="text-[10px] text-white/40">合計</p>
+                <p className="text-xs font-bold text-white">¥{totalExpense.toLocaleString()}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* カテゴリー別リスト */}
+      <div className="rounded-2xl p-4" style={{ background: theme.cardBg, border: '1px solid rgba(255,255,255,0.08)' }}>
+        <h3 className="text-sm font-semibold text-white mb-3">カテゴリー詳細</h3>
+        <div className="space-y-2">
+          {categoryData.map((cat) => {
+            const pct = totalExpense > 0 ? (cat.value / totalExpense * 100) : 0;
+            return (
+              <button
+                key={cat.name}
+                onClick={() => handleMainCategoryClick(cat.name)}
+                className="w-full flex items-center gap-3 p-3 rounded-xl bg-black/15 border border-white/5 hover:bg-black/25 transition-colors text-left"
+              >
+                <span className="text-2xl flex-shrink-0">{cat.icon}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-white text-sm">{cat.name}</span>
+                    <span className="text-sm font-bold text-red-400">¥{cat.value.toLocaleString()}</span>
+                  </div>
+                  <div className="flex items-center gap-2 mt-1">
+                    <div className="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                      <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: theme.primary }} />
+                    </div>
+                    <span className="text-xs text-white/40 flex-shrink-0">{pct.toFixed(0)}%</span>
+                  </div>
+                </div>
+                <ChevronRight className="h-4 w-4 text-white/30 flex-shrink-0" />
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 年間支出推移 */}
+      <div className="rounded-2xl p-4" style={{ background: theme.cardBg, border: '1px solid rgba(255,255,255,0.08)' }}>
+        <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
+          <TrendingUp className="h-4 w-4 text-blue-400" />
+          年間支出推移
+        </h3>
+        <ResponsiveContainer width="100%" height={180}>
+          <BarChart data={yearlyData}>
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
+            <XAxis dataKey="month" stroke="rgba(255,255,255,0.4)" style={{ fontSize: '11px' }} />
+            <YAxis stroke="rgba(255,255,255,0.4)" style={{ fontSize: '11px' }} />
+            <Tooltip contentStyle={{ backgroundColor: '#1f2937', border: 'none', borderRadius: '8px' }} labelStyle={{ color: '#fff' }} />
+            <Bar dataKey="支出" fill="#ef4444" radius={[8, 8, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+
+  // Level 2: サブカテゴリーリスト
+  const renderSubcategory = () => {
+    const subData = subCategoryData[selectedMainCategory] || [];
+    const mainCatTotal = subData.reduce((sum, s) => sum + s.value, 0);
+    const icon = categoryIcons[selectedMainCategory] || '📦';
+
+    return (
+      <div className="space-y-3">
+        {/* 戻るボタン + ヘッダー */}
+        <button onClick={handleBack} className="flex items-center gap-2 text-white/60 hover:text-white transition-colors">
+          <ChevronLeft className="h-5 w-5" />
+          <span className="text-sm">カテゴリー一覧に戻る</span>
+        </button>
+        
+        <div className="rounded-2xl p-4" style={{ background: theme.cardBg, border: '1px solid rgba(255,255,255,0.08)' }}>
+          <div className="flex items-center gap-3 mb-4">
+            <span className="text-3xl">{icon}</span>
+            <div>
+              <h3 className="text-lg font-bold text-white">{selectedMainCategory}</h3>
+              <p className="text-red-400 font-bold">¥{mainCatTotal.toLocaleString()}</p>
+            </div>
+          </div>
+
+          {subData.length === 0 ? (
+            <p className="text-white/40 text-center py-8">データがありません</p>
+          ) : (
+            <div className="space-y-2">
+              {subData.map((sub) => {
+                const pct = mainCatTotal > 0 ? (sub.value / mainCatTotal * 100) : 0;
+                return (
+                  <button
+                    key={sub.name}
+                    onClick={() => handleSubCategoryClick(sub.name)}
+                    className="w-full flex items-center gap-3 p-3 rounded-xl bg-black/15 border border-white/5 hover:bg-black/25 transition-colors text-left"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-white text-sm">{sub.name}</span>
+                        <span className="text-sm font-bold text-red-400">¥{sub.value.toLocaleString()}</span>
+                      </div>
+                      <div className="flex items-center gap-2 mt-1">
+                        <div className="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                          <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: theme.secondary }} />
+                        </div>
+                        <span className="text-xs text-white/40 flex-shrink-0">{pct.toFixed(0)}%</span>
+                      </div>
+                    </div>
+                    <ChevronRight className="h-4 w-4 text-white/30 flex-shrink-0" />
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // Level 3: 個別トランザクション
+  const renderDetail = () => {
+    const filtered = getFilteredTransactions().filter(t => t.category_sub === selectedSubCategory);
+    const subTotal = filtered.reduce((sum, t) => sum + t.amount, 0);
+
+    return (
+      <div className="space-y-3">
+        <button onClick={handleBack} className="flex items-center gap-2 text-white/60 hover:text-white transition-colors">
+          <ChevronLeft className="h-5 w-5" />
+          <span className="text-sm">{selectedMainCategory} に戻る</span>
+        </button>
+        
+        <div className="rounded-2xl p-4" style={{ background: theme.cardBg, border: '1px solid rgba(255,255,255,0.08)' }}>
+          <div className="mb-4">
+            <h3 className="text-lg font-bold text-white">{selectedSubCategory}</h3>
+            <p className="text-xs text-white/40">{selectedMainCategory} &gt; {selectedSubCategory}</p>
+            <p className="text-red-400 font-bold mt-1">合計: ¥{subTotal.toLocaleString()}</p>
+          </div>
+
+          {filtered.length === 0 ? (
+            <p className="text-white/40 text-center py-8">データがありません</p>
+          ) : (
+            <div className="space-y-1.5">
+              {filtered
+                .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                .map((t) => (
+                  <ExpenseCard
+                    key={t.id}
+                    memo={t.memo}
+                    storeName={t.store_name}
+                    categoryMain={t.category_main}
+                    categorySub={t.category_sub}
+                    categoryIcon={categoryIcons[t.category_main] || '📦'}
+                    amount={t.amount}
+                    date={t.date}
+                    showDate
+                  />
+                ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -160,126 +369,15 @@ export function Analysis() {
       {isLoading ? (
         <div className="space-y-3">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="h-48 bg-slate-700/50 rounded-2xl animate-pulse"></div>
+            <div key={i} className="h-48 bg-white/10 rounded-2xl animate-pulse" />
           ))}
         </div>
       ) : (
         <>
-          {/* 支出ドーナツグラフ */}
-          <Card className="bg-slate-800/50 backdrop-blur-xl border-slate-700/50 shadow-xl">
-            <CardContent className="p-4">
-              <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
-                <TrendingDown className="h-4 w-4 text-red-400" />
-                今月の支出内訳
-              </h3>
-              <div className="flex items-center gap-4">
-                {/* 左側：凡例 */}
-                <div className="flex-1 space-y-2">
-                  {categoryData.slice(0, 6).map((cat, index) => (
-                    <div key={cat.name} className="flex items-center gap-2">
-                      <div 
-                        className="w-3 h-3 rounded-sm" 
-                        style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }}
-                      />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs text-white truncate">{cat.icon} {cat.name}</p>
-                        <p className="text-xs text-red-400 font-semibold">¥{cat.value.toLocaleString()}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                {/* 右側：円グラフ */}
-                <div className="w-40 h-40">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={categoryData}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={35}
-                        outerRadius={65}
-                        paddingAngle={3}
-                        dataKey="value"
-                        startAngle={90}
-                        endAngle={-270}
-                      >
-                        {categoryData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip 
-                        contentStyle={{ backgroundColor: '#1f2937', border: 'none', borderRadius: '8px' }}
-                        formatter={(value: number) => `¥${value.toLocaleString()}`}
-                      />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* カテゴリー別リスト（ドリルダウン） */}
-          <Card className="bg-slate-800/50 backdrop-blur-xl border-slate-700/50 shadow-xl">
-            <CardContent className="p-4">
-              <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
-                <TrendingDown className="h-4 w-4 text-purple-400" />
-                カテゴリー詳細
-              </h3>
-              <div className="space-y-2">
-                {categoryData.map((cat) => (
-                  <div
-                    key={cat.name}
-                    onClick={() => handleCategoryClick(cat.name, cat.icon)}
-                    className="flex items-center justify-between p-3 rounded-lg bg-slate-900/50 hover:bg-slate-900/70 transition-colors cursor-pointer"
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="text-2xl">{cat.icon}</span>
-                      <span className="font-semibold text-white">{cat.name}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-lg font-bold text-red-400">¥{cat.value.toLocaleString()}</span>
-                      <ChevronRight className="h-4 w-4 text-gray-400" />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* 年間支出推移グラフ（支出のみ） */}
-          <Card className="bg-slate-800/50 backdrop-blur-xl border-slate-700/50 shadow-xl">
-            <CardContent className="p-4">
-              <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
-                <TrendingUp className="h-4 w-4 text-blue-400" />
-                年間支出推移
-              </h3>
-              <ResponsiveContainer width="100%" height={180}>
-                <BarChart data={yearlyData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                  <XAxis dataKey="month" stroke="#9ca3af" style={{ fontSize: '11px' }} />
-                  <YAxis stroke="#9ca3af" style={{ fontSize: '11px' }} />
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: '#1f2937', border: 'none', borderRadius: '8px' }}
-                    labelStyle={{ color: '#fff' }}
-                  />
-                  <Bar dataKey="支出" fill="#ef4444" radius={[8, 8, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
+          {drillLevel === 'overview' && renderOverview()}
+          {drillLevel === 'subcategory' && renderSubcategory()}
+          {drillLevel === 'detail' && renderDetail()}
         </>
-      )}
-
-      {/* カテゴリー詳細ダイアログ */}
-      {selectedCategory && (
-        <CategoryDetailDialog
-          open={detailDialogOpen}
-          onOpenChange={setDetailDialogOpen}
-          categoryName={selectedCategory.name}
-          categoryIcon={selectedCategory.icon}
-          subCategoryData={subCategoryData[selectedCategory.name] || []}
-          transactions={getTransactionsByCategory(selectedCategory.name)}
-        />
       )}
     </div>
   );

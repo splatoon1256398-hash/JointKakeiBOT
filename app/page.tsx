@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { AppProvider, useApp } from "@/contexts/app-context";
+import { SplashScreen } from "@/components/splash-screen";
 import { Login } from "@/components/auth/login";
 import { CommonHeader } from "@/components/common-header";
 import { SettingsModal } from "@/components/settings-modal";
@@ -16,13 +17,27 @@ import { AddIncomeDialog } from "@/components/add-income-dialog";
 import { AddSavingDialog } from "@/components/add-saving-dialog";
 
 function AppContent() {
-  const { user, selectedUser } = useApp();
+  const { user, isAuthLoading, selectedUser, theme } = useApp();
   const [currentPage, setCurrentPage] = useState<NavPage>("dashboard");
   const [isRecordMenuOpen, setIsRecordMenuOpen] = useState(false);
   const [isAddExpenseOpen, setIsAddExpenseOpen] = useState(false);
   const [isAddIncomeOpen, setIsAddIncomeOpen] = useState(false);
   const [isAddSavingOpen, setIsAddSavingOpen] = useState(false);
   const [loginKey, setLoginKey] = useState(0);
+  const [splashFadeOut, setSplashFadeOut] = useState(false);
+  const [showSplash, setShowSplash] = useState(true);
+
+  // スプラッシュのフェードアウト管理
+  useEffect(() => {
+    if (!isAuthLoading) {
+      // auth check 完了 -> フェードアウト開始
+      setSplashFadeOut(true);
+      const timer = setTimeout(() => {
+        setShowSplash(false);
+      }, 600); // アニメーション完了後に非表示
+      return () => clearTimeout(timer);
+    }
+  }, [isAuthLoading]);
 
   const handleRecordClick = () => {
     setIsRecordMenuOpen(true);
@@ -44,18 +59,26 @@ function AppContent() {
     setLoginKey(prev => prev + 1);
   };
 
-  // ページ遷移ハンドラー
   const handleNavigateToAnalysis = () => {
     setCurrentPage("kakeibo");
   };
 
-  // ログインしていない場合はログイン画面を表示
+  // スプラッシュ表示中
+  if (showSplash) {
+    return <SplashScreen fadeOut={splashFadeOut} />;
+  }
+
+  // 未認証
   if (!user) {
     return <Login key={loginKey} onLoginSuccess={handleLoginSuccess} />;
   }
 
+  // メインUI
   return (
-    <div className="min-h-screen bg-slate-950">
+    <div
+      className="min-h-screen min-h-[100dvh] transition-colors duration-500"
+      style={{ backgroundColor: theme.background }}
+    >
       {/* 共通ヘッダー */}
       <CommonHeader />
 

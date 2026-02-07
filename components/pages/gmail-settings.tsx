@@ -11,6 +11,7 @@ interface UserSettings {
   user_id: string;
   gmail_integration_enabled: boolean;
   api_secret_key: string;
+  linked_user_type?: string;
 }
 
 export function GmailSettings() {
@@ -163,6 +164,51 @@ export function GmailSettings() {
           </button>
         </div>
       </div>
+
+      {/* ユーザー紐付け */}
+      {settings?.gmail_integration_enabled && (
+        <div className="rounded-xl p-4 bg-black/15 border border-white/5">
+          <p className="text-sm font-semibold text-white mb-2">Gmail連携ユーザー</p>
+          <p className="text-xs text-white/40 mb-3">
+            このGmail連携で自動登録される支出の登録者を選択してください
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            {["れん", "あかね"].map((ut) => (
+              <button
+                key={ut}
+                onClick={async () => {
+                  if (!user) return;
+                  setSaving(true);
+                  try {
+                    await supabase
+                      .from("user_settings")
+                      .update({ linked_user_type: ut })
+                      .eq("user_id", user.id);
+                    setSettings({ ...settings!, linked_user_type: ut });
+                  } catch (e) {
+                    console.error(e);
+                  } finally {
+                    setSaving(false);
+                  }
+                }}
+                disabled={saving}
+                className={`p-3 rounded-lg text-sm font-semibold transition-all ${
+                  settings?.linked_user_type === ut
+                    ? 'text-white ring-2'
+                    : 'text-white/50 bg-white/5 hover:bg-white/10'
+                }`}
+                style={
+                  settings?.linked_user_type === ut
+                    ? { backgroundColor: theme.primary, boxShadow: `0 0 0 2px ${theme.secondary}` }
+                    : {}
+                }
+              >
+                {ut}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* API情報（有効時のみ表示） */}
       {settings?.gmail_integration_enabled && (

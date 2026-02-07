@@ -3,12 +3,13 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Settings as SettingsIcon, Tag, Wallet, CreditCard, Mail, X } from "lucide-react";
+import { Settings as SettingsIcon, Tag, Wallet, CreditCard, Mail, Bell, X } from "lucide-react";
 import { useApp } from "@/contexts/app-context";
 import { Settings } from "@/components/pages/settings";
 import { BudgetSettings } from "@/components/pages/budget-settings";
 import { FixedExpenses } from "@/components/pages/fixed-expenses";
 import { GmailSettings } from "@/components/pages/gmail-settings";
+import { PushNotificationSettings } from "@/components/pages/push-notification-settings";
 
 export function SettingsModal() {
   const { isSettingsOpen, setIsSettingsOpen, theme } = useApp();
@@ -34,7 +35,7 @@ export function SettingsModal() {
         </DialogHeader>
 
         <Tabs defaultValue="fixed" className="w-full">
-          <TabsList className="grid w-full grid-cols-5 bg-slate-800/50 h-auto p-1">
+          <TabsList className="grid w-full grid-cols-6 bg-slate-800/50 h-auto p-1">
             <TabsTrigger value="fixed" className="flex flex-col gap-1 py-2 text-[10px]">
               <CreditCard className="h-4 w-4" />
               固定費
@@ -50,6 +51,10 @@ export function SettingsModal() {
             <TabsTrigger value="gmail" className="flex flex-col gap-1 py-2 text-[10px]">
               <Mail className="h-4 w-4" />
               Gmail
+            </TabsTrigger>
+            <TabsTrigger value="push" className="flex flex-col gap-1 py-2 text-[10px]">
+              <Bell className="h-4 w-4" />
+              通知
             </TabsTrigger>
             <TabsTrigger value="other" className="flex flex-col gap-1 py-2 text-[10px]">
               <SettingsIcon className="h-4 w-4" />
@@ -71,6 +76,10 @@ export function SettingsModal() {
 
           <TabsContent value="gmail" className="mt-4">
             <GmailSettings />
+          </TabsContent>
+
+          <TabsContent value="push" className="mt-4">
+            <PushNotificationSettings />
           </TabsContent>
 
           <TabsContent value="other" className="mt-4">

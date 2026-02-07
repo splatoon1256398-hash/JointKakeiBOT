@@ -54,8 +54,14 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    overscroll-behavior: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* iOS 自動ズーム防止（フォーカス時） */
+  input, select, textarea {
+    font-size: 16px !important;
   }
 }
 
@@ -88,6 +94,10 @@
   .pb-safe {
     padding-bottom: env(safe-area-inset-bottom);
   }
+
+  .bottom-nav-safe {
+    padding-bottom: max(env(safe-area-inset-bottom), 8px);
+  }
   
   /* キラキラアニメーション */
   @keyframes shimmer {
@@ -117,8 +127,40 @@
     background-size: 200% 200%;
     animation: gradient-shift 3s ease infinite;
   }
+
+  /* スプラッシュフェードアウト */
+  @keyframes splash-fade-out {
+    0% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    100% {
+      opacity: 0;
+      transform: scale(1.1);
+    }
+  }
+
+  .animate-splash-out {
+    animation: splash-fade-out 0.5s ease-out forwards;
+  }
+
+  /* パルスグロー */
+  @keyframes pulse-glow {
+    0%, 100% {
+      opacity: 0.6;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 1;
+      transform: scale(1.05);
+    }
+  }
+
+  .animate-pulse-glow {
+    animation: pulse-glow 2s ease-in-out infinite;
+  }
   
-  /* React Calendar カスタムスタイル（シンプル＆見やすい） */
+  /* React Calendar カスタムスタイル */
   .react-calendar {
     border: none !important;
     font-family: inherit;
@@ -140,6 +182,17 @@
     font-size: 1rem !important;
     min-width: 36px !important;
     padding: 0.5rem !important;
+    background: transparent;
+    border-radius: 0.5rem;
+  }
+
+  .react-calendar__navigation button:hover {
+    background: rgba(148, 163, 184, 0.1) !important;
+    border-radius: 0.5rem;
+  }
+
+  .react-calendar__navigation button:disabled {
+    opacity: 0.3;
   }
 
   .react-calendar__month-view__weekdays {
@@ -147,10 +200,15 @@
     font-weight: 700 !important;
     font-size: 0.75rem !important;
     text-transform: none !important;
+    padding: 0.5rem 0;
   }
 
   .react-calendar__month-view__weekdays abbr {
     text-decoration: none !important;
+  }
+
+  .react-calendar__month-view__weekdays__weekday {
+    padding: 0.5rem 0.25rem;
   }
 
   .react-calendar__tile {
@@ -212,42 +270,5 @@
   /* 土日の色 */
   .react-calendar__month-view__days__day--weekend {
     color: #ef4444 !important;
-  }
-
-  .react-calendar__month-view__weekdays {
-    color: #64748b !important;
-    font-weight: 600 !important;
-    font-size: 0.875rem;
-    padding: 0.5rem 0;
-  }
-
-  .react-calendar__month-view__weekdays__weekday {
-    padding: 0.5rem 0.25rem;
-  }
-
-  .react-calendar__month-view__weekdays abbr {
-    text-decoration: none;
-  }
-
-  .react-calendar__navigation {
-    margin-bottom: 0.5rem;
-  }
-
-  .react-calendar__navigation button {
-    min-width: 44px;
-    background: transparent;
-    border-radius: 0.5rem;
-    font-size: 1.125rem;
-    font-weight: 600;
-    color: inherit;
-  }
-
-  .react-calendar__navigation button:hover {
-    background: rgba(148, 163, 184, 0.1) !important;
-    border-radius: 0.5rem;
-  }
-
-  .react-calendar__navigation button:disabled {
-    opacity: 0.3;
   }
 }

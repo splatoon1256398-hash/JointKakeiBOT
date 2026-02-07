@@ -76,6 +76,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // 「共同」支出の場合、パートナーにPush通知を送信
+    if (body.user_type === "共同") {
+      try {
+        const origin = request.headers.get("origin") || request.headers.get("referer")?.replace(/\/$/, "") || "";
+        const pushUrl = origin ? `${origin}/api/push/send` : `${new URL(request.url).origin}/api/push/send`;
+        
+        await fetch(pushUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: "共同支出が登録されました",
+            body: `¥${body.amount.toLocaleString()} (${body.memo || body.store})`,
+            excludeUserId: settings.user_id,
+          }),
+        });
+      } catch (pushError) {
+        // Push通知の失敗はメイン処理に影響させない
+        console.error("Push notification error:", pushError);
+      }
+    }
+
     return NextResponse.json({
       success: true,
       message: "取引が正常に登録されました",

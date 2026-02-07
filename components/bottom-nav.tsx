@@ -24,13 +24,19 @@ export function BottomNav({ currentPage, onPageChange, onRecordClick }: BottomNa
   ];
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 pb-safe">
+    <nav
+      className="fixed bottom-0 left-0 right-0 z-50"
+      style={{ backgroundColor: theme.background }}
+    >
       <div className="relative mx-auto max-w-lg">
-        {/* 背景（テーマカラーのアクセントライン） */}
+        {/* 背景 */}
         <div 
-          className="absolute inset-0 bg-slate-900/90 backdrop-blur-xl shadow-2xl"
-          style={{ borderTop: `2px solid ${theme.primary}` }}
-        ></div>
+          className="absolute inset-0 backdrop-blur-xl shadow-2xl"
+          style={{
+            backgroundColor: "rgba(0,0,0,0.35)",
+            borderTop: `1px solid rgba(255,255,255,0.1)`,
+          }}
+        />
         
         {/* ナビゲーションアイテム */}
         <div className="relative flex items-center justify-around h-20 px-4">
@@ -49,7 +55,7 @@ export function BottomNav({ currentPage, onPageChange, onRecordClick }: BottomNa
                   <div 
                     className="absolute inset-0 rounded-full blur-xl opacity-50 group-hover:opacity-75 transition-opacity animate-pulse"
                     style={{ background: `linear-gradient(to right, ${theme.primary}, ${theme.secondary})` }}
-                  ></div>
+                  />
                   
                   {/* メインボタン */}
                   <div 
@@ -60,7 +66,7 @@ export function BottomNav({ currentPage, onPageChange, onRecordClick }: BottomNa
                     
                     {/* キラキラエフェクト */}
                     <div className="absolute inset-0 rounded-full overflow-hidden">
-                      <div className="absolute top-0 -left-full w-1/2 h-full bg-gradient-to-r from-transparent via-white/30 to-transparent skew-x-12 group-hover:animate-shimmer"></div>
+                      <div className="absolute top-0 -left-full w-1/2 h-full bg-gradient-to-r from-transparent via-white/30 to-transparent skew-x-12 group-hover:animate-shimmer" />
                     </div>
                   </div>
                 </button>
@@ -78,25 +84,24 @@ export function BottomNav({ currentPage, onPageChange, onRecordClick }: BottomNa
               >
                 <div 
                   className="relative p-2 rounded-xl transition-all duration-300"
-                  style={isActive ? { background: `${theme.primary}20` } : {}}
+                  style={isActive ? { background: `rgba(255,255,255,0.15)` } : {}}
                 >
                   <Icon 
                     className="w-6 h-6 transition-colors"
-                    style={{ color: isActive ? theme.primary : '#9ca3af' }}
+                    style={{ color: isActive ? '#ffffff' : 'rgba(255,255,255,0.5)' }}
                   />
                   
                   {/* アクティブインジケーター */}
                   {isActive && (
                     <div 
-                      className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full animate-pulse"
-                      style={{ background: theme.primary }}
-                    ></div>
+                      className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full animate-pulse bg-white"
+                    />
                   )}
                 </div>
                 
                 <span 
                   className="text-xs font-medium transition-colors"
-                  style={{ color: isActive ? theme.primary : '#9ca3af' }}
+                  style={{ color: isActive ? '#ffffff' : 'rgba(255,255,255,0.5)' }}
                 >
                   {item.label}
                 </span>
@@ -104,6 +109,14 @@ export function BottomNav({ currentPage, onPageChange, onRecordClick }: BottomNa
             );
           })}
         </div>
+
+        {/* iOS セーフエリアの余白（テーマカラーで塗りつぶし） */}
+        <div
+          style={{
+            paddingBottom: 'env(safe-area-inset-bottom)',
+            backgroundColor: 'rgba(0,0,0,0.35)',
+          }}
+        />
       </div>
     </nav>
   );
