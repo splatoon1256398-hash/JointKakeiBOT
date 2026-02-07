@@ -57,7 +57,7 @@ export async function parseEmailWithAI(
 ): Promise<ParsedTransaction | null> {
   try {
     const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash",
+      model: "'gemini-2.5-flash-lite",
       generationConfig: {
         responseMimeType: "application/json",
         responseSchema: {
