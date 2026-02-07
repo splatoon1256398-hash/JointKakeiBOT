@@ -340,7 +340,7 @@ ${context?.categories.map((c: any) => `- ${c.main_category}: ${c.subcategories.j
                 className={`max-w-[80%] rounded-2xl p-4 ${
                   message.role === "user"
                     ? "bg-gradient-to-br from-purple-600 to-blue-600 text-white"
-                    : "bg-slate-700/50 text-gray-100"
+                    : "bg-slate-800/90 border border-white/10 text-gray-100"
                 }`}
               >
                 {message.role === "assistant" && (
@@ -358,7 +358,7 @@ ${context?.categories.map((c: any) => `- ${c.main_category}: ${c.subcategories.j
           ))}
           {isLoading && (
             <div className="flex justify-start">
-              <div className="bg-slate-700/50 rounded-2xl p-4">
+              <div className="bg-slate-800/90 border border-white/10 rounded-2xl p-4">
                 <Loader2 className="h-5 w-5 animate-spin text-purple-400" />
               </div>
             </div>

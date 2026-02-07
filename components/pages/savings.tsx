@@ -156,17 +156,15 @@ export function Savings() {
       {isLoading ? (
         <div className="space-y-4">
           {[1, 2].map((i) => (
-            <div key={i} className="h-48 bg-slate-800/50 rounded-2xl animate-pulse"></div>
+            <div key={i} className="h-48 card-solid rounded-2xl animate-pulse"></div>
           ))}
         </div>
       ) : goals.length === 0 ? (
-        <Card className="bg-slate-800/50 backdrop-blur-xl border-slate-700/50 shadow-xl">
-          <CardContent className="p-12 text-center">
-            <PiggyBank className="h-20 w-20 mx-auto text-gray-600 mb-4" />
-            <p className="text-lg font-semibold text-gray-400 mb-2">まだ目標がありません</p>
-            <p className="text-sm text-gray-500 mb-4">「＋新規」ボタンから目標を追加しましょう</p>
-          </CardContent>
-        </Card>
+        <div className="card-solid p-12 text-center">
+          <PiggyBank className="h-20 w-20 mx-auto text-gray-600 mb-4" />
+          <p className="text-lg font-semibold text-gray-400 mb-2">まだ目標がありません</p>
+          <p className="text-sm text-gray-500 mb-4">「＋新規」ボタンから目標を追加しましょう</p>
+        </div>
       ) : (
         <div className="space-y-4">
           {goals.map((goal) => {
@@ -175,8 +173,8 @@ export function Savings() {
             const daysRemaining = goal.deadline ? calculateDaysRemaining(goal.deadline) : null;
 
             return (
-              <Card key={goal.id} className="bg-slate-800/50 backdrop-blur-xl border-slate-700/50 shadow-xl overflow-hidden">
-                <CardContent className="p-6">
+              <div key={goal.id} className="card-solid overflow-hidden">
+                <div className="p-6">
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex items-center gap-3">
                       <span className="text-4xl">{goal.icon}</span>
@@ -213,35 +211,35 @@ export function Savings() {
 
                   {/* 詳細情報 */}
                   <div className="grid grid-cols-3 gap-4">
-                    <div className="p-3 rounded-xl bg-slate-900/50 min-w-0">
+                    <div className="p-3 rounded-xl card-solid-inner min-w-0">
                       <div className="flex items-center gap-2 mb-1">
                         <Target className="h-4 w-4 text-blue-400" />
                         <span className="text-xs text-gray-400">残り</span>
                       </div>
-                      <p className="text-base font-bold text-white break-all">
+                      <p className="font-bold text-white whitespace-nowrap" style={{ fontSize: 'clamp(0.75rem, 3vw, 1rem)' }}>
                         ¥{(goal.target_amount - goal.current_amount).toLocaleString()}
                       </p>
                     </div>
 
                     {monthlyRequired && (
-                      <div className="p-3 rounded-xl bg-slate-900/50">
+                      <div className="p-3 rounded-xl card-solid-inner">
                         <div className="flex items-center gap-2 mb-1">
                           <TrendingUp className="h-4 w-4 text-purple-400" />
                           <span className="text-xs text-gray-400">月額</span>
                         </div>
-                        <p className="text-lg font-bold text-white">
+                        <p className="font-bold text-white whitespace-nowrap" style={{ fontSize: 'clamp(0.75rem, 3vw, 1.125rem)' }}>
                           ¥{monthlyRequired.toLocaleString()}
                         </p>
                       </div>
                     )}
 
                     {daysRemaining && (
-                      <div className="p-3 rounded-xl bg-slate-900/50">
+                      <div className="p-3 rounded-xl card-solid-inner">
                         <div className="flex items-center gap-2 mb-1">
                           <Calendar className="h-4 w-4 text-orange-400" />
                           <span className="text-xs text-gray-400">期限</span>
                         </div>
-                        <p className="text-lg font-bold text-white">
+                        <p className="font-bold text-white whitespace-nowrap" style={{ fontSize: 'clamp(0.75rem, 3vw, 1.125rem)' }}>
                           {daysRemaining}日
                         </p>
                       </div>
@@ -253,8 +251,8 @@ export function Savings() {
                       💡 毎月 ¥{monthlyRequired.toLocaleString()} 貯めれば達成できます
                     </p>
                   )}
-                </CardContent>
-              </Card>
+                </div>
+              </div>
             );
           })}
         </div>

@@ -9,12 +9,17 @@ import {
   Coffee, 
   PiggyBank, 
   Calendar,
-  ChevronRight
+  ChevronRight,
+  Banknote,
+  ShoppingCart,
+  HandCoins,
 } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import { supabase } from "@/lib/supabase";
 import { QuickStatsCard } from "@/components/widgets/quick-stats-card";
 import { ExpenseCard } from "@/components/widgets/expense-card";
+import { EditTransactionDialog, TransactionForEdit } from "@/components/edit-transaction-dialog";
+import { calculateDaysToPayday, WIDGET_TYPES } from "@/lib/widgets";
 
 type UserType = "共同" | "れん" | "あかね";
 
@@ -26,6 +31,7 @@ interface Transaction {
   store_name: string;
   amount: number;
   memo: string;
+  user_type?: string;
 }
 
 interface CategoryBudget {
@@ -49,8 +55,17 @@ interface DashboardProps {
   onNavigateToAnalysis?: () => void;
 }
 
+interface WidgetSlot {
+  type: string;
+  categoryMain?: string;
+  categorySub?: string;
+  savingGoalId?: string;
+  payday?: number;
+  paydayShift?: "before" | "after";
+}
+
 export function Dashboard({ onNavigateToAnalysis }: DashboardProps) {
-  const { selectedUser, theme, refreshTrigger } = useApp();
+  const { selectedUser, theme, refreshTrigger, user } = useApp();
   const [isLoading, setIsLoading] = useState(true);
   const [monthlySpent, setMonthlySpent] = useState(0);
   const [income, setIncome] = useState(0);
@@ -58,6 +73,15 @@ export function Dashboard({ onNavigateToAnalysis }: DashboardProps) {
   const [categoryIcons, setCategoryIcons] = useState<Record<string, string>>({});
   const [categoryBudgets, setCategoryBudgets] = useState<CategoryBudget[]>([]);
   const [categoryBreakdown, setCategoryBreakdown] = useState<any[]>([]);
+  const [editingTransaction, setEditingTransaction] = useState<TransactionForEdit | null>(null);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [widgetSlots, setWidgetSlots] = useState<WidgetSlot[]>([
+    { type: "food_budget" },
+    { type: "dining_count" },
+    { type: "saving_progress" },
+    { type: "payday", payday: 25, paydayShift: "before" },
+  ]);
+  const [savingGoals, setSavingGoals] = useState<{ id: string; goal_name: string; target_amount: number; current_amount: number }[]>([]);
 
   const fetchCategoryIcons = async () => {
     const { data } = await supabase
@@ -171,13 +195,40 @@ export function Dashboard({ onNavigateToAnalysis }: DashboardProps) {
     }
   };
 
+  // ウィジェット設定・貯金目標を読み込み
+  const fetchWidgetSettings = async () => {
+    if (!user) return;
+    try {
+      const { data } = await supabase
+        .from("user_settings")
+        .select("home_widgets")
+        .eq("user_id", user.id)
+        .single();
+      if (data?.home_widgets && Array.isArray(data.home_widgets)) {
+        setWidgetSlots(data.home_widgets as WidgetSlot[]);
+      }
+    } catch {
+      // デフォルトのまま
+    }
+  };
+
+  const fetchSavingGoals = async () => {
+    const { data } = await supabase
+      .from("saving_goals")
+      .select("id, goal_name, target_amount, current_amount")
+      .eq("user_type", selectedUser);
+    setSavingGoals(data || []);
+  };
+
   useEffect(() => {
     fetchCategoryIcons();
-  }, []);
+    fetchWidgetSettings();
+  }, [user]);
 
   useEffect(() => {
     if (Object.keys(categoryIcons).length > 0) {
       fetchData(selectedUser as UserType);
+      fetchSavingGoals();
     }
   }, [selectedUser, categoryIcons]);
 
@@ -206,9 +257,154 @@ export function Dashboard({ onNavigateToAnalysis }: DashboardProps) {
     t.category_sub === '外食' || t.category_sub === 'カフェ・間食'
   ).length;
 
-  const today = new Date();
-  const nextPayday = new Date(today.getFullYear(), today.getMonth() + 1, 25);
-  const daysToPayday = Math.ceil((nextPayday.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  // ノーマネーデー計算
+  const getNoMoneyDays = () => {
+    const now = new Date();
+    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const expenseDates = new Set(recentTransactions.map(t => t.date));
+    let count = 0;
+    for (let d = 1; d <= Math.min(now.getDate(), daysInMonth); d++) {
+      const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      if (!expenseDates.has(dateStr)) count++;
+    }
+    return count;
+  };
+
+  // ウィジェットレンダリングヘルパー
+  const ICON_MAP: Record<string, any> = {
+    food_budget: UtensilsCrossed,
+    dining_count: Coffee,
+    saving_progress: PiggyBank,
+    payday: Calendar,
+    category_budget: ShoppingCart,
+    no_money_day: Banknote,
+    total_expense: TrendingDown,
+    total_income: HandCoins,
+  };
+
+  const renderWidget = (slot: WidgetSlot, index: number) => {
+    const meta = WIDGET_TYPES.find(w => w.value === slot.type);
+    if (!meta) return null;
+    const IconComp = ICON_MAP[slot.type] || meta.icon;
+
+    switch (slot.type) {
+      case "food_budget":
+        return (
+          <QuickStatsCard
+            key={index}
+            title="食費残高"
+            value={foodBudget > 0 ? `¥${foodRemaining.toLocaleString()}` : '未設定'}
+            icon={IconComp}
+            subtitle={foodBudget > 0 ? `¥${foodBudget.toLocaleString()}中` : '予算を設定してください'}
+            colorClass={meta.colorClass}
+          />
+        );
+      case "dining_count":
+        return (
+          <QuickStatsCard
+            key={index}
+            title="外食回数"
+            value={`${diningOutCount}回`}
+            icon={IconComp}
+            subtitle="今月"
+            colorClass={meta.colorClass}
+          />
+        );
+      case "saving_progress": {
+        let value = "0%";
+        let subtitle = "目標: 未設定";
+        if (slot.savingGoalId) {
+          const goal = savingGoals.find(g => g.id === slot.savingGoalId);
+          if (goal) {
+            const pct = goal.target_amount > 0 ? Math.round((goal.current_amount / goal.target_amount) * 100) : 0;
+            value = `${pct}%`;
+            subtitle = goal.goal_name;
+          }
+        } else if (savingGoals.length > 0) {
+          const totalTarget = savingGoals.reduce((s, g) => s + g.target_amount, 0);
+          const totalCurrent = savingGoals.reduce((s, g) => s + g.current_amount, 0);
+          const pct = totalTarget > 0 ? Math.round((totalCurrent / totalTarget) * 100) : 0;
+          value = `${pct}%`;
+          subtitle = `${savingGoals.length}件の目標`;
+        }
+        return (
+          <QuickStatsCard
+            key={index}
+            title="貯金進捗"
+            value={value}
+            icon={IconComp}
+            subtitle={subtitle}
+            colorClass={meta.colorClass}
+          />
+        );
+      }
+      case "payday": {
+        const days = calculateDaysToPayday(slot.payday || 25, slot.paydayShift || "before");
+        return (
+          <QuickStatsCard
+            key={index}
+            title="給料日まで"
+            value={`${days}日`}
+            icon={IconComp}
+            subtitle={`${slot.payday || 25}日`}
+            colorClass={meta.colorClass}
+          />
+        );
+      }
+      case "category_budget": {
+        const catName = slot.categoryMain || "食費";
+        const catBudget = categoryBudgets.find(c => c.category === catName);
+        const catSpent = categoryBreakdown.find(c => c.name === catName)?.value || 0;
+        const budget = catBudget?.budget || 0;
+        const remaining = budget - catSpent;
+        return (
+          <QuickStatsCard
+            key={index}
+            title={`${catName}残高`}
+            value={budget > 0 ? `¥${remaining.toLocaleString()}` : '未設定'}
+            icon={IconComp}
+            subtitle={budget > 0 ? `¥${budget.toLocaleString()}中` : '予算を設定してください'}
+            colorClass={meta.colorClass}
+          />
+        );
+      }
+      case "no_money_day":
+        return (
+          <QuickStatsCard
+            key={index}
+            title="ノーマネーデー"
+            value={`${getNoMoneyDays()}日`}
+            icon={IconComp}
+            subtitle="今月"
+            colorClass={meta.colorClass}
+          />
+        );
+      case "total_expense":
+        return (
+          <QuickStatsCard
+            key={index}
+            title="今月の支出"
+            value={`¥${monthlySpent.toLocaleString()}`}
+            icon={IconComp}
+            subtitle="合計"
+            colorClass={meta.colorClass}
+          />
+        );
+      case "total_income":
+        return (
+          <QuickStatsCard
+            key={index}
+            title="今月の収入"
+            value={`¥${income.toLocaleString()}`}
+            icon={IconComp}
+            subtitle="合計"
+            colorClass={meta.colorClass}
+          />
+        );
+      default:
+        return null;
+    }
+  };
 
   const renderCustomLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, name }: any) => {
     if (percent < 0.08) return null;
@@ -227,13 +423,7 @@ export function Dashboard({ onNavigateToAnalysis }: DashboardProps) {
   return (
     <div className="space-y-3 pb-24 pt-3">
       {/* サマリーカード */}
-      <div
-        className="relative backdrop-blur-xl shadow-xl overflow-hidden rounded-2xl p-4"
-        style={{
-          background: theme.cardBg,
-          border: `1px solid rgba(255,255,255,0.1)`,
-        }}
-      >
+      <div className="card-solid p-4">
         {isLoading ? (
           <div className="animate-pulse space-y-4">
             <div className="h-24 bg-white/10 rounded-xl" />
@@ -273,16 +463,13 @@ export function Dashboard({ onNavigateToAnalysis }: DashboardProps) {
         )}
       </div>
 
-      {/* 4つの小カード */}
+      {/* 4つの小カード（ウィジェット設定ベース） */}
       <div className="grid grid-cols-2 gap-3">
-        <QuickStatsCard title="食費残高" value={foodBudget > 0 ? `¥${foodRemaining.toLocaleString()}` : '未設定'} icon={UtensilsCrossed} subtitle={foodBudget > 0 ? `¥${foodBudget.toLocaleString()}中` : '予算を設定してください'} colorClass="from-orange-500 to-red-500" />
-        <QuickStatsCard title="外食回数" value={`${diningOutCount}回`} icon={Coffee} subtitle="今月" colorClass="from-pink-500 to-purple-500" />
-        <QuickStatsCard title="貯金進捗" value="0%" icon={PiggyBank} subtitle="目標: 未設定" colorClass="from-green-500 to-emerald-500" />
-        <QuickStatsCard title="給料日" value={`${daysToPayday}日後`} icon={Calendar} subtitle="25日" colorClass="from-blue-500 to-cyan-500" />
+        {widgetSlots.slice(0, 4).map((slot, index) => renderWidget(slot, index))}
       </div>
 
       {/* カテゴリー予算リスト */}
-      <div className="rounded-2xl overflow-hidden" style={{ background: theme.cardBg, border: '1px solid rgba(255,255,255,0.08)' }}>
+      <div className="card-solid">
         <div className="p-4">
           <h3 className="text-lg font-semibold text-white flex items-center gap-2 mb-4">
             <Wallet className="w-5 h-5" style={{ color: theme.secondary }} />
@@ -295,7 +482,7 @@ export function Dashboard({ onNavigateToAnalysis }: DashboardProps) {
           ) : (
             <div className="space-y-3">
               {categoryBudgets.map((item) => (
-                <div key={item.category} className="p-3 rounded-xl bg-black/15 border border-white/5">
+                <div key={item.category} className="p-3 rounded-xl card-solid-inner">
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-3">
                       <span className="text-2xl">{item.icon}</span>
@@ -320,7 +507,7 @@ export function Dashboard({ onNavigateToAnalysis }: DashboardProps) {
       </div>
 
       {/* 日別支出リスト（メモ主役カード） */}
-      <div className="rounded-2xl overflow-hidden" style={{ background: theme.cardBg, border: '1px solid rgba(255,255,255,0.08)' }}>
+      <div className="card-solid">
         <div className="p-4">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold text-white flex items-center gap-2">
@@ -369,6 +556,19 @@ export function Dashboard({ onNavigateToAnalysis }: DashboardProps) {
                           categorySub={t.category_sub}
                           categoryIcon={categoryIcons[t.category_main] || '📦'}
                           amount={t.amount}
+                          onEdit={() => {
+                            setEditingTransaction({
+                              id: t.id,
+                              date: t.date,
+                              category_main: t.category_main,
+                              category_sub: t.category_sub,
+                              store_name: t.store_name,
+                              amount: t.amount,
+                              memo: t.memo,
+                              user_type: selectedUser,
+                            });
+                            setIsEditDialogOpen(true);
+                          }}
                         />
                       ))}
                     </div>
@@ -379,6 +579,13 @@ export function Dashboard({ onNavigateToAnalysis }: DashboardProps) {
           )}
         </div>
       </div>
+
+      {/* 編集ダイアログ */}
+      <EditTransactionDialog
+        open={isEditDialogOpen}
+        onOpenChange={setIsEditDialogOpen}
+        transaction={editingTransaction}
+      />
     </div>
   );
 }

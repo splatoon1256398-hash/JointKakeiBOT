@@ -3,13 +3,14 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Settings as SettingsIcon, Tag, Wallet, CreditCard, Mail, Bell, X } from "lucide-react";
+import { Settings as SettingsIcon, Tag, Wallet, CreditCard, Mail, Bell, LayoutGrid, X } from "lucide-react";
 import { useApp } from "@/contexts/app-context";
 import { Settings } from "@/components/pages/settings";
 import { BudgetSettings } from "@/components/pages/budget-settings";
 import { FixedExpenses } from "@/components/pages/fixed-expenses";
 import { GmailSettings } from "@/components/pages/gmail-settings";
 import { PushNotificationSettings } from "@/components/pages/push-notification-settings";
+import { HomeWidgetSettings } from "@/components/pages/home-widget-settings";
 
 export function SettingsModal() {
   const { isSettingsOpen, setIsSettingsOpen, theme } = useApp();
@@ -35,7 +36,7 @@ export function SettingsModal() {
         </DialogHeader>
 
         <Tabs defaultValue="fixed" className="w-full">
-          <TabsList className="grid w-full grid-cols-6 bg-slate-800/50 h-auto p-1">
+          <TabsList className="grid w-full grid-cols-7 bg-slate-800/50 h-auto p-1">
             <TabsTrigger value="fixed" className="flex flex-col gap-1 py-2 text-[10px]">
               <CreditCard className="h-4 w-4" />
               固定費
@@ -47,6 +48,10 @@ export function SettingsModal() {
             <TabsTrigger value="categories" className="flex flex-col gap-1 py-2 text-[10px]">
               <Tag className="h-4 w-4" />
               カテゴリ
+            </TabsTrigger>
+            <TabsTrigger value="home" className="flex flex-col gap-1 py-2 text-[10px]">
+              <LayoutGrid className="h-4 w-4" />
+              ホーム
             </TabsTrigger>
             <TabsTrigger value="gmail" className="flex flex-col gap-1 py-2 text-[10px]">
               <Mail className="h-4 w-4" />
@@ -72,6 +77,10 @@ export function SettingsModal() {
 
           <TabsContent value="categories" className="mt-4">
             <Settings />
+          </TabsContent>
+
+          <TabsContent value="home" className="mt-4">
+            <HomeWidgetSettings />
           </TabsContent>
 
           <TabsContent value="gmail" className="mt-4">

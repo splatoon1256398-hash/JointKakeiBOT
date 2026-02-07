@@ -1,6 +1,9 @@
 "use client";
 
-interface ExpenseCardProps {
+import { Pencil } from "lucide-react";
+
+export interface ExpenseCardProps {
+  id?: string;
   memo?: string | null;
   storeName?: string | null;
   categoryMain: string;
@@ -9,6 +12,7 @@ interface ExpenseCardProps {
   amount: number;
   date?: string;
   showDate?: boolean;
+  onEdit?: () => void;
 }
 
 export function ExpenseCard({
@@ -20,47 +24,56 @@ export function ExpenseCard({
   amount,
   date,
   showDate = false,
+  onEdit,
 }: ExpenseCardProps) {
-  // メモ > 店名 > 小カテゴリー の優先順位で表示
   const mainText = memo || storeName || categorySub;
-  // メインに使われなかった情報をサブに表示
   const subStore = memo && storeName ? storeName : null;
 
   return (
-    <div className="flex items-center gap-3 p-3 rounded-xl bg-black/15 border border-white/5 hover:bg-black/20 transition-colors">
+    <div className="flex items-center gap-3 p-3 rounded-xl card-solid-inner hover:bg-white/[0.07] transition-colors">
       {/* カテゴリーアイコン */}
       <div className="text-xl leading-none flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center bg-white/10">
         {categoryIcon}
       </div>
 
-      {/* テキスト部分 */}
+      {/* 左: メモ + 店名/カテゴリ */}
       <div className="flex-1 min-w-0">
         <p className="font-bold text-white text-sm truncate leading-tight">
           {mainText}
         </p>
         <div className="flex items-center gap-1.5 mt-0.5">
-          <span className="text-xs text-white/50">{categoryMain}</span>
-          <span className="text-white/30">·</span>
-          <span className="text-xs text-white/40">{categorySub}</span>
           {subStore && (
             <>
+              <span className="text-xs text-white/40 truncate max-w-[80px]">{subStore}</span>
               <span className="text-white/30">·</span>
-              <span className="text-xs text-white/40 truncate">{subStore}</span>
             </>
           )}
+          <span className="inline-flex items-center bg-white/10 rounded-full px-2 py-0.5 text-[10px] text-white/60">
+            {categorySub}
+          </span>
         </div>
       </div>
 
-      {/* 金額 + 日付 */}
-      <div className="text-right flex-shrink-0 ml-2">
-        <p className="text-base font-bold text-red-400 leading-tight">
+      {/* 右: 金額 + 編集ボタン */}
+      <div className="flex flex-col items-end flex-shrink-0 ml-2 gap-1">
+        <p className="text-base font-bold text-red-400 leading-tight whitespace-nowrap">
           -¥{amount.toLocaleString()}
         </p>
-        {showDate && date && (
-          <p className="text-xs text-white/40 mt-0.5">
-            {new Date(date).getMonth() + 1}/{new Date(date).getDate()}
-          </p>
-        )}
+        <div className="flex items-center gap-2">
+          {showDate && date && (
+            <span className="text-[10px] text-white/40">
+              {new Date(date).getMonth() + 1}/{new Date(date).getDate()}
+            </span>
+          )}
+          {onEdit && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onEdit(); }}
+              className="p-1 rounded-md hover:bg-white/10 transition-colors text-white/40 hover:text-white/70"
+            >
+              <Pencil className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

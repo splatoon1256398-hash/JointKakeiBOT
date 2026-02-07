@@ -187,6 +187,25 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
       console.log('保存成功:', data);
       alert('支出を追加しました！');
       
+      // 共同支出の場合、パートナーに Push 通知を送信
+      if (selectedUser === "共同") {
+        try {
+          const totalAmount = items.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+          const memoText = items[0]?.memo || items[0]?.storeName || items[0]?.categorySub || "支出";
+          await fetch("/api/push/send", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              title: "共同支出が登録されました",
+              body: `¥${totalAmount.toLocaleString()} (${memoText})`,
+              excludeUserId: user?.id,
+            }),
+          });
+        } catch (pushError) {
+          console.error("Push通知送信エラー:", pushError);
+        }
+      }
+      
       // データを即座に反映
       triggerRefresh();
       

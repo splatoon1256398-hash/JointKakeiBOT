@@ -5,6 +5,7 @@ import { History as HistoryIcon, Calendar as CalendarIcon, List } from "lucide-r
 import { supabase } from "@/lib/supabase";
 import { useApp } from "@/contexts/app-context";
 import { ExpenseCard } from "@/components/widgets/expense-card";
+import { EditTransactionDialog, TransactionForEdit } from "@/components/edit-transaction-dialog";
 import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
 
@@ -31,6 +32,8 @@ export function History({ isCompact = false }: HistoryProps) {
   const [categoryIcons, setCategoryIcons] = useState<Record<string, string>>({});
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
   const [selectedDate, setSelectedDate] = useState(new Date());
+  const [editingTransaction, setEditingTransaction] = useState<TransactionForEdit | null>(null);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
 
   const fetchCategoryIcons = async () => {
     const { data } = await supabase
@@ -232,7 +235,7 @@ export function History({ isCompact = false }: HistoryProps) {
                   const dayTotal = dayTransactions.reduce((sum, t) => sum + t.amount, 0);
                   
                   return (
-                    <div key={date} className="rounded-xl overflow-hidden" style={{ background: 'rgba(0,0,0,0.15)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                    <div key={date} className="card-solid overflow-hidden">
                       {/* 日付ヘッダー */}
                       <div className="flex items-center justify-between px-4 py-2.5" style={{ background: `rgba(255,255,255,0.05)` }}>
                         <div className="flex items-center gap-2">
@@ -253,6 +256,19 @@ export function History({ isCompact = false }: HistoryProps) {
                             categorySub={t.category_sub}
                             categoryIcon={categoryIcons[t.category_main] || '📦'}
                             amount={t.amount}
+                            onEdit={() => {
+                              setEditingTransaction({
+                                id: t.id,
+                                date: t.date,
+                                category_main: t.category_main,
+                                category_sub: t.category_sub,
+                                store_name: t.store_name,
+                                amount: t.amount,
+                                memo: t.memo,
+                                user_type: selectedUser,
+                              });
+                              setIsEditDialogOpen(true);
+                            }}
                           />
                         ))}
                       </div>
@@ -264,6 +280,13 @@ export function History({ isCompact = false }: HistoryProps) {
           </>
         )}
       </div>
+
+      {/* 編集ダイアログ */}
+      <EditTransactionDialog
+        open={isEditDialogOpen}
+        onOpenChange={setIsEditDialogOpen}
+        transaction={editingTransaction}
+      />
     </div>
   );
 }

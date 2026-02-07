@@ -1,13 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
-import { Settings as SettingsIcon, Plus, Pencil, Trash2, Save, X } from "lucide-react";
+import { Plus, Pencil, Trash2, Save, X, Tag } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { useApp } from "@/contexts/app-context";
 
 interface Category {
   id: string;
@@ -18,6 +16,7 @@ interface Category {
 }
 
 export function Settings() {
+  const { theme } = useApp();
   const [categories, setCategories] = useState<Category[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -77,7 +76,6 @@ export function Settings() {
 
       await fetchCategories();
       cancelEdit();
-      alert('カテゴリーを更新しました！');
     } catch (error) {
       console.error('更新エラー:', error);
       alert('更新に失敗しました');
@@ -98,9 +96,7 @@ export function Settings() {
         });
 
       if (error) throw error;
-
       await fetchCategories();
-      alert('カテゴリーを追加しました！');
     } catch (error) {
       console.error('追加エラー:', error);
       alert('追加に失敗しました');
@@ -117,9 +113,7 @@ export function Settings() {
         .eq('id', id);
 
       if (error) throw error;
-
       await fetchCategories();
-      alert('カテゴリーを削除しました');
     } catch (error) {
       console.error('削除エラー:', error);
       alert('削除に失敗しました');
@@ -127,143 +121,120 @@ export function Settings() {
   };
 
   return (
-    <div className="space-y-6 pb-24">
-      {/* ヘッダー */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-gray-600 via-slate-600 to-zinc-600 p-6 shadow-2xl">
-        <div className="absolute inset-0 bg-black/10 backdrop-blur-3xl"></div>
-        <div className="relative z-10 text-white">
-          <div className="flex items-center gap-3">
-            <div className="p-3 rounded-2xl bg-white/20 backdrop-blur-xl">
-              <SettingsIcon className="h-8 w-8" />
-            </div>
-            <div>
-              <h1 className="text-3xl font-bold">設定</h1>
-              <p className="text-sm opacity-90">カテゴリー管理</p>
-            </div>
-          </div>
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-bold text-white flex items-center gap-2">
+            <Tag className="h-5 w-5" style={{ color: theme.primary }} />
+            カテゴリー管理
+          </h3>
+          <p className="text-xs text-gray-400 mt-0.5">
+            大カテゴリーと小カテゴリーを編集
+          </p>
         </div>
+        <button
+          onClick={addCategory}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-colors"
+          style={{ backgroundColor: theme.primary }}
+        >
+          <Plus className="h-3.5 w-3.5" />
+          追加
+        </button>
       </div>
 
-      {/* カテゴリー管理 */}
-      <Card className="bg-white/50 dark:bg-slate-900/50 backdrop-blur-xl border-0 shadow-xl">
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle>カテゴリー管理</CardTitle>
-              <CardDescription>大カテゴリーと小カテゴリーを編集</CardDescription>
-            </div>
-            <Button onClick={addCategory} className="gap-2">
-              <Plus className="h-4 w-4" />
-              追加
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <div className="space-y-4">
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="h-32 bg-gray-200 dark:bg-gray-800 rounded-2xl animate-pulse"></div>
-              ))}
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {categories.map((category) => (
-                <div
-                  key={category.id}
-                  className="p-6 rounded-2xl bg-gradient-to-r from-white/80 to-gray-50/80 dark:from-slate-800/80 dark:to-slate-900/80 border border-gray-200/50 dark:border-gray-700/50"
-                >
-                  {editingId === category.id ? (
-                    <div className="space-y-4">
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <Label>大カテゴリー名</Label>
-                          <Input
-                            value={editForm.main_category}
-                            onChange={(e) => setEditForm({ ...editForm, main_category: e.target.value })}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label>アイコン（絵文字）</Label>
-                          <Input
-                            value={editForm.icon}
-                            onChange={(e) => setEditForm({ ...editForm, icon: e.target.value })}
-                            maxLength={2}
-                          />
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        <Label>小カテゴリー（カンマ区切り）</Label>
-                        <Input
-                          value={editForm.subcategories}
-                          onChange={(e) => setEditForm({ ...editForm, subcategories: e.target.value })}
-                          placeholder="食料品, 外食, カフェ・間食"
-                        />
-                      </div>
-                      <div className="flex gap-2">
-                        <Button onClick={() => saveEdit(category.id)} className="gap-2">
-                          <Save className="h-4 w-4" />
-                          保存
-                        </Button>
-                        <Button onClick={cancelEdit} variant="outline" className="gap-2">
-                          <X className="h-4 w-4" />
-                          キャンセル
-                        </Button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div>
-                      <div className="flex items-center justify-between mb-4">
-                        <div className="flex items-center gap-3">
-                          <span className="text-3xl">{category.icon}</span>
-                          <h3 className="text-xl font-bold">{category.main_category}</h3>
-                        </div>
-                        <div className="flex gap-2">
-                          <Button
-                            onClick={() => startEdit(category)}
-                            variant="outline"
-                            size="sm"
-                            className="gap-2"
-                          >
-                            <Pencil className="h-4 w-4" />
-                            編集
-                          </Button>
-                          <Button
-                            onClick={() => deleteCategory(category.id, category.main_category)}
-                            variant="destructive"
-                            size="sm"
-                            className="gap-2"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {category.subcategories.map((sub, index) => (
-                          <Badge key={index} variant="secondary">
-                            {sub}
-                          </Badge>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+      {isLoading ? (
+        <div className="space-y-3">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="h-20 rounded-xl bg-white/5 animate-pulse" />
+          ))}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {categories.map((category) => (
+            <div
+              key={category.id}
+              className="rounded-xl bg-black/15 border border-white/5 overflow-hidden"
+            >
+              {editingId === category.id ? (
+                <div className="p-3 space-y-3">
+                  <div className="grid grid-cols-[1fr_60px] gap-2">
+                    <Input
+                      value={editForm.main_category}
+                      onChange={(e) => setEditForm({ ...editForm, main_category: e.target.value })}
+                      placeholder="カテゴリー名"
+                      className="h-8 text-sm bg-black/20 border-white/10 text-white"
+                    />
+                    <Input
+                      value={editForm.icon}
+                      onChange={(e) => setEditForm({ ...editForm, icon: e.target.value })}
+                      maxLength={2}
+                      className="h-8 text-sm text-center bg-black/20 border-white/10 text-white"
+                    />
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-white/40 mb-1">小カテゴリー（カンマ区切り）</p>
+                    <Input
+                      value={editForm.subcategories}
+                      onChange={(e) => setEditForm({ ...editForm, subcategories: e.target.value })}
+                      placeholder="食料品, 外食, カフェ"
+                      className="h-8 text-sm bg-black/20 border-white/10 text-white"
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => saveEdit(category.id)}
+                      className="flex-1 flex items-center justify-center gap-1.5 p-2 rounded-lg text-xs font-semibold text-white"
+                      style={{ backgroundColor: theme.primary }}
+                    >
+                      <Save className="h-3.5 w-3.5" />
+                      保存
+                    </button>
+                    <button
+                      onClick={cancelEdit}
+                      className="flex items-center justify-center gap-1.5 p-2 rounded-lg text-xs font-semibold text-white/60 bg-white/10 hover:bg-white/15"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                 </div>
-              ))}
+              ) : (
+                <div className="p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2.5">
+                      <span className="text-2xl">{category.icon}</span>
+                      <span className="text-sm font-bold text-white">{category.main_category}</span>
+                    </div>
+                    <div className="flex gap-1.5">
+                      <button
+                        onClick={() => startEdit(category)}
+                        className="p-1.5 rounded-lg hover:bg-white/10 transition-colors text-white/40 hover:text-white/70"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={() => deleteCategory(category.id, category.main_category)}
+                        className="p-1.5 rounded-lg hover:bg-red-500/20 transition-colors text-white/40 hover:text-red-400"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {category.subcategories.map((sub, index) => (
+                      <span
+                        key={index}
+                        className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] bg-white/10 text-white/60 border border-white/5"
+                      >
+                        {sub}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* その他の設定 */}
-      <Card className="bg-white/50 dark:bg-slate-900/50 backdrop-blur-xl border-0 shadow-xl">
-        <CardHeader>
-          <CardTitle>その他の設定</CardTitle>
-          <CardDescription>準備中</CardDescription>
-        </CardHeader>
-        <CardContent className="py-12 text-center text-muted-foreground">
-          <SettingsIcon className="h-16 w-16 mx-auto mb-4 text-gray-300 dark:text-gray-700" />
-          <p>その他の設定は今後追加予定です</p>
-        </CardContent>
-      </Card>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

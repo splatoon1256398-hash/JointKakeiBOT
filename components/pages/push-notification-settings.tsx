@@ -29,9 +29,19 @@ export function PushNotificationSettings() {
       return;
     }
 
-    // 既存購読チェック
+    // 既存購読チェック（タイムアウト付き）
     try {
-      const registration = await navigator.serviceWorker.ready;
+      const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000));
+      const registration = await Promise.race([
+        navigator.serviceWorker.getRegistration(),
+        timeout,
+      ]);
+
+      if (!registration) {
+        setPushState(permission === "granted" ? "unsubscribed" : "prompt");
+        return;
+      }
+
       const subscription = await registration.pushManager.getSubscription();
       if (subscription) {
         setPushState("subscribed");

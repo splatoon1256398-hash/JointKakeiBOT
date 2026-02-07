@@ -13,7 +13,7 @@ interface QuickStatsCardProps {
 export function QuickStatsCard({ title, value, icon: Icon, subtitle, colorClass = "from-purple-600 to-blue-600" }: QuickStatsCardProps) {
   return (
     <div className="relative group cursor-pointer">
-      <div className="relative p-2.5 rounded-lg bg-slate-800/50 backdrop-blur-xl border border-slate-700/50 shadow-lg hover:shadow-xl transition-all hover:scale-[1.02]">
+      <div className="relative p-2.5 card-solid hover:shadow-xl transition-all hover:scale-[1.02]">
         <div className="flex items-center gap-2 mb-1">
           <div className={`p-1 rounded-md bg-gradient-to-br ${colorClass}`}>
             <Icon className="w-3 h-3 text-white" />

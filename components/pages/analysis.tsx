@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase";
 import { useApp } from "@/contexts/app-context";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { ExpenseCard } from "@/components/widgets/expense-card";
+import { EditTransactionDialog, TransactionForEdit } from "@/components/edit-transaction-dialog";
 
 interface Transaction {
   id: string;
@@ -35,6 +36,8 @@ export function Analysis() {
   const [drillLevel, setDrillLevel] = useState<DrillLevel>('overview');
   const [selectedMainCategory, setSelectedMainCategory] = useState<string>('');
   const [selectedSubCategory, setSelectedSubCategory] = useState<string>('');
+  const [editingTransaction, setEditingTransaction] = useState<TransactionForEdit | null>(null);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -171,7 +174,7 @@ export function Analysis() {
   const renderOverview = () => (
     <div className="space-y-3">
       {/* 支出ドーナツグラフ */}
-      <div className="rounded-2xl p-4" style={{ background: theme.cardBg, border: '1px solid rgba(255,255,255,0.08)' }}>
+      <div className="card-solid p-4">
         <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
           <TrendingDown className="h-4 w-4 text-red-400" />
           今月の支出内訳
@@ -211,7 +214,7 @@ export function Analysis() {
       </div>
 
       {/* カテゴリー別リスト */}
-      <div className="rounded-2xl p-4" style={{ background: theme.cardBg, border: '1px solid rgba(255,255,255,0.08)' }}>
+      <div className="card-solid p-4">
         <h3 className="text-sm font-semibold text-white mb-3">カテゴリー詳細</h3>
         <div className="space-y-2">
           {categoryData.map((cat) => {
@@ -220,7 +223,7 @@ export function Analysis() {
               <button
                 key={cat.name}
                 onClick={() => handleMainCategoryClick(cat.name)}
-                className="w-full flex items-center gap-3 p-3 rounded-xl bg-black/15 border border-white/5 hover:bg-black/25 transition-colors text-left"
+                className="w-full flex items-center gap-3 p-3 rounded-xl card-solid-inner hover:bg-white/[0.07] transition-colors text-left"
               >
                 <span className="text-2xl flex-shrink-0">{cat.icon}</span>
                 <div className="flex-1 min-w-0">
@@ -243,7 +246,7 @@ export function Analysis() {
       </div>
 
       {/* 年間支出推移 */}
-      <div className="rounded-2xl p-4" style={{ background: theme.cardBg, border: '1px solid rgba(255,255,255,0.08)' }}>
+      <div className="card-solid p-4">
         <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
           <TrendingUp className="h-4 w-4 text-blue-400" />
           年間支出推移
@@ -275,7 +278,7 @@ export function Analysis() {
           <span className="text-sm">カテゴリー一覧に戻る</span>
         </button>
         
-        <div className="rounded-2xl p-4" style={{ background: theme.cardBg, border: '1px solid rgba(255,255,255,0.08)' }}>
+        <div className="card-solid p-4">
           <div className="flex items-center gap-3 mb-4">
             <span className="text-3xl">{icon}</span>
             <div>
@@ -294,7 +297,7 @@ export function Analysis() {
                   <button
                     key={sub.name}
                     onClick={() => handleSubCategoryClick(sub.name)}
-                    className="w-full flex items-center gap-3 p-3 rounded-xl bg-black/15 border border-white/5 hover:bg-black/25 transition-colors text-left"
+                    className="w-full flex items-center gap-3 p-3 rounded-xl card-solid-inner hover:bg-white/[0.07] transition-colors text-left"
                   >
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between">
@@ -331,7 +334,7 @@ export function Analysis() {
           <span className="text-sm">{selectedMainCategory} に戻る</span>
         </button>
         
-        <div className="rounded-2xl p-4" style={{ background: theme.cardBg, border: '1px solid rgba(255,255,255,0.08)' }}>
+        <div className="card-solid p-4">
           <div className="mb-4">
             <h3 className="text-lg font-bold text-white">{selectedSubCategory}</h3>
             <p className="text-xs text-white/40">{selectedMainCategory} &gt; {selectedSubCategory}</p>
@@ -355,6 +358,19 @@ export function Analysis() {
                     amount={t.amount}
                     date={t.date}
                     showDate
+                    onEdit={() => {
+                      setEditingTransaction({
+                        id: t.id,
+                        date: t.date,
+                        category_main: t.category_main,
+                        category_sub: t.category_sub,
+                        store_name: t.store_name,
+                        amount: t.amount,
+                        memo: t.memo,
+                        user_type: selectedUser,
+                      });
+                      setIsEditDialogOpen(true);
+                    }}
                   />
                 ))}
             </div>
@@ -379,6 +395,13 @@ export function Analysis() {
           {drillLevel === 'detail' && renderDetail()}
         </>
       )}
+
+      {/* 編集ダイアログ */}
+      <EditTransactionDialog
+        open={isEditDialogOpen}
+        onOpenChange={setIsEditDialogOpen}
+        transaction={editingTransaction}
+      />
     </div>
   );
 }

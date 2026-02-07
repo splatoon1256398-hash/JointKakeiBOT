@@ -42,7 +42,7 @@ const getUserTheme = (userType: UserType): UserTheme => {
       secondary: "#a855f7",
       background: "#8b5cf6",
       textOnBg: "#f8fafc",
-      cardBg: "rgba(0,0,0,0.25)",
+      cardBg: "rgba(15,23,42,0.75)",
       gradient: "from-purple-600 to-violet-600",
       light: "from-purple-50 to-violet-50 dark:from-purple-950 dark:to-violet-950",
       dark: "from-purple-900/30 to-violet-900/30",
@@ -53,7 +53,7 @@ const getUserTheme = (userType: UserType): UserTheme => {
       secondary: "#2851f0",
       background: "#022fe3",
       textOnBg: "#f8fafc",
-      cardBg: "rgba(0,0,0,0.25)",
+      cardBg: "rgba(15,23,42,0.75)",
       gradient: "from-blue-700 to-indigo-600",
       light: "from-blue-50 to-indigo-50 dark:from-blue-950 dark:to-indigo-950",
       dark: "from-blue-900/30 to-indigo-900/30",
@@ -64,7 +64,7 @@ const getUserTheme = (userType: UserType): UserTheme => {
       secondary: "#96b08e",
       background: "#7c9475",
       textOnBg: "#f8fafc",
-      cardBg: "rgba(0,0,0,0.22)",
+      cardBg: "rgba(15,23,42,0.75)",
       gradient: "from-green-600 to-emerald-500",
       light: "from-green-50 to-emerald-50 dark:from-green-950 dark:to-emerald-950",
       dark: "from-green-900/30 to-emerald-900/30",
@@ -136,7 +136,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           triggerRefresh();
         }
         if (result.errors.length > 0) {
-          console.error("固定費処理エラー:", result.errors);
+          console.error("固定費処理エラー:", JSON.stringify(result.errors, null, 2));
         }
       });
     }

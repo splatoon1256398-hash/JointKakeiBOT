@@ -16,7 +16,7 @@ webpush.setVapidDetails(
 
 export async function POST(request: NextRequest) {
   try {
-    const { title, body, excludeUserId } = await request.json();
+    const { title, body, excludeUserId, targetUserId } = await request.json();
 
     if (!title || !body) {
       return NextResponse.json(
@@ -25,11 +25,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 全ユーザーの購読を取得（送信者自身を除く）
+    // 購読を取得
     let query = supabaseAdmin
       .from("push_subscriptions")
       .select("*");
 
+    // 特定ユーザーに送信する場合
+    if (targetUserId) {
+      query = query.eq("user_id", targetUserId);
+    }
+
+    // 送信者自身を除外する場合
     if (excludeUserId) {
       query = query.neq("user_id", excludeUserId);
     }
