@@ -99,11 +99,14 @@ export function Dashboard({ onNavigateToAnalysis }: DashboardProps) {
 
   const getMonthRange = () => {
     const now = new Date();
-    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
-    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    const firstDay = new Date(year, month, 1);
+    // new Date(year, month+1, 0) で正確な末日を取得（2月=28/29, etc）
+    const lastDay = new Date(year, month + 1, 0);
     return {
-      start: firstDay.toISOString().split('T')[0],
-      end: lastDay.toISOString().split('T')[0],
+      start: `${year}-${String(month + 1).padStart(2, '0')}-01`,
+      end: `${year}-${String(month + 1).padStart(2, '0')}-${String(lastDay.getDate()).padStart(2, '0')}`,
     };
   };
 
@@ -204,9 +207,10 @@ export function Dashboard({ onNavigateToAnalysis }: DashboardProps) {
         .select("home_widgets")
         .eq("user_id", user.id)
         .single();
-      if (data?.home_widgets && Array.isArray(data.home_widgets)) {
+      if (data?.home_widgets && Array.isArray(data.home_widgets) && data.home_widgets.length > 0) {
         setWidgetSlots(data.home_widgets as WidgetSlot[]);
       }
+      // 空配列やnullの場合はデフォルト値を維持
     } catch {
       // デフォルトのまま
     }

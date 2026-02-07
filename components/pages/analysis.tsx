@@ -103,20 +103,22 @@ export function Analysis() {
       });
       setCategoryIcons(icons);
 
-      // 選択月の範囲
-      const firstDay = new Date(selectedYear, selectedMonth - 1, 1);
-      const lastDay = new Date(selectedYear, selectedMonth, 0);
-      const firstDayStr = firstDay.toISOString().split('T')[0];
-      const lastDayStr = lastDay.toISOString().split('T')[0];
+      // 選択月の範囲（toISOStringはUTC変換でずれるので直接文字列を構築）
+      const lastDay = new Date(selectedYear, selectedMonth, 0); // 正確な末日
+      const mm = String(selectedMonth).padStart(2, '0');
+      const firstDayStr = `${selectedYear}-${mm}-01`;
+      const lastDayStr = `${selectedYear}-${mm}-${String(lastDay.getDate()).padStart(2, '0')}`;
 
       // 年間推移用: 選択月を含む過去12ヶ月
-      const twelveMonthsAgo = new Date(selectedYear, selectedMonth - 12, 1);
+      const prevYear = selectedMonth <= 12 ? selectedYear - 1 : selectedYear;
+      const prevMonth = ((selectedMonth - 12 - 1 + 12) % 12) + 1;
+      const twelveMonthsAgoStr = `${prevYear}-${String(prevMonth).padStart(2, '0')}-01`;
 
       const { data: transactionsData } = await supabase
         .from('transactions')
         .select('*')
         .eq('user_type', selectedUser)
-        .gte('date', twelveMonthsAgo.toISOString().split('T')[0])
+        .gte('date', twelveMonthsAgoStr)
         .lte('date', lastDayStr)
         .order('date', { ascending: true });
 

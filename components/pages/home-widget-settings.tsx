@@ -80,8 +80,16 @@ export function HomeWidgetSettings() {
         console.error("ウィジェット設定取得エラー:", error);
       }
 
-      if (data?.home_widgets && Array.isArray(data.home_widgets)) {
-        setSlots(data.home_widgets as WidgetSlot[]);
+      if (data?.home_widgets && Array.isArray(data.home_widgets) && data.home_widgets.length > 0) {
+        // 有効なスロットのみ使用。4つ未満ならデフォルトで補填
+        const loaded = data.home_widgets as WidgetSlot[];
+        while (loaded.length < 4) {
+          loaded.push(DEFAULT_SLOTS[loaded.length] || { type: "total_expense" });
+        }
+        setSlots(loaded.slice(0, 4));
+      } else {
+        // 空配列 or null → デフォルト値を使用
+        setSlots([...DEFAULT_SLOTS]);
       }
     } catch (err) {
       console.error("ウィジェット設定読込エラー:", err);

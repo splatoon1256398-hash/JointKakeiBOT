@@ -173,6 +173,12 @@ export function Chat() {
       // 現在のコンテキストを取得
       const context = await fetchCurrentContext();
 
+      // 会話履歴を構築（過去のメッセージを保持して文脈を維持）
+      const conversationHistory = messages.map(m => ({
+        role: m.role === "user" ? "user" : "model",
+        parts: [{ text: m.content }],
+      }));
+
       // システムプロンプト構築
       const systemPrompt = `あなたは「${selectedUser}」の家計簿AIアシスタントです。
 
@@ -185,24 +191,33 @@ export function Chat() {
 ${context?.categories.map((c: any) => `- ${c.main_category}: ${c.subcategories.join(', ')}`).join('\n')}
 
 【対応ルール】
-1. 支出の記録リクエスト（「〇〇で△△円使った」など）:
-   - 必須: user_type（共同/自分のいずれか）、amount（金額）
-   - 「自分」と言われたら、現在のselectedUserをuser_typeに使用
-   - 推測: category_main、category_sub（文脈から推測）
-   - user_typeまたはamountが不明な場合は必ず聞き返す
-   - 記録後、「✅ 【区分: 〇〇 / カテゴリー: △△ / 金額: ¥□□】を記録しました！」の形式で確認
+1. 支出の記録リクエスト（「〇〇で△△円使った」「マクドナルド 500円」など）:
+   - 必須: user_type（共同/${selectedUser}）、amount（金額）
+   - 「自分」と言われたら user_type = "${selectedUser}" を使用
+   - カテゴリーは文脈から推測（利用可能なカテゴリー一覧から選ぶ）
+   - user_type が不明な場合のみ聞き返す。金額とカテゴリーが推測できるなら即座に記録する
 
-2. 貯金の入金リクエスト:
-   - どの目標か確認
-   - 完了後、残りの必要額も伝える
+2. 店名とメモの分離ルール（重要）:
+   - 「ドミノピザ チーズピザ 4500円」→ store_name="ドミノピザ", memo="チーズピザ", amount=4500
+   - 「マクドナルド 500円」→ store_name="マクドナルド", memo="", amount=500
+   - 「コンビニでお茶 150円」→ store_name="コンビニ", memo="お茶", amount=150
+   - 「タクシー 2000円」→ store_name="タクシー", memo="", amount=2000
+   - 店名＝ブランド名・店舗名・サービス名。メモ＝購入した商品・詳細情報。
+   - 店名だけの場合はmemoを空文字列にする。絶対に店名をmemoに入れない。
 
-3. 質問への回答:
-   - 現在の状況データを参照して回答
+3. 記録後の確認:
+   - 「✅ 【区分: 〇〇 / カテゴリー: △△ / 店名: □□ / 金額: ¥XX】を記録しました！」の形式
 
-4. 返信スタイル:
-   - 簡潔で親しみやすい日本語
-   - 絵文字を適度に使用
-   - 登録完了時は必ずサマリーを表示`;
+4. 金額の再確認ループの禁止:
+   - ユーザーが金額を含むメッセージを送った場合、「金額は？」と再度聞かない
+   - 1回のメッセージに店名・金額が含まれていれば即座にrecordExpenseを呼ぶ
+
+5. 貯金の入金リクエスト:
+   - どの目標か確認、完了後残りの必要額も伝える
+
+6. 質問への回答: 現在の状況データを参照して回答
+
+7. 返信スタイル: 簡潔で親しみやすい日本語、絵文字を適度に使用`;
 
       // Geminiモデル（Function Calling対応）
       const model = genAI.getGenerativeModel({
@@ -246,10 +261,15 @@ ${context?.categories.map((c: any) => `- ${c.main_category}: ${c.subcategories.j
         history: [
           { role: 'user', parts: [{ text: systemPrompt }] },
           { role: 'model', parts: [{ text: 'はい、承知しました。家計簿アシスタントとして対応します。' }] },
+          // 過去の会話履歴を含めて文脈を維持（最新のユーザーメッセージは除く）
+          ...conversationHistory.slice(1, -1).map(m => ({
+            role: m.role as "user" | "model",
+            parts: m.parts,
+          })),
         ],
       });
 
-      const result = await chat.sendMessage(input);
+      const result = await chat.sendMessage(userMessage.content);
       const response = result.response;
 
       // Function Callingの処理
@@ -313,10 +333,10 @@ ${context?.categories.map((c: any) => `- ${c.main_category}: ${c.subcategories.j
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-120px)] pb-24 pt-3">
-      {/* ヘッダー（テーマカラーのボーダー） */}
+    <div className="flex flex-col pt-3 overflow-hidden" style={{ height: 'calc(100dvh - 120px)' }}>
+      {/* ヘッダー */}
       <div 
-        className="relative overflow-hidden rounded-xl p-3 shadow-xl backdrop-blur-xl mb-3"
+        className="relative overflow-hidden rounded-xl p-3 shadow-xl backdrop-blur-xl mb-3 flex-shrink-0"
         style={{
           background: 'rgba(15, 23, 42, 0.6)',
           border: `2px solid ${theme.primary}`
@@ -328,9 +348,9 @@ ${context?.categories.map((c: any) => `- ${c.main_category}: ${c.subcategories.j
         </div>
       </div>
 
-      {/* メッセージエリア */}
-      <Card className="flex-1 bg-slate-800/50 backdrop-blur-xl border-slate-700/50 shadow-xl overflow-hidden flex flex-col">
-        <CardContent className="flex-1 overflow-y-auto p-4 space-y-4">
+      {/* メッセージエリア + 入力エリアをflexで収める */}
+      <Card className="flex-1 bg-slate-800/50 backdrop-blur-xl border-slate-700/50 shadow-xl overflow-hidden flex flex-col min-h-0">
+        <CardContent className="flex-1 overflow-y-auto p-4 space-y-4 overscroll-none">
           {messages.map((message) => (
             <div
               key={message.id}
@@ -339,9 +359,10 @@ ${context?.categories.map((c: any) => `- ${c.main_category}: ${c.subcategories.j
               <div
                 className={`max-w-[80%] rounded-2xl p-4 ${
                   message.role === "user"
-                    ? "bg-gradient-to-br from-purple-600 to-blue-600 text-white"
+                    ? "text-white"
                     : "bg-slate-800/90 border border-white/10 text-gray-100"
                 }`}
+                style={message.role === "user" ? { background: `linear-gradient(135deg, ${theme.primary}, ${theme.secondary})` } : {}}
               >
                 {message.role === "assistant" && (
                   <div className="flex items-center gap-2 mb-2">
@@ -366,8 +387,8 @@ ${context?.categories.map((c: any) => `- ${c.main_category}: ${c.subcategories.j
           <div ref={messagesEndRef} />
         </CardContent>
 
-        {/* 入力エリア */}
-        <div className="p-4 border-t border-slate-700/50">
+        {/* 入力エリア: sticky bottom, safe-area対応 */}
+        <div className="flex-shrink-0 p-3 border-t border-slate-700/50 bg-slate-900/80 backdrop-blur-md" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
           <div className="flex gap-2">
             <Input
               value={input}
@@ -380,7 +401,7 @@ ${context?.categories.map((c: any) => `- ${c.main_category}: ${c.subcategories.j
             <Button
               onClick={handleSend}
               disabled={isLoading || !input.trim()}
-              className="bg-gradient-to-br from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
+              style={{ background: `linear-gradient(135deg, ${theme.primary}, ${theme.secondary})` }}
             >
               <Send className="h-5 w-5" />
             </Button>

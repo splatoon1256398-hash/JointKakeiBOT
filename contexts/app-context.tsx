@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { User } from '@supabase/supabase-js';
 import { processFixedExpenses } from '@/lib/fixed-expenses';
 
-export type UserType = "共同" | string; // "共同" or ユーザー名
+export type UserType = "共同" | string;
 
 export interface UserTheme {
   primary: string;
@@ -37,9 +37,6 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-/**
- * HEX色からHSLを取得
- */
 function hexToHsl(hex: string): [number, number, number] {
   const r = parseInt(hex.slice(1, 3), 16) / 255;
   const g = parseInt(hex.slice(3, 5), 16) / 255;
@@ -73,29 +70,29 @@ function generateSecondaryColor(hex: string): string {
   return hslToHex(h, Math.min(s + 10, 100), Math.min(l + 10, 85));
 }
 
-// selectedUser 別のデフォルト色（カスタムが無い場合のフォールバック）
-const getDefaultColors = (userType: UserType): { primary: string; secondary: string } => {
-  if (userType === "共同") {
-    return { primary: "#8b5cf6", secondary: "#a855f7" };
-  } else if (userType === "れん" || userType.includes("れん")) {
+// ===== カラーロジック =====
+// 共同 → 必ずパープル (#4f46e5) を強制適用。カスタム色無視。
+// 個人 → customThemeColor があればそれを使う。なければデフォルト色。
+const JOINT_COLOR = { primary: "#4f46e5", secondary: "#6366f1" };
+
+const getDefaultPersonalColors = (userType: UserType): { primary: string; secondary: string } => {
+  if (userType === "れん" || userType.includes("れん")) {
     return { primary: "#022fe3", secondary: "#2851f0" };
   } else { // あかね
     return { primary: "#7c9475", secondary: "#96b08e" };
   }
 };
 
-const buildTheme = (primary: string, secondary: string): UserTheme => {
-  return {
-    primary,
-    secondary,
-    background: primary,
-    textOnBg: "#f8fafc",
-    cardBg: "rgba(15,23,42,0.75)",
-    gradient: `from-[${primary}] to-[${secondary}]`,
-    light: "from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900",
-    dark: "from-slate-900/30 to-slate-800/30",
-  };
-};
+const buildTheme = (primary: string, secondary: string): UserTheme => ({
+  primary,
+  secondary,
+  background: primary,
+  textOnBg: "#f8fafc",
+  cardBg: "rgba(15,23,42,0.75)",
+  gradient: `from-[${primary}] to-[${secondary}]`,
+  light: "from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900",
+  dark: "from-slate-900/30 to-slate-800/30",
+});
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -104,46 +101,56 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [selectedUser, setSelectedUser] = useState<UserType>("共同");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
-  // customThemeColor は「ログインユーザー個人」のカスタム色。
-  // selectedUser が変わっても、このカスタム色が常に優先表示される。
   const [customThemeColor, setCustomThemeColor] = useState<string | null>(null);
   const fixedExpensesProcessed = useRef(false);
 
-  // テーマの構築:
-  // - customThemeColor があれば、selectedUser に関係なく常にそのカラーを使用
-  //   → ログインユーザーの「個人色」が共同表示でも維持される
-  // - customThemeColor が null なら selectedUser のデフォルト色を使用
-  const primary = customThemeColor || getDefaultColors(selectedUser).primary;
-  const secondary = customThemeColor
-    ? generateSecondaryColor(customThemeColor)
-    : getDefaultColors(selectedUser).secondary;
+  // ===== テーマ構築ロジック =====
+  // 共同 → 固定パープル（customThemeColor を無視）
+  // 個人 → customThemeColor > デフォルト色
+  let primary: string;
+  let secondary: string;
+  if (selectedUser === "共同") {
+    primary = JOINT_COLOR.primary;
+    secondary = JOINT_COLOR.secondary;
+  } else {
+    const defaults = getDefaultPersonalColors(selectedUser);
+    primary = customThemeColor || defaults.primary;
+    secondary = customThemeColor ? generateSecondaryColor(customThemeColor) : defaults.secondary;
+  }
   const theme = buildTheme(primary, secondary);
 
   const triggerRefresh = () => {
     setRefreshTrigger(prev => prev + 1);
   };
 
-  // DB からカスタムテーマカラーを読み込み（ログインユーザー個人の設定）
+  // DB からカスタムテーマカラーを安全に読み込み
+  // theme_color カラムが存在しない場合でもクラッシュしない
   const loadCustomThemeColor = useCallback(async (userId: string) => {
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("user_settings")
-        .select("theme_color")
+        .select("*")
         .eq("user_id", userId)
         .single();
-      if (data?.theme_color) {
-        setCustomThemeColor(data.theme_color);
+
+      if (error || !data) {
+        setCustomThemeColor(null);
+        return;
+      }
+
+      // theme_color カラムが存在するかを安全にチェック
+      const themeColor = (data as Record<string, unknown>)["theme_color"];
+      if (typeof themeColor === "string" && themeColor.startsWith("#")) {
+        setCustomThemeColor(themeColor);
       } else {
         setCustomThemeColor(null);
       }
     } catch {
-      // 未設定の場合はnullのまま → selectedUser のデフォルト色が使われる
       setCustomThemeColor(null);
     }
   }, []);
 
-  // DB にカスタムテーマカラーを保存（ログインユーザー個人の設定）
-  // color が null の場合はリセット（DBから削除）
+  // DB にカスタムテーマカラーを保存
   const saveCustomThemeColor = useCallback(async (color: string | null) => {
     if (!user) return;
     setCustomThemeColor(color);
@@ -170,7 +177,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [user]);
 
   useEffect(() => {
-    // 初回のユーザー情報取得
     supabase.auth.getUser().then(({ data: { user } }) => {
       setUser(user);
       if (user?.user_metadata?.display_name) {
@@ -182,7 +188,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setIsAuthLoading(false);
     });
 
-    // 認証状態の変更を監視
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
       if (session?.user?.user_metadata?.display_name) {
@@ -197,25 +202,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, [loadCustomThemeColor]);
 
-  // Supabase Realtime: transactions テーブルの INSERT を購読
   useEffect(() => {
     const channel = supabase
       .channel('transactions-realtime')
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'transactions' },
-        () => {
-          triggerRefresh();
-        }
+        () => { triggerRefresh(); }
       )
       .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => { supabase.removeChannel(channel); };
   }, []);
 
-  // 固定費の自動反映処理（アプリ起動時に1回だけ実行）
   useEffect(() => {
     if (user && !fixedExpensesProcessed.current) {
       fixedExpensesProcessed.current = true;
@@ -239,21 +238,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AppContext.Provider value={{ 
-      user,
-      isAuthLoading,
-      displayName,
-      selectedUser, 
-      setSelectedUser, 
-      isSettingsOpen, 
-      setIsSettingsOpen,
-      signOut,
-      theme,
-      refreshTrigger,
-      triggerRefresh,
-      customThemeColor,
-      setCustomThemeColor,
-      saveCustomThemeColor,
+    <AppContext.Provider value={{
+      user, isAuthLoading, displayName,
+      selectedUser, setSelectedUser,
+      isSettingsOpen, setIsSettingsOpen,
+      signOut, theme, refreshTrigger, triggerRefresh,
+      customThemeColor, setCustomThemeColor, saveCustomThemeColor,
     }}>
       {children}
     </AppContext.Provider>
