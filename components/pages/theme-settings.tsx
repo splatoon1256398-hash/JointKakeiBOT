@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { Palette, Check, RotateCcw } from "lucide-react";
+import { Palette, Check, RotateCcw, Info } from "lucide-react";
 import { useApp } from "@/contexts/app-context";
 
 const PRESET_COLORS = [
@@ -24,18 +24,18 @@ const PRESET_COLORS = [
 ];
 
 export function ThemeSettings() {
-  const { theme, customThemeColor, setCustomThemeColor, saveCustomThemeColor, selectedUser } = useApp();
+  const { theme, customThemeColor, setCustomThemeColor, saveCustomThemeColor, displayName } = useApp();
   const [customHex, setCustomHex] = useState(customThemeColor || theme.primary);
   const [isSaving, setIsSaving] = useState(false);
 
   const handlePresetClick = useCallback((hex: string) => {
     setCustomHex(hex);
-    setCustomThemeColor(hex); // リアルタイムプレビュー
+    setCustomThemeColor(hex);
   }, [setCustomThemeColor]);
 
   const handleCustomColorChange = useCallback((hex: string) => {
     setCustomHex(hex);
-    setCustomThemeColor(hex); // リアルタイムプレビュー
+    setCustomThemeColor(hex);
   }, [setCustomThemeColor]);
 
   const handleSave = async () => {
@@ -47,10 +47,16 @@ export function ThemeSettings() {
     }
   };
 
-  const handleReset = useCallback(() => {
-    setCustomThemeColor(null);
-    setCustomHex(theme.primary);
-  }, [setCustomThemeColor, theme.primary]);
+  const handleReset = async () => {
+    setIsSaving(true);
+    try {
+      // DB からも削除し、デフォルト色に戻す
+      await saveCustomThemeColor(null);
+      setCustomHex(theme.primary);
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -64,6 +70,16 @@ export function ThemeSettings() {
         </p>
       </div>
 
+      {/* 個人設定の説明 */}
+      <div className="rounded-lg p-3 bg-blue-500/10 border border-blue-500/20">
+        <div className="flex items-start gap-2">
+          <Info className="h-3.5 w-3.5 text-blue-400 mt-0.5 flex-shrink-0" />
+          <p className="text-[10px] text-blue-300/80 leading-relaxed">
+            テーマカラーはあなた（{displayName || "ログインユーザー"}）個人の設定です。共同モード表示中でも、あなたが選んだ色が維持されます。
+          </p>
+        </div>
+      </div>
+
       {/* 現在のプレビュー */}
       <div className="rounded-xl overflow-hidden">
         <div
@@ -72,7 +88,7 @@ export function ThemeSettings() {
         >
           <div>
             <p className="text-white font-bold text-sm">プレビュー</p>
-            <p className="text-white/70 text-xs">{selectedUser} のテーマ</p>
+            <p className="text-white/70 text-xs">{displayName || "あなた"} のテーマ</p>
           </div>
           <div
             className="w-12 h-12 rounded-xl border-2 border-white/30 flex items-center justify-center"
@@ -159,7 +175,8 @@ export function ThemeSettings() {
       <div className="flex gap-2">
         <button
           onClick={handleReset}
-          className="flex-1 p-3 rounded-xl text-white/60 text-sm font-semibold bg-white/5 hover:bg-white/10 transition-colors flex items-center justify-center gap-2"
+          disabled={isSaving}
+          className="flex-1 p-3 rounded-xl text-white/60 text-sm font-semibold bg-white/5 hover:bg-white/10 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
         >
           <RotateCcw className="h-4 w-4" />
           リセット

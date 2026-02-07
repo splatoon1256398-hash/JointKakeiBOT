@@ -1,7 +1,11 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { LayoutGrid, Loader2, Save, Check, ChevronDown, ChevronUp } from "lucide-react";
+import {
+  LayoutGrid, Loader2, Save, Check,
+  UtensilsCrossed, Coffee, PiggyBank, Calendar,
+  Banknote, ShoppingCart, TrendingDown, HandCoins,
+} from "lucide-react";
 import { useApp } from "@/contexts/app-context";
 import { supabase } from "@/lib/supabase";
 import { WIDGET_TYPES } from "@/lib/widgets";
@@ -22,6 +26,30 @@ const DEFAULT_SLOTS: WidgetSlot[] = [
   { type: "payday", payday: 25, paydayShift: "before" },
 ];
 
+// ウィジェットのアイコンマッピング
+const WIDGET_ICONS: Record<string, any> = {
+  food_budget: UtensilsCrossed,
+  dining_count: Coffee,
+  saving_progress: PiggyBank,
+  payday: Calendar,
+  category_budget: ShoppingCart,
+  no_money_day: Banknote,
+  total_expense: TrendingDown,
+  total_income: HandCoins,
+};
+
+// ウィジェットの色マッピング
+const WIDGET_COLORS: Record<string, string> = {
+  food_budget: "#f97316",
+  dining_count: "#ec4899",
+  saving_progress: "#10b981",
+  payday: "#3b82f6",
+  category_budget: "#f59e0b",
+  no_money_day: "#14b8a6",
+  total_expense: "#ef4444",
+  total_income: "#059669",
+};
+
 export function HomeWidgetSettings() {
   const { theme, user } = useApp();
   const [slots, setSlots] = useState<WidgetSlot[]>(DEFAULT_SLOTS);
@@ -30,7 +58,6 @@ export function HomeWidgetSettings() {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [categories, setCategories] = useState<{ main: string; icon: string; subs: string[] }[]>([]);
   const [savingGoals, setSavingGoals] = useState<{ id: string; name: string }[]>([]);
-  const [expandedSlot, setExpandedSlot] = useState<number | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -95,14 +122,12 @@ export function HomeWidgetSettings() {
     setSlots(prev => {
       const newSlots = [...prev];
       newSlots[index] = { type };
-      // payday のデフォルト値
       if (type === "payday") {
         newSlots[index].payday = 25;
         newSlots[index].paydayShift = "before";
       }
       return newSlots;
     });
-    setExpandedSlot(null);
   }, []);
 
   const handleSave = async () => {
@@ -110,7 +135,6 @@ export function HomeWidgetSettings() {
     setIsSaving(true);
     setSaveSuccess(false);
     try {
-      // まず既存の行があるか確認
       const { data: existing } = await supabase
         .from("user_settings")
         .select("user_id")
@@ -119,14 +143,12 @@ export function HomeWidgetSettings() {
 
       let error;
       if (existing) {
-        // UPDATE
         const result = await supabase
           .from("user_settings")
           .update({ home_widgets: slots as unknown as Record<string, unknown>[] })
           .eq("user_id", user.id);
         error = result.error;
       } else {
-        // INSERT
         const result = await supabase
           .from("user_settings")
           .insert({ user_id: user.id, home_widgets: slots as unknown as Record<string, unknown>[] });
@@ -160,77 +182,89 @@ export function HomeWidgetSettings() {
           ホーム表示設定
         </h3>
         <p className="text-xs text-gray-400 mt-0.5">
-          ダッシュボードの4つの小カードに表示する内容を選択できます
+          ダッシュボードの4つの小カードに表示する内容を選択
         </p>
       </div>
 
-      <div className="space-y-3">
+      <div className="space-y-5">
         {slots.map((slot, index) => {
-          const currentWidget = WIDGET_TYPES.find(w => w.value === slot.type);
-          const isExpanded = expandedSlot === index;
+          const IconForSlot = WIDGET_ICONS[slot.type];
 
           return (
-            <div key={index} className="rounded-xl bg-black/15 border border-white/5 p-3 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-white/60">カード {index + 1}</span>
+            <div key={index} className="space-y-2">
+              {/* スロットヘッダー */}
+              <div className="flex items-center gap-2">
+                <div
+                  className="w-6 h-6 rounded-md flex items-center justify-center text-white text-[10px] font-bold"
+                  style={{ backgroundColor: theme.primary }}
+                >
+                  {index + 1}
+                </div>
+                <span className="text-xs font-semibold text-white/70">
+                  カード {index + 1}
+                  {slot.type && (
+                    <span className="text-white/40 ml-1">
+                      — {WIDGET_TYPES.find(w => w.value === slot.type)?.label}
+                    </span>
+                  )}
+                </span>
               </div>
 
-              {/* 現在の選択 + 展開トグル */}
-              <button
-                type="button"
-                onClick={() => setExpandedSlot(isExpanded ? null : index)}
-                className="w-full flex items-center justify-between p-2.5 rounded-lg bg-black/20 border border-white/10 hover:border-white/20 transition-colors"
-              >
-                <span className="text-sm text-white font-medium">
-                  {currentWidget?.label || "未選択"}
-                </span>
-                {isExpanded ? (
-                  <ChevronUp className="h-4 w-4 text-white/40" />
-                ) : (
-                  <ChevronDown className="h-4 w-4 text-white/40" />
-                )}
-              </button>
+              {/* ウィジェット選択カードグリッド（常に表示） */}
+              <div className="grid grid-cols-4 gap-1.5">
+                {WIDGET_TYPES.map(wt => {
+                  const WIcon = WIDGET_ICONS[wt.value];
+                  const color = WIDGET_COLORS[wt.value] || theme.primary;
+                  const isSelected = slot.type === wt.value;
 
-              {/* 展開時: ウィジェットタイプ選択グリッド */}
-              {isExpanded && (
-                <div className="grid grid-cols-2 gap-1.5 pt-1">
-                  {WIDGET_TYPES.map(wt => (
+                  return (
                     <button
                       key={wt.value}
                       type="button"
                       onClick={() => selectWidgetType(index, wt.value)}
-                      className={`p-2.5 rounded-lg text-xs font-semibold text-left transition-all flex items-center gap-2 ${
-                        slot.type === wt.value
-                          ? "text-white border-2"
-                          : "text-white/60 bg-black/15 border border-white/5 hover:bg-white/5"
+                      className={`relative flex flex-col items-center gap-1 p-2 rounded-lg transition-all ${
+                        isSelected
+                          ? "bg-white/10 ring-2 scale-[1.02]"
+                          : "bg-black/10 border border-white/5 hover:bg-white/5"
                       }`}
-                      style={
-                        slot.type === wt.value
-                          ? { backgroundColor: `${theme.primary}30`, borderColor: theme.primary }
-                          : {}
-                      }
+                      style={isSelected ? { boxShadow: `0 0 0 2px ${color}` } : {}}
                     >
-                      {slot.type === wt.value && <Check className="h-3 w-3 flex-shrink-0" style={{ color: theme.primary }} />}
-                      <span className="truncate">{wt.label}</span>
+                      {isSelected && (
+                        <div
+                          className="absolute -top-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center"
+                          style={{ backgroundColor: color }}
+                        >
+                          <Check className="h-2.5 w-2.5 text-white" />
+                        </div>
+                      )}
+                      <div
+                        className="w-7 h-7 rounded-md flex items-center justify-center"
+                        style={{ backgroundColor: `${color}20` }}
+                      >
+                        {WIcon && <WIcon className="h-3.5 w-3.5" style={{ color }} />}
+                      </div>
+                      <span className="text-[9px] leading-tight text-center text-white/60 font-medium">
+                        {wt.label}
+                      </span>
                     </button>
-                  ))}
-                </div>
-              )}
+                  );
+                })}
+              </div>
 
-              {/* カテゴリ選択（category_budget用） */}
+              {/* サブ設定（カテゴリ / 貯金 / 給料日） */}
               {slot.type === "category_budget" && (
-                <div className="space-y-1.5 pt-1">
+                <div className="pl-2 border-l-2 ml-3 space-y-1" style={{ borderColor: `${theme.primary}40` }}>
                   <p className="text-[10px] text-white/40">対象カテゴリ</p>
-                  <div className="flex flex-wrap gap-1.5">
+                  <div className="flex flex-wrap gap-1">
                     {categories.map(c => (
                       <button
                         key={c.main}
                         type="button"
                         onClick={() => updateSlot(index, { categoryMain: c.main, categorySub: undefined })}
-                        className={`px-2.5 py-1.5 rounded-lg text-xs transition-all ${
+                        className={`px-2 py-1 rounded-md text-[10px] transition-all ${
                           slot.categoryMain === c.main
                             ? "text-white font-semibold"
-                            : "text-white/50 bg-white/5 hover:bg-white/10"
+                            : "text-white/40 bg-white/5 hover:bg-white/10"
                         }`}
                         style={slot.categoryMain === c.main ? { backgroundColor: theme.primary } : {}}
                       >
@@ -241,34 +275,29 @@ export function HomeWidgetSettings() {
                 </div>
               )}
 
-              {/* 貯金目標選択（saving_progress用） */}
               {slot.type === "saving_progress" && savingGoals.length > 0 && (
-                <div className="space-y-1.5 pt-1">
+                <div className="pl-2 border-l-2 ml-3 space-y-1" style={{ borderColor: `${theme.primary}40` }}>
                   <p className="text-[10px] text-white/40">対象の貯金目標</p>
-                  <div className="space-y-1">
+                  <div className="flex flex-wrap gap-1">
                     <button
                       type="button"
                       onClick={() => updateSlot(index, { savingGoalId: undefined })}
-                      className={`w-full p-2 rounded-lg text-xs text-left transition-all ${
-                        !slot.savingGoalId
-                          ? "text-white font-semibold"
-                          : "text-white/50 bg-white/5 hover:bg-white/10"
+                      className={`px-2 py-1 rounded-md text-[10px] transition-all ${
+                        !slot.savingGoalId ? "text-white font-semibold" : "text-white/40 bg-white/5"
                       }`}
-                      style={!slot.savingGoalId ? { backgroundColor: `${theme.primary}30` } : {}}
+                      style={!slot.savingGoalId ? { backgroundColor: `${theme.primary}50` } : {}}
                     >
-                      全体の進捗
+                      全体
                     </button>
                     {savingGoals.map(g => (
                       <button
                         key={g.id}
                         type="button"
                         onClick={() => updateSlot(index, { savingGoalId: g.id })}
-                        className={`w-full p-2 rounded-lg text-xs text-left transition-all ${
-                          slot.savingGoalId === g.id
-                            ? "text-white font-semibold"
-                            : "text-white/50 bg-white/5 hover:bg-white/10"
+                        className={`px-2 py-1 rounded-md text-[10px] transition-all ${
+                          slot.savingGoalId === g.id ? "text-white font-semibold" : "text-white/40 bg-white/5"
                         }`}
-                        style={slot.savingGoalId === g.id ? { backgroundColor: `${theme.primary}30` } : {}}
+                        style={slot.savingGoalId === g.id ? { backgroundColor: `${theme.primary}50` } : {}}
                       >
                         {g.name}
                       </button>
@@ -277,44 +306,50 @@ export function HomeWidgetSettings() {
                 </div>
               )}
 
-              {/* 給料日設定（payday用） */}
               {slot.type === "payday" && (
-                <div className="grid grid-cols-2 gap-2 pt-1">
-                  <div>
-                    <label className="text-[10px] text-white/40 block mb-0.5">給料日（日）</label>
-                    <input
-                      type="number"
-                      min={1}
-                      max={31}
-                      value={slot.payday || 25}
-                      onChange={(e) => updateSlot(index, { payday: Number(e.target.value) })}
-                      className="w-full h-8 rounded-lg bg-black/20 border border-white/10 text-white text-xs px-2"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[10px] text-white/40 block mb-0.5">休日のずらし</label>
-                    <div className="flex gap-1">
-                      {[
-                        { value: "before" as const, label: "前倒し" },
-                        { value: "after" as const, label: "後ろ倒し" },
-                      ].map(opt => (
-                        <button
-                          key={opt.value}
-                          type="button"
-                          onClick={() => updateSlot(index, { paydayShift: opt.value })}
-                          className={`flex-1 h-8 rounded-lg text-xs font-semibold transition-all ${
-                            (slot.paydayShift || "before") === opt.value
-                              ? "text-white"
-                              : "text-white/50 bg-white/5"
-                          }`}
-                          style={(slot.paydayShift || "before") === opt.value ? { backgroundColor: theme.primary } : {}}
-                        >
-                          {opt.label}
-                        </button>
-                      ))}
+                <div className="pl-2 border-l-2 ml-3" style={{ borderColor: `${theme.primary}40` }}>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[10px] text-white/40 block mb-0.5">給料日</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={31}
+                        value={slot.payday || 25}
+                        onChange={(e) => updateSlot(index, { payday: Number(e.target.value) })}
+                        className="w-full h-7 rounded-md bg-black/20 border border-white/10 text-white text-xs px-2"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-white/40 block mb-0.5">休日ずらし</label>
+                      <div className="flex gap-1">
+                        {([
+                          { value: "before" as const, label: "前倒し" },
+                          { value: "after" as const, label: "後ろ倒し" },
+                        ]).map(opt => (
+                          <button
+                            key={opt.value}
+                            type="button"
+                            onClick={() => updateSlot(index, { paydayShift: opt.value })}
+                            className={`flex-1 h-7 rounded-md text-[10px] font-semibold transition-all ${
+                              (slot.paydayShift || "before") === opt.value
+                                ? "text-white"
+                                : "text-white/40 bg-white/5"
+                            }`}
+                            style={(slot.paydayShift || "before") === opt.value ? { backgroundColor: theme.primary } : {}}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 </div>
+              )}
+
+              {/* スロット間の区切り線 */}
+              {index < slots.length - 1 && (
+                <div className="border-t border-white/5 mt-1" />
               )}
             </div>
           );

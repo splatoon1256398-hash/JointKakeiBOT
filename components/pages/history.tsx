@@ -157,26 +157,31 @@ export function History({ isCompact = false }: HistoryProps) {
       <div className="space-y-6">
         {/* カレンダービュー */}
         {viewMode === 'calendar' && (
-          <div className="rounded-2xl overflow-hidden shadow-xl">
-            <style>{`
-              :root {
-                --theme-primary: ${theme.primary};
-                --theme-secondary: ${theme.secondary};
-                --theme-gradient: linear-gradient(135deg, ${theme.primary}, ${theme.secondary});
-                --theme-light: ${theme.primary}10;
-              }
-            `}</style>
-            <div className="calendar-wrapper">
-              <Calendar
-                onChange={(value) => setSelectedDate(value as Date)}
-                value={selectedDate}
-                tileContent={tileContent}
-                tileClassName={tileClassName}
-                locale="ja-JP"
-                className="w-full"
-              />
+          <div className="space-y-6">
+            {/* カレンダーコンテナ: card-solid + 中央配置 */}
+            <div className="card-solid overflow-hidden mx-auto max-w-md">
+              <style>{`
+                :root {
+                  --theme-primary: ${theme.primary};
+                  --theme-secondary: ${theme.secondary};
+                  --theme-gradient: linear-gradient(135deg, ${theme.primary}, ${theme.secondary});
+                  --theme-light: ${theme.primary}10;
+                }
+              `}</style>
+              <div className="calendar-wrapper">
+                <Calendar
+                  onChange={(value) => setSelectedDate(value as Date)}
+                  value={selectedDate}
+                  tileContent={tileContent}
+                  tileClassName={tileClassName}
+                  locale="ja-JP"
+                  className="w-full"
+                />
+              </div>
             </div>
-            <div className="bg-white/95 p-3 border-t border-gray-200">
+
+            {/* 選択日の支出カード一覧: mt-6 でカレンダーと余白確保 */}
+            <div className="card-solid overflow-hidden">
               {(() => {
                 const dateStr = selectedDate.toISOString().split('T')[0];
                 const dayTransactions = groupedTransactions[dateStr] || [];
@@ -184,29 +189,51 @@ export function History({ isCompact = false }: HistoryProps) {
 
                 if (dayTransactions.length === 0) {
                   return (
-                    <div className="text-center py-6">
-                      <CalendarIcon className="h-10 w-10 mx-auto mb-2" style={{ color: theme.primary, opacity: 0.3 }} />
-                      <p className="text-gray-500 text-sm">この日の記録はありません</p>
+                    <div className="text-center py-8">
+                      <CalendarIcon className="h-10 w-10 mx-auto mb-2 text-white/15" />
+                      <p className="text-white/40 text-sm">この日の記録はありません</p>
                     </div>
                   );
                 }
 
                 return (
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between p-3 rounded-xl border-2" style={{ background: `linear-gradient(to right, ${theme.primary}10, ${theme.secondary}05)`, borderColor: theme.primary }}>
-                      <span className="font-semibold text-slate-900 text-sm">{selectedDate.toLocaleDateString('ja-JP')}</span>
-                      <span className="text-base font-bold" style={{ color: theme.primary }}>-¥{dayTotal.toLocaleString()}</span>
+                  <div>
+                    {/* 日付ヘッダー */}
+                    <div className="flex items-center justify-between px-4 py-3" style={{ background: `rgba(255,255,255,0.05)` }}>
+                      <div className="flex items-center gap-2">
+                        <CalendarIcon className="h-3.5 w-3.5 text-white/40" />
+                        <p className="text-sm font-bold text-white/70">
+                          {selectedDate.toLocaleDateString('ja-JP')}
+                        </p>
+                      </div>
+                      <span className="text-sm font-bold text-red-400">-¥{dayTotal.toLocaleString()}</span>
                     </div>
-                    <div className="space-y-2 bg-white/50 rounded-xl p-2">
+
+                    {/* 明細 */}
+                    <div className="p-2 space-y-1.5">
                       {dayTransactions.map((t) => (
-                        <div key={t.id} className="flex items-center gap-3 p-3 rounded-xl bg-white/90 border border-gray-200/50">
-                          <div className="text-2xl p-2 rounded-lg bg-gray-50">{categoryIcons[t.category_main] || '📦'}</div>
-                          <div className="flex-1 min-w-0">
-                            <p className="font-bold text-sm text-slate-900 truncate">{t.memo || t.store_name || t.category_sub}</p>
-                            <p className="text-xs text-gray-500">{t.category_main} · {t.category_sub}</p>
-                          </div>
-                          <p className="text-base font-bold" style={{ color: theme.primary }}>-¥{t.amount.toLocaleString()}</p>
-                        </div>
+                        <ExpenseCard
+                          key={t.id}
+                          memo={t.memo}
+                          storeName={t.store_name}
+                          categoryMain={t.category_main}
+                          categorySub={t.category_sub}
+                          categoryIcon={categoryIcons[t.category_main] || '📦'}
+                          amount={t.amount}
+                          onEdit={() => {
+                            setEditingTransaction({
+                              id: t.id,
+                              date: t.date,
+                              category_main: t.category_main,
+                              category_sub: t.category_sub,
+                              store_name: t.store_name,
+                              amount: t.amount,
+                              memo: t.memo,
+                              user_type: selectedUser,
+                            });
+                            setIsEditDialogOpen(true);
+                          }}
+                        />
                       ))}
                     </div>
                   </div>
@@ -216,7 +243,7 @@ export function History({ isCompact = false }: HistoryProps) {
           </div>
         )}
 
-        {/* 一覧ビュー（メモ主役カード） */}
+        {/* 一覧ビュー */}
         {viewMode === 'list' && (
           <>
             {isLoading ? (

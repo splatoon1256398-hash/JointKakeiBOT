@@ -32,13 +32,13 @@ interface AppContextType {
   triggerRefresh: () => void;
   customThemeColor: string | null;
   setCustomThemeColor: (color: string | null) => void;
-  saveCustomThemeColor: (color: string) => Promise<void>;
+  saveCustomThemeColor: (color: string | null) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 /**
- * HEX色から lighter/darker バリエーションを生成
+ * HEX色からHSLを取得
  */
 function hexToHsl(hex: string): [number, number, number] {
   const r = parseInt(hex.slice(1, 3), 16) / 255;
@@ -73,7 +73,7 @@ function generateSecondaryColor(hex: string): string {
   return hslToHex(h, Math.min(s + 10, 100), Math.min(l + 10, 85));
 }
 
-// ユーザー別テーマカラー
+// selectedUser 別のデフォルト色（カスタムが無い場合のフォールバック）
 const getDefaultColors = (userType: UserType): { primary: string; secondary: string } => {
   if (userType === "共同") {
     return { primary: "#8b5cf6", secondary: "#a855f7" };
@@ -104,20 +104,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [selectedUser, setSelectedUser] = useState<UserType>("共同");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  // customThemeColor は「ログインユーザー個人」のカスタム色。
+  // selectedUser が変わっても、このカスタム色が常に優先表示される。
   const [customThemeColor, setCustomThemeColor] = useState<string | null>(null);
   const fixedExpensesProcessed = useRef(false);
 
-  // テーマの構築: カスタムカラーがあればそれを優先
-  const defaults = getDefaultColors(selectedUser);
-  const primary = customThemeColor || defaults.primary;
-  const secondary = customThemeColor ? generateSecondaryColor(customThemeColor) : defaults.secondary;
+  // テーマの構築:
+  // - customThemeColor があれば、selectedUser に関係なく常にそのカラーを使用
+  //   → ログインユーザーの「個人色」が共同表示でも維持される
+  // - customThemeColor が null なら selectedUser のデフォルト色を使用
+  const primary = customThemeColor || getDefaultColors(selectedUser).primary;
+  const secondary = customThemeColor
+    ? generateSecondaryColor(customThemeColor)
+    : getDefaultColors(selectedUser).secondary;
   const theme = buildTheme(primary, secondary);
 
   const triggerRefresh = () => {
     setRefreshTrigger(prev => prev + 1);
   };
 
-  // DB からカスタムテーマカラーを読み込み
+  // DB からカスタムテーマカラーを読み込み（ログインユーザー個人の設定）
   const loadCustomThemeColor = useCallback(async (userId: string) => {
     try {
       const { data } = await supabase
@@ -127,14 +133,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
         .single();
       if (data?.theme_color) {
         setCustomThemeColor(data.theme_color);
+      } else {
+        setCustomThemeColor(null);
       }
     } catch {
-      // 未設定の場合はデフォルト
+      // 未設定の場合はnullのまま → selectedUser のデフォルト色が使われる
+      setCustomThemeColor(null);
     }
   }, []);
 
-  // DB にカスタムテーマカラーを保存
-  const saveCustomThemeColor = useCallback(async (color: string) => {
+  // DB にカスタムテーマカラーを保存（ログインユーザー個人の設定）
+  // color が null の場合はリセット（DBから削除）
+  const saveCustomThemeColor = useCallback(async (color: string | null) => {
     if (!user) return;
     setCustomThemeColor(color);
     try {
@@ -149,7 +159,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           .from("user_settings")
           .update({ theme_color: color })
           .eq("user_id", user.id);
-      } else {
+      } else if (color) {
         await supabase
           .from("user_settings")
           .insert({ user_id: user.id, theme_color: color });

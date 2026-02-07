@@ -14,7 +14,9 @@ import { HomeWidgetSettings } from "@/components/pages/home-widget-settings";
 import { ThemeSettings } from "@/components/pages/theme-settings";
 
 // 各タブのスコープ定義
-const TAB_SCOPE: Record<string, "personal" | "shared" | "both"> = {
+// "personal" = ログインユーザー個人の設定（共同モードでも個人として保存される）
+// "shared"   = selectedUser（共同 or 個人）に紐づく共有設定
+const TAB_SCOPE: Record<string, "personal" | "shared"> = {
   fixed: "shared",
   budget: "shared",
   categories: "shared",
@@ -24,33 +26,43 @@ const TAB_SCOPE: Record<string, "personal" | "shared" | "both"> = {
   other: "personal",
 };
 
-function ScopeBadge({ scope }: { scope: "personal" | "shared" | "both" }) {
+const TAB_SCOPE_LABEL: Record<string, string> = {
+  fixed: "選択中のユーザーの固定費",
+  budget: "選択中のユーザーの予算",
+  categories: "全員で共有するカテゴリ",
+  home: "あなた個人のホーム設定",
+  gmail: "あなた個人のGmail連携",
+  push: "あなた個人の通知設定",
+  other: "あなた個人のテーマ設定",
+};
+
+function ScopeBadge({ scope, label }: { scope: "personal" | "shared"; label?: string }) {
   if (scope === "shared") {
     return (
-      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-purple-500/20 text-purple-300 border border-purple-500/20">
-        <Users className="h-2.5 w-2.5" />
-        共同
-      </span>
+      <div className="flex items-center gap-1.5">
+        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-purple-500/20 text-purple-300 border border-purple-500/20">
+          <Users className="h-2.5 w-2.5" />
+          共同
+        </span>
+        {label && <span className="text-[9px] text-white/30">{label}</span>}
+      </div>
     );
   }
-  if (scope === "personal") {
-    return (
+  return (
+    <div className="flex items-center gap-1.5">
       <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-blue-500/20 text-blue-300 border border-blue-500/20">
         <User className="h-2.5 w-2.5" />
         個人
       </span>
-    );
-  }
-  return null;
+      {label && <span className="text-[9px] text-white/30">{label}</span>}
+    </div>
+  );
 }
 
 export function SettingsModal() {
   const { isSettingsOpen, setIsSettingsOpen, theme, selectedUser, displayName } = useApp();
 
   const isJoint = selectedUser === "共同";
-  const contextLabel = isJoint
-    ? "共同設定を編集"
-    : `${displayName || selectedUser} の設定を編集`;
 
   return (
     <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
@@ -62,22 +74,22 @@ export function SettingsModal() {
                 <SettingsIcon className="h-5 w-5" style={{ color: theme.primary }} />
                 設定
               </DialogTitle>
-              {/* コンテキストヘッダー */}
+              {/* コンテキストヘッダー: 現在の操作対象 */}
               <div className="flex items-center gap-2">
-                <div
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold"
-                  style={{
-                    backgroundColor: `${theme.primary}20`,
-                    color: theme.primary,
-                  }}
-                >
-                  {isJoint ? (
+                {isJoint ? (
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-purple-500/15 text-purple-300">
                     <Users className="h-3 w-3" />
-                  ) : (
+                    共同設定を編集中
+                  </div>
+                ) : (
+                  <div
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold"
+                    style={{ backgroundColor: `${theme.primary}20`, color: theme.primary }}
+                  >
                     <User className="h-3 w-3" />
-                  )}
-                  {contextLabel}
-                </div>
+                    {displayName || selectedUser} の設定を編集中
+                  </div>
+                )}
               </div>
             </div>
             <Button
@@ -123,52 +135,52 @@ export function SettingsModal() {
             </TabsTrigger>
           </TabsList>
 
-          {/* 各タブコンテンツ + スコープバッジ */}
-          <TabsContent value="fixed" className="mt-4">
+          {/* 各タブコンテンツ - min-h で高さ固定 */}
+          <TabsContent value="fixed" className="mt-4 min-h-[520px]">
             <div className="flex justify-end mb-2">
-              <ScopeBadge scope={TAB_SCOPE.fixed} />
+              <ScopeBadge scope={TAB_SCOPE.fixed} label={TAB_SCOPE_LABEL.fixed} />
             </div>
             <FixedExpenses />
           </TabsContent>
 
-          <TabsContent value="budget" className="mt-4">
+          <TabsContent value="budget" className="mt-4 min-h-[520px]">
             <div className="flex justify-end mb-2">
-              <ScopeBadge scope={TAB_SCOPE.budget} />
+              <ScopeBadge scope={TAB_SCOPE.budget} label={TAB_SCOPE_LABEL.budget} />
             </div>
             <BudgetSettings />
           </TabsContent>
 
-          <TabsContent value="categories" className="mt-4">
+          <TabsContent value="categories" className="mt-4 min-h-[520px]">
             <div className="flex justify-end mb-2">
-              <ScopeBadge scope={TAB_SCOPE.categories} />
+              <ScopeBadge scope={TAB_SCOPE.categories} label={TAB_SCOPE_LABEL.categories} />
             </div>
             <Settings />
           </TabsContent>
 
-          <TabsContent value="home" className="mt-4">
+          <TabsContent value="home" className="mt-4 min-h-[520px]">
             <div className="flex justify-end mb-2">
-              <ScopeBadge scope={TAB_SCOPE.home} />
+              <ScopeBadge scope={TAB_SCOPE.home} label={TAB_SCOPE_LABEL.home} />
             </div>
             <HomeWidgetSettings />
           </TabsContent>
 
-          <TabsContent value="gmail" className="mt-4">
+          <TabsContent value="gmail" className="mt-4 min-h-[520px]">
             <div className="flex justify-end mb-2">
-              <ScopeBadge scope={TAB_SCOPE.gmail} />
+              <ScopeBadge scope={TAB_SCOPE.gmail} label={TAB_SCOPE_LABEL.gmail} />
             </div>
             <GmailSettings />
           </TabsContent>
 
-          <TabsContent value="push" className="mt-4">
+          <TabsContent value="push" className="mt-4 min-h-[520px]">
             <div className="flex justify-end mb-2">
-              <ScopeBadge scope={TAB_SCOPE.push} />
+              <ScopeBadge scope={TAB_SCOPE.push} label={TAB_SCOPE_LABEL.push} />
             </div>
             <PushNotificationSettings />
           </TabsContent>
 
-          <TabsContent value="other" className="mt-4">
+          <TabsContent value="other" className="mt-4 min-h-[520px]">
             <div className="flex justify-end mb-2">
-              <ScopeBadge scope={TAB_SCOPE.other} />
+              <ScopeBadge scope={TAB_SCOPE.other} label={TAB_SCOPE_LABEL.other} />
             </div>
             <ThemeSettings />
           </TabsContent>
