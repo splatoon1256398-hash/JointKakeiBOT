@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/select";
 import { supabase } from "@/lib/supabase";
 import { useApp } from "@/contexts/app-context";
-import { CATEGORY_LIST, getCategoryIcon, getSubcategories } from "@/lib/constants";
+// DBからカテゴリを取得するので lib/constants は不要
 
 interface FixedExpense {
   id: string;
@@ -35,6 +35,29 @@ export function FixedExpenses() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  const [dbCategories, setDbCategories] = useState<{ main: string; icon: string; subs: string[] }[]>([]);
+
+  // DBからカテゴリ取得
+  useEffect(() => {
+    supabase
+      .from('categories')
+      .select('main_category, icon, subcategories')
+      .order('sort_order')
+      .then(({ data }) => {
+        if (data) {
+          setDbCategories(data.map(d => ({
+            main: d.main_category,
+            icon: d.icon || '📦',
+            subs: d.subcategories || ['その他'],
+          })));
+        }
+      });
+  }, []);
+
+  const getSubcategoriesFromDB = (mainCat: string): string[] => {
+    const found = dbCategories.find(c => c.main === mainCat);
+    return found?.subs || ["その他"];
+  };
 
   // 新規固定費フォーム
   const [categoryMain, setCategoryMain] = useState("");
@@ -120,7 +143,7 @@ export function FixedExpenses() {
   };
 
   // 小カテゴリーの選択肢を取得
-  const subCategories = categoryMain ? getSubcategories(categoryMain) : [];
+  const subCategories = categoryMain ? getSubcategoriesFromDB(categoryMain) : [];
 
   // 月間合計を計算
   const monthlyTotal = expenses.reduce((sum, exp) => sum + exp.amount, 0);
@@ -172,7 +195,7 @@ export function FixedExpenses() {
                   <SelectValue placeholder="選択" />
                 </SelectTrigger>
                 <SelectContent className="bg-slate-800 border-slate-700">
-                  {CATEGORY_LIST.map((cat) => (
+                  {dbCategories.map((cat) => (
                     <SelectItem key={cat.main} value={cat.main} className="text-white">
                       {cat.icon} {cat.main}
                     </SelectItem>
@@ -285,7 +308,7 @@ export function FixedExpenses() {
                   className="w-10 h-10 rounded-lg flex items-center justify-center text-lg"
                   style={{ background: `${theme.primary}20` }}
                 >
-                  {getCategoryIcon(expense.category_main)}
+                  {dbCategories.find(c => c.main === expense.category_main)?.icon || '📦'}
                 </div>
                 <div>
                   <p className="text-sm font-semibold text-white">

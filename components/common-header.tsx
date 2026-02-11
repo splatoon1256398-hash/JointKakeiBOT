@@ -18,21 +18,8 @@ export function CommonHeader() {
     >
       <div className="container mx-auto px-4 py-3 max-w-lg">
         <div className="flex items-center justify-between gap-3">
-          {/* ピル型ユーザー切り替えタブ */}
+          {/* ピル型ユーザー切り替えタブ: 個人 → 共同 の順 */}
           <div className="flex-1 flex bg-white/95 rounded-full p-1 shadow-inner">
-            <button
-              onClick={() => setSelectedUser("共同")}
-              className={`flex-1 py-1.5 px-4 text-xs font-bold rounded-full transition-all duration-200 ${
-                isJointSelected 
-                  ? 'text-white shadow-md' 
-                  : 'text-slate-600 hover:text-slate-800'
-              }`}
-              style={isJointSelected ? { 
-                background: `linear-gradient(135deg, ${theme.primary}, ${theme.secondary})` 
-              } : {}}
-            >
-              共同
-            </button>
             <button
               onClick={() => setSelectedUser(displayName || "自分")}
               className={`flex-1 py-1.5 px-4 text-xs font-bold rounded-full transition-all duration-200 ${
@@ -45,6 +32,19 @@ export function CommonHeader() {
               } : {}}
             >
               {displayName || "自分"}
+            </button>
+            <button
+              onClick={() => setSelectedUser("共同")}
+              className={`flex-1 py-1.5 px-4 text-xs font-bold rounded-full transition-all duration-200 ${
+                isJointSelected 
+                  ? 'text-white shadow-md' 
+                  : 'text-slate-600 hover:text-slate-800'
+              }`}
+              style={isJointSelected ? { 
+                background: `linear-gradient(135deg, ${theme.primary}, ${theme.secondary})` 
+              } : {}}
+            >
+              共同
             </button>
           </div>
 

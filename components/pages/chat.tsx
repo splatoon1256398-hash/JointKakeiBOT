@@ -20,7 +20,7 @@ interface Message {
 const genAI = new GoogleGenerativeAI(process.env.NEXT_PUBLIC_GEMINI_API_KEY || '');
 
 export function Chat() {
-  const { selectedUser, user, theme } = useApp();
+  const { selectedUser, user, theme, displayName, triggerRefresh } = useApp();
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "1",
@@ -46,7 +46,14 @@ export function Chat() {
     try {
       const { start, end } = getMonthRange();
 
-      // 今月の支出合計
+      // 前月の範囲も計算
+      const now = new Date();
+      const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const prevMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
+      const prevStart = `${prevMonth.getFullYear()}-${String(prevMonth.getMonth() + 1).padStart(2, '0')}-01`;
+      const prevEnd = `${prevMonthEnd.getFullYear()}-${String(prevMonthEnd.getMonth() + 1).padStart(2, '0')}-${String(prevMonthEnd.getDate()).padStart(2, '0')}`;
+
+      // 今月の支出
       const { data: expenseData } = await supabase
         .from('transactions')
         .select('amount, category_main')
@@ -57,11 +64,45 @@ export function Chat() {
 
       const totalExpense = expenseData?.reduce((sum, t) => sum + t.amount, 0) || 0;
 
-      // カテゴリー別集計
       const categoryMap: Record<string, number> = {};
       expenseData?.forEach(t => {
         categoryMap[t.category_main] = (categoryMap[t.category_main] || 0) + t.amount;
       });
+
+      // 前月の支出
+      const { data: prevExpenseData } = await supabase
+        .from('transactions')
+        .select('amount, category_main')
+        .eq('user_type', selectedUser)
+        .eq('type', 'expense')
+        .gte('date', prevStart)
+        .lte('date', prevEnd);
+
+      const prevTotalExpense = prevExpenseData?.reduce((sum, t) => sum + t.amount, 0) || 0;
+      const prevCategoryMap: Record<string, number> = {};
+      prevExpenseData?.forEach(t => {
+        prevCategoryMap[t.category_main] = (prevCategoryMap[t.category_main] || 0) + t.amount;
+      });
+
+      // 今月の収入
+      const { data: incomeData } = await supabase
+        .from('transactions')
+        .select('amount')
+        .eq('user_type', selectedUser)
+        .eq('type', 'income')
+        .gte('date', start)
+        .lte('date', end);
+
+      const totalIncome = incomeData?.reduce((sum, t) => sum + t.amount, 0) || 0;
+
+      // 予算
+      const { data: budgets } = await supabase
+        .from('budgets')
+        .select('category_main, monthly_budget')
+        .eq('user_type', selectedUser);
+
+      const budgetMap: Record<string, number> = {};
+      budgets?.forEach(b => { budgetMap[b.category_main] = b.monthly_budget; });
 
       // 貯金目標
       const { data: savingGoals } = await supabase
@@ -69,7 +110,7 @@ export function Chat() {
         .select('*')
         .eq('user_type', selectedUser);
 
-      // カテゴリーリスト
+      // カテゴリーリスト（常にDB最新を取得）
       const { data: categories } = await supabase
         .from('categories')
         .select('main_category, subcategories')
@@ -77,7 +118,11 @@ export function Chat() {
 
       return {
         totalExpense,
+        totalIncome,
+        prevTotalExpense,
         categoryBreakdown: categoryMap,
+        prevCategoryBreakdown: prevCategoryMap,
+        budgets: budgetMap,
         savingGoals: savingGoals || [],
         categories: categories || [],
       };
@@ -97,10 +142,13 @@ export function Chat() {
     };
   };
 
+  // 直前に記録したトランザクションIDを保持（修正用）
+  const lastRecordedIdRef = useRef<string | null>(null);
+
   // Function Calling: 支出を記録
   const recordExpense = async (args: any) => {
     try {
-      const { error } = await supabase
+      const { data: inserted, error } = await supabase
         .from('transactions')
         .insert({
           user_id: user?.id,
@@ -112,13 +160,138 @@ export function Chat() {
           store_name: args.store_name || '',
           amount: args.amount,
           memo: args.memo || '',
-        });
+        })
+        .select('id')
+        .single();
 
       if (error) throw error;
-      return { success: true, message: `${args.user_type}の支出を記録しました！` };
+      
+      // 直前のIDを保存（修正対応用）
+      if (inserted?.id) {
+        lastRecordedIdRef.current = inserted.id;
+      }
+
+      // 共同支出の場合、パートナーにPush通知を送信
+      const userType = args.user_type || selectedUser;
+      if (userType === "共同" && user?.id) {
+        try {
+          await fetch('/api/push/send', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              title: '共同支出が登録されました',
+              body: `${displayName}が共同支出を登録: ${args.store_name || args.category_main} ¥${Number(args.amount).toLocaleString()}`,
+              excludeUserId: user.id, // 自分には送らない
+            }),
+          });
+        } catch (pushErr) {
+          console.error('Push通知送信エラー:', pushErr);
+        }
+      }
+
+      return { success: true, message: `${userType}の支出を記録しました！`, transactionId: inserted?.id };
     } catch (error) {
       console.error('支出記録エラー:', error);
       return { success: false, message: '記録に失敗しました' };
+    }
+  };
+
+  // Function Calling: 直前のトランザクションを修正
+  const updateLastTransaction = async (args: any) => {
+    const targetId = args.transaction_id || lastRecordedIdRef.current;
+    if (!targetId) {
+      return { success: false, message: '修正対象のトランザクションが見つかりません。' };
+    }
+    try {
+      const updates: Record<string, unknown> = {};
+      if (args.amount !== undefined) updates.amount = args.amount;
+      if (args.category_main) updates.category_main = args.category_main;
+      if (args.category_sub) updates.category_sub = args.category_sub;
+      if (args.store_name !== undefined) updates.store_name = args.store_name;
+      if (args.memo !== undefined) updates.memo = args.memo;
+      if (args.date) updates.date = args.date;
+
+      if (Object.keys(updates).length === 0) {
+        return { success: false, message: '修正項目が指定されていません。' };
+      }
+
+      const { error } = await supabase
+        .from('transactions')
+        .update(updates)
+        .eq('id', targetId);
+
+      if (error) throw error;
+      return { success: true, message: `トランザクション(${targetId})を修正しました！` };
+    } catch (error) {
+      console.error('トランザクション修正エラー:', error);
+      return { success: false, message: '修正に失敗しました' };
+    }
+  };
+
+  // Function Calling: 予算を更新
+  const updateBudget = async (args: any) => {
+    try {
+      const { data: existing } = await supabase
+        .from('budgets')
+        .select('id')
+        .eq('user_type', args.user_type || selectedUser)
+        .eq('category_main', args.category_main)
+        .single();
+
+      if (existing) {
+        const { error } = await supabase
+          .from('budgets')
+          .update({ monthly_budget: args.monthly_budget })
+          .eq('id', existing.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('budgets')
+          .insert({
+            user_type: args.user_type || selectedUser,
+            category_main: args.category_main,
+            monthly_budget: args.monthly_budget,
+          });
+        if (error) throw error;
+      }
+      return { success: true, message: `${args.category_main}の予算を¥${Number(args.monthly_budget).toLocaleString()}に設定しました。` };
+    } catch (error) {
+      console.error('予算更新エラー:', error);
+      return { success: false, message: '予算の更新に失敗しました' };
+    }
+  };
+
+  // Function Calling: カテゴリ追加
+  const addCategory = async (args: any) => {
+    try {
+      const { data: existing } = await supabase
+        .from('categories')
+        .select('id, subcategories')
+        .eq('main_category', args.main_category)
+        .single();
+
+      if (existing) {
+        // 既存の大カテゴリにサブカテゴリを追加
+        if (args.subcategory) {
+          const subs = Array.isArray(existing.subcategories) ? existing.subcategories : [];
+          if (!subs.includes(args.subcategory)) {
+            subs.push(args.subcategory);
+            await supabase.from('categories').update({ subcategories: subs }).eq('id', existing.id);
+          }
+        }
+        return { success: true, message: `カテゴリ「${args.main_category}」を更新しました。` };
+      } else {
+        await supabase.from('categories').insert({
+          main_category: args.main_category,
+          icon: args.icon || '📦',
+          subcategories: args.subcategory ? [args.subcategory] : ['その他'],
+          sort_order: 99,
+        });
+        return { success: true, message: `カテゴリ「${args.main_category}」を追加しました。` };
+      }
+    } catch (error) {
+      console.error('カテゴリ追加エラー:', error);
+      return { success: false, message: 'カテゴリの追加に失敗しました' };
     }
   };
 
@@ -179,66 +352,114 @@ export function Chat() {
         parts: [{ text: m.content }],
       }));
 
-      // システムプロンプト構築
-      const systemPrompt = `あなたは「${selectedUser}」の家計簿AIアシスタントです。
+      // 予算情報の構築
+      const budgetInfo = context?.budgets
+        ? Object.entries(context.budgets).map(([cat, budget]) => {
+            const spent = context.categoryBreakdown[cat] || 0;
+            return `${cat}: 予算¥${Number(budget).toLocaleString()} / 支出¥${spent.toLocaleString()} / 残¥${(Number(budget) - spent).toLocaleString()}`;
+          }).join('\n')
+        : 'なし';
+
+      // 前月比較
+      const prevComparison = context?.prevCategoryBreakdown
+        ? Object.entries(context.categoryBreakdown).map(([cat, amount]) => {
+            const prev = context.prevCategoryBreakdown[cat] || 0;
+            const diff = prev > 0 ? Math.round(((amount as number) - prev) / prev * 100) : 0;
+            return `${cat}: 今月¥${Number(amount).toLocaleString()} (前月比${diff >= 0 ? '+' : ''}${diff}%)`;
+          }).join('\n')
+        : '';
+
+      // 執事モード システムプロンプト
+      const systemPrompt = `あなたは「${selectedUser}」の家計簿パーソナル執事AIである。
+無意味な挨拶や冗長な説明は省き、ユーザーの資産管理を支える「正確なツール」として振る舞え。
+現在のユーザー名: ${displayName}
 
 【現在の状況】
-- 今月の支出合計: ¥${context?.totalExpense.toLocaleString()}
-- カテゴリー別支出: ${JSON.stringify(context?.categoryBreakdown)}
-- 貯金目標: ${context?.savingGoals.map((g: any) => `${g.goal_name}(現在¥${g.current_amount.toLocaleString()}/目標¥${g.target_amount.toLocaleString()})`).join(', ')}
+- 今月の支出合計: ¥${context?.totalExpense?.toLocaleString() || 0}
+- 今月の収入合計: ¥${context?.totalIncome?.toLocaleString() || 0}
+- 前月の支出合計: ¥${context?.prevTotalExpense?.toLocaleString() || 0}
+- カテゴリー別予算と支出:
+${budgetInfo}
+- カテゴリー別前月比:
+${prevComparison}
+- 貯金目標: ${context?.savingGoals?.map((g: any) => `${g.goal_name}(¥${g.current_amount?.toLocaleString()}/¥${g.target_amount?.toLocaleString()} = ${g.target_amount > 0 ? Math.round(g.current_amount / g.target_amount * 100) : 0}%)`).join(', ') || 'なし'}
 
 【利用可能なカテゴリー】
-${context?.categories.map((c: any) => `- ${c.main_category}: ${c.subcategories.join(', ')}`).join('\n')}
+${context?.categories?.map((c: any) => `- ${c.main_category}: ${c.subcategories?.join(', ')}`).join('\n') || '- その他: その他'}
 
-【対応ルール】
-1. 支出の記録リクエスト（「〇〇で△△円使った」「マクドナルド 500円」など）:
-   - 必須: user_type（共同/${selectedUser}）、amount（金額）
-   - 「自分」と言われたら user_type = "${selectedUser}" を使用
-   - カテゴリーは文脈から推測（利用可能なカテゴリー一覧から選ぶ）
-   - user_type が不明な場合のみ聞き返す。金額とカテゴリーが推測できるなら即座に記録する
+【コア機能1: 爆速入力】
+- 支出記録: 店名+金額があれば即座にrecordExpenseを呼ぶ。聞き返すな。
+  - 「ドミノピザ チーズピザ 4500円」→ store_name="ドミノピザ", memo="チーズピザ", amount=4500
+  - 「マクドナルド 500円」→ store_name="マクドナルド", memo="", amount=500
+  - 「コンビニでお茶 150円」→ store_name="コンビニ", memo="お茶", amount=150
+  - 店名＝ブランド名・店舗名。メモ＝購入した商品・詳細。店名だけの場合はmemo=""
+  - 「自分」「個人」→ user_type="${displayName}"、「共同」→ user_type="共同"
+  - user_typeが不明な場合のみ聞き返す
+- 複数項目: 「シャンプーと豚肉で3000円」→ 1件で memo に詳細リスト、または分類が異なれば個別記録
+- 記録後: 表形式で結果を表示: 「✅ 【区分: 〇〇 / カテゴリー: △△ / 店名: □□ / 金額: ¥XX】」
+- 情報不足時: 不足分だけをピンポイントで聞く（「金額が抜けてますね。いくらでしたか？」）
+- 金額の再確認ループ禁止: 一度提示された情報は保持。「金額は？」と再度聞かない
 
-2. 店名とメモの分離ルール（重要）:
-   - 「ドミノピザ チーズピザ 4500円」→ store_name="ドミノピザ", memo="チーズピザ", amount=4500
-   - 「マクドナルド 500円」→ store_name="マクドナルド", memo="", amount=500
-   - 「コンビニでお茶 150円」→ store_name="コンビニ", memo="お茶", amount=150
-   - 「タクシー 2000円」→ store_name="タクシー", memo="", amount=2000
-   - 店名＝ブランド名・店舗名・サービス名。メモ＝購入した商品・詳細情報。
-   - 店名だけの場合はmemoを空文字列にする。絶対に店名をmemoに入れない。
+【コア機能1.5: 修正対応】
+- 記録直後の「やっぱり〇〇円だった」「カテゴリを△△にして」→ updateLastTransactionを呼ぶ
+- 修正完了時: 「¥〇〇に修正しました！」と結果を表示
 
-3. 記録後の確認:
-   - 「✅ 【区分: 〇〇 / カテゴリー: △△ / 店名: □□ / 金額: ¥XX】を記録しました！」の形式
+【コア機能2: FP分析】
+- 支出傾向について聞かれたら、上記データを使って具体的な数字ベースの分析を返す
+- 「外食が先月より20%多いので、今週は自炊がおすすめですよ」等の具体的アドバイス
+- 予算超過しているカテゴリがあれば積極的に警告
 
-4. 金額の再確認ループの禁止:
-   - ユーザーが金額を含むメッセージを送った場合、「金額は？」と再度聞かない
-   - 1回のメッセージに店名・金額が含まれていれば即座にrecordExpenseを呼ぶ
+【コア機能3: 貯金コーチ】
+- 貯金の話題が出たらsaving_goalsの進捗率を計算し、ポジティブなフィードバックを返す
+- 「ハワイまであと3万円！今のペースなら夏には行けますよ」等
 
-5. 貯金の入金リクエスト:
-   - どの目標か確認、完了後残りの必要額も伝える
+【コア機能4: 設定変更】
+- 「予算を5万円にして」→ updateBudget を呼ぶ
+- 「カテゴリに推し活を追加して」→ addCategory を呼ぶ
+- 更新後は確認メッセージを返す
 
-6. 質問への回答: 現在の状況データを参照して回答
+【返信スタイル】
+- 簡潔で的確な日本語。冗長な説明は不要
+- 絵文字は最小限（✅❌📊💰等の機能的なもののみ）
+- 登録・修正完了時は必ずサマリーを表示`;
 
-7. 返信スタイル: 簡潔で親しみやすい日本語、絵文字を適度に使用`;
-
-      // Geminiモデル（Function Calling対応）
+      // Geminiモデル（執事モード Function Calling）
       const model = genAI.getGenerativeModel({
         model: 'gemini-2.5-flash-lite',
         tools: [{
           functionDeclarations: [
             {
               name: 'recordExpense',
-              description: '支出を記録する',
+              description: '支出を記録する。店名+金額が分かれば即座に呼ぶ',
               parameters: {
                 type: SchemaType.OBJECT,
                 properties: {
                   user_type: { type: SchemaType.STRING, description: '区分（共同/れん/あかね）' },
                   category_main: { type: SchemaType.STRING, description: '大カテゴリー' },
                   category_sub: { type: SchemaType.STRING, description: '小カテゴリー' },
-                  store_name: { type: SchemaType.STRING, description: '店名' },
+                  store_name: { type: SchemaType.STRING, description: '店名（ブランド名・店舗名）' },
                   amount: { type: SchemaType.NUMBER, description: '金額' },
                   date: { type: SchemaType.STRING, description: '日付（YYYY-MM-DD）' },
-                  memo: { type: SchemaType.STRING, description: 'メモ' },
+                  memo: { type: SchemaType.STRING, description: 'メモ（商品詳細。店名だけの場合は空文字）' },
                 },
                 required: ['user_type', 'category_main', 'category_sub', 'amount'],
+              },
+            },
+            {
+              name: 'updateLastTransaction',
+              description: '直前に記録したトランザクションを修正する。「やっぱり○○円だった」「カテゴリを変えて」等に使う',
+              parameters: {
+                type: SchemaType.OBJECT,
+                properties: {
+                  transaction_id: { type: SchemaType.STRING, description: 'トランザクションID（省略時は直前の記録）' },
+                  amount: { type: SchemaType.NUMBER, description: '修正後の金額' },
+                  category_main: { type: SchemaType.STRING, description: '修正後の大カテゴリー' },
+                  category_sub: { type: SchemaType.STRING, description: '修正後の小カテゴリー' },
+                  store_name: { type: SchemaType.STRING, description: '修正後の店名' },
+                  memo: { type: SchemaType.STRING, description: '修正後のメモ' },
+                  date: { type: SchemaType.STRING, description: '修正後の日付' },
+                },
+                required: [],
               },
             },
             {
@@ -251,6 +472,32 @@ ${context?.categories.map((c: any) => `- ${c.main_category}: ${c.subcategories.j
                   amount: { type: SchemaType.NUMBER, description: '入金額' },
                 },
                 required: ['goal_name', 'amount'],
+              },
+            },
+            {
+              name: 'updateBudget',
+              description: '予算を設定・変更する。「予算を5万円にして」等',
+              parameters: {
+                type: SchemaType.OBJECT,
+                properties: {
+                  user_type: { type: SchemaType.STRING, description: '区分（共同/れん/あかね）' },
+                  category_main: { type: SchemaType.STRING, description: '対象カテゴリー' },
+                  monthly_budget: { type: SchemaType.NUMBER, description: '月間予算額' },
+                },
+                required: ['category_main', 'monthly_budget'],
+              },
+            },
+            {
+              name: 'addCategory',
+              description: 'カテゴリを追加・更新する。「カテゴリに推し活を追加して」等',
+              parameters: {
+                type: SchemaType.OBJECT,
+                properties: {
+                  main_category: { type: SchemaType.STRING, description: '大カテゴリー名' },
+                  subcategory: { type: SchemaType.STRING, description: 'サブカテゴリー名' },
+                  icon: { type: SchemaType.STRING, description: '絵文字アイコン' },
+                },
+                required: ['main_category'],
               },
             },
           ],
@@ -281,17 +528,28 @@ ${context?.categories.map((c: any) => `- ${c.main_category}: ${c.subcategories.j
         console.log('Function Call:', functionCall.name, functionCall.args);
         
         if (functionCall.name === 'recordExpense') {
-          // user_typeが「自分」の場合、selectedUserに置き換え
           const args = { ...functionCall.args } as any;
-          if (args.user_type === '自分') {
-            args.user_type = selectedUser;
+          if (args.user_type === '自分' || args.user_type === '個人') {
+            args.user_type = displayName || selectedUser;
           }
           functionResult = await recordExpense(args);
-          console.log('Record Expense Result:', functionResult);
+          triggerRefresh();
+        } else if (functionCall.name === 'updateLastTransaction') {
+          functionResult = await updateLastTransaction(functionCall.args as any);
+          triggerRefresh();
         } else if (functionCall.name === 'addSaving') {
           functionResult = await addSaving(functionCall.args as any);
-          console.log('Add Saving Result:', functionResult);
+          triggerRefresh();
+        } else if (functionCall.name === 'updateBudget') {
+          const args = { ...functionCall.args } as any;
+          if (!args.user_type) args.user_type = selectedUser;
+          functionResult = await updateBudget(args);
+          triggerRefresh();
+        } else if (functionCall.name === 'addCategory') {
+          functionResult = await addCategory(functionCall.args as any);
+          triggerRefresh();
         }
+        console.log('Function Result:', functionCall.name, functionResult);
 
         // 関数実行結果をAIに返して、最終的な返答を生成
         const finalResult = await chat.sendMessage([{

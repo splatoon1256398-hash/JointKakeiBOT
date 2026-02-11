@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { Palette, Check, RotateCcw, Info } from "lucide-react";
+import { Palette, Check, RotateCcw, Info, Users, User } from "lucide-react";
 import { useApp } from "@/contexts/app-context";
 
 const PRESET_COLORS = [
@@ -24,24 +24,55 @@ const PRESET_COLORS = [
 ];
 
 export function ThemeSettings() {
-  const { theme, customThemeColor, setCustomThemeColor, saveCustomThemeColor, displayName } = useApp();
-  const [customHex, setCustomHex] = useState(customThemeColor || theme.primary);
+  const {
+    theme, selectedUser, displayName,
+    customThemeColor, setCustomThemeColor, saveCustomThemeColor,
+    jointThemeColor, setJointThemeColor, saveJointThemeColor,
+  } = useApp();
+
+  const isJoint = selectedUser === "共同";
+
+  // 現在のモードに応じたカラーを取得
+  const currentColor = isJoint ? jointThemeColor : customThemeColor;
+  const [customHex, setCustomHex] = useState(currentColor || theme.primary);
   const [isSaving, setIsSaving] = useState(false);
+
+  // モード切替時にcustomHexを同期
+  const syncedColor = isJoint ? (jointThemeColor || "#4f46e5") : (customThemeColor || theme.primary);
+  // useStateの初期値との不整合を検出してリセット
+  // (selectedUserが変わったらcustomHexを更新)
+  const [lastMode, setLastMode] = useState(isJoint);
+  if (lastMode !== isJoint) {
+    setLastMode(isJoint);
+    setCustomHex(syncedColor);
+  }
 
   const handlePresetClick = useCallback((hex: string) => {
     setCustomHex(hex);
-    setCustomThemeColor(hex);
-  }, [setCustomThemeColor]);
+    if (isJoint) {
+      setJointThemeColor(hex);
+    } else {
+      setCustomThemeColor(hex);
+    }
+  }, [isJoint, setCustomThemeColor, setJointThemeColor]);
 
   const handleCustomColorChange = useCallback((hex: string) => {
     setCustomHex(hex);
-    setCustomThemeColor(hex);
-  }, [setCustomThemeColor]);
+    if (isJoint) {
+      setJointThemeColor(hex);
+    } else {
+      setCustomThemeColor(hex);
+    }
+  }, [isJoint, setCustomThemeColor, setJointThemeColor]);
 
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      await saveCustomThemeColor(customHex);
+      if (isJoint) {
+        await saveJointThemeColor(customHex);
+      } else {
+        await saveCustomThemeColor(customHex);
+      }
     } finally {
       setIsSaving(false);
     }
@@ -50,9 +81,13 @@ export function ThemeSettings() {
   const handleReset = async () => {
     setIsSaving(true);
     try {
-      // DB からも削除し、デフォルト色に戻す
-      await saveCustomThemeColor(null);
-      setCustomHex(theme.primary);
+      if (isJoint) {
+        await saveJointThemeColor(null);
+        setCustomHex("#4f46e5");
+      } else {
+        await saveCustomThemeColor(null);
+        setCustomHex(theme.primary);
+      }
     } finally {
       setIsSaving(false);
     }
@@ -70,12 +105,19 @@ export function ThemeSettings() {
         </p>
       </div>
 
-      {/* 個人設定の説明 */}
-      <div className="rounded-lg p-3 bg-blue-500/10 border border-blue-500/20">
+      {/* モード表示 */}
+      <div className={`rounded-lg p-3 border ${isJoint ? "bg-purple-500/10 border-purple-500/20" : "bg-blue-500/10 border-blue-500/20"}`}>
         <div className="flex items-start gap-2">
-          <Info className="h-3.5 w-3.5 text-blue-400 mt-0.5 flex-shrink-0" />
-          <p className="text-[10px] text-blue-300/80 leading-relaxed">
-            テーマカラーはあなた（{displayName || "ログインユーザー"}）個人の設定です。共同モード表示中でも、あなたが選んだ色が維持されます。
+          {isJoint ? (
+            <Users className="h-3.5 w-3.5 text-purple-400 mt-0.5 flex-shrink-0" />
+          ) : (
+            <User className="h-3.5 w-3.5 text-blue-400 mt-0.5 flex-shrink-0" />
+          )}
+          <p className={`text-[10px] leading-relaxed ${isJoint ? "text-purple-300/80" : "text-blue-300/80"}`}>
+            {isJoint
+              ? "共同モードのイメージカラーを設定します。共同の財布を見ている時にこの色が適用されます。"
+              : `${displayName || "あなた"} 個人のテーマカラーを設定します。個人モード表示時にこの色が適用されます。`
+            }
           </p>
         </div>
       </div>
@@ -88,7 +130,9 @@ export function ThemeSettings() {
         >
           <div>
             <p className="text-white font-bold text-sm">プレビュー</p>
-            <p className="text-white/70 text-xs">{displayName || "あなた"} のテーマ</p>
+            <p className="text-white/70 text-xs">
+              {isJoint ? "共同" : (displayName || "あなた")} のテーマ
+            </p>
           </div>
           <div
             className="w-12 h-12 rounded-xl border-2 border-white/30 flex items-center justify-center"
@@ -160,7 +204,11 @@ export function ThemeSettings() {
                 if (/^#[0-9a-fA-F]{0,6}$/.test(v)) {
                   setCustomHex(v);
                   if (v.length === 7) {
-                    setCustomThemeColor(v);
+                    if (isJoint) {
+                      setJointThemeColor(v);
+                    } else {
+                      setCustomThemeColor(v);
+                    }
                   }
                 }
               }}

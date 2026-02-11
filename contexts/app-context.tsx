@@ -33,6 +33,9 @@ interface AppContextType {
   customThemeColor: string | null;
   setCustomThemeColor: (color: string | null) => void;
   saveCustomThemeColor: (color: string | null) => Promise<void>;
+  jointThemeColor: string | null;
+  setJointThemeColor: (color: string | null) => void;
+  saveJointThemeColor: (color: string | null) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -70,15 +73,13 @@ function generateSecondaryColor(hex: string): string {
   return hslToHex(h, Math.min(s + 10, 100), Math.min(l + 10, 85));
 }
 
-// ===== カラーロジック =====
-// 共同 → 必ずパープル (#4f46e5) を強制適用。カスタム色無視。
-// 個人 → customThemeColor があればそれを使う。なければデフォルト色。
-const JOINT_COLOR = { primary: "#4f46e5", secondary: "#6366f1" };
+// デフォルト色
+const JOINT_DEFAULT = { primary: "#4f46e5", secondary: "#6366f1" };
 
 const getDefaultPersonalColors = (userType: UserType): { primary: string; secondary: string } => {
   if (userType === "れん" || userType.includes("れん")) {
     return { primary: "#022fe3", secondary: "#2851f0" };
-  } else { // あかね
+  } else {
     return { primary: "#7c9475", secondary: "#96b08e" };
   }
 };
@@ -98,20 +99,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [displayName, setDisplayName] = useState("");
-  const [selectedUser, setSelectedUser] = useState<UserType>("共同");
+  const [selectedUser, setSelectedUser] = useState<UserType>("__pending__");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [customThemeColor, setCustomThemeColor] = useState<string | null>(null);
+  const [jointThemeColor, setJointThemeColor] = useState<string | null>(null);
   const fixedExpensesProcessed = useRef(false);
 
   // ===== テーマ構築ロジック =====
-  // 共同 → 固定パープル（customThemeColor を無視）
+  // 共同 → jointThemeColor > デフォルトパープル
   // 個人 → customThemeColor > デフォルト色
+  // __pending__ → デフォルト色
   let primary: string;
   let secondary: string;
   if (selectedUser === "共同") {
-    primary = JOINT_COLOR.primary;
-    secondary = JOINT_COLOR.secondary;
+    primary = jointThemeColor || JOINT_DEFAULT.primary;
+    secondary = jointThemeColor ? generateSecondaryColor(jointThemeColor) : JOINT_DEFAULT.secondary;
+  } else if (selectedUser === "__pending__") {
+    primary = "#022fe3";
+    secondary = "#2851f0";
   } else {
     const defaults = getDefaultPersonalColors(selectedUser);
     primary = customThemeColor || defaults.primary;
@@ -124,8 +130,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   // DB からカスタムテーマカラーを安全に読み込み
-  // theme_color カラムが存在しない場合でもクラッシュしない
-  const loadCustomThemeColor = useCallback(async (userId: string) => {
+  const loadThemeColors = useCallback(async (userId: string) => {
     try {
       const { data, error } = await supabase
         .from("user_settings")
@@ -135,22 +140,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       if (error || !data) {
         setCustomThemeColor(null);
+        setJointThemeColor(null);
         return;
       }
 
-      // theme_color カラムが存在するかを安全にチェック
-      const themeColor = (data as Record<string, unknown>)["theme_color"];
-      if (typeof themeColor === "string" && themeColor.startsWith("#")) {
-        setCustomThemeColor(themeColor);
-      } else {
-        setCustomThemeColor(null);
-      }
+      const record = data as Record<string, unknown>;
+      const tc = record["theme_color"];
+      setCustomThemeColor(typeof tc === "string" && tc.startsWith("#") ? tc : null);
+      const jtc = record["joint_theme_color"];
+      setJointThemeColor(typeof jtc === "string" && jtc.startsWith("#") ? jtc : null);
     } catch {
       setCustomThemeColor(null);
+      setJointThemeColor(null);
     }
   }, []);
 
-  // DB にカスタムテーマカラーを保存
+  // DB に個人テーマカラーを保存
   const saveCustomThemeColor = useCallback(async (color: string | null) => {
     if (!user) return;
     setCustomThemeColor(color);
@@ -176,14 +181,42 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [user]);
 
+  // DB に共同テーマカラーを保存
+  const saveJointThemeColor = useCallback(async (color: string | null) => {
+    if (!user) return;
+    setJointThemeColor(color);
+    try {
+      const { data: existing } = await supabase
+        .from("user_settings")
+        .select("user_id")
+        .eq("user_id", user.id)
+        .single();
+
+      if (existing) {
+        await supabase
+          .from("user_settings")
+          .update({ joint_theme_color: color })
+          .eq("user_id", user.id);
+      } else if (color) {
+        await supabase
+          .from("user_settings")
+          .insert({ user_id: user.id, joint_theme_color: color });
+      }
+    } catch (err) {
+      console.error("共同テーマカラー保存エラー:", err);
+    }
+  }, [user]);
+
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       setUser(user);
       if (user?.user_metadata?.display_name) {
-        setDisplayName(user.user_metadata.display_name);
+        const name = user.user_metadata.display_name;
+        setDisplayName(name);
+        setSelectedUser(prev => prev === "__pending__" ? name : prev);
       }
       if (user) {
-        loadCustomThemeColor(user.id);
+        loadThemeColors(user.id);
       }
       setIsAuthLoading(false);
     });
@@ -191,16 +224,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
       if (session?.user?.user_metadata?.display_name) {
-        setDisplayName(session.user.user_metadata.display_name);
+        const name = session.user.user_metadata.display_name;
+        setDisplayName(name);
+        setSelectedUser(prev => prev === "__pending__" ? name : prev);
       }
       if (session?.user) {
-        loadCustomThemeColor(session.user.id);
+        loadThemeColors(session.user.id);
       }
       setIsAuthLoading(false);
     });
 
     return () => subscription.unsubscribe();
-  }, [loadCustomThemeColor]);
+  }, [loadThemeColors]);
 
   useEffect(() => {
     const channel = supabase
@@ -235,6 +270,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setUser(null);
     setDisplayName("");
     setCustomThemeColor(null);
+    setJointThemeColor(null);
   };
 
   return (
@@ -244,6 +280,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       isSettingsOpen, setIsSettingsOpen,
       signOut, theme, refreshTrigger, triggerRefresh,
       customThemeColor, setCustomThemeColor, saveCustomThemeColor,
+      jointThemeColor, setJointThemeColor, saveJointThemeColor,
     }}>
       {children}
     </AppContext.Provider>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,7 +8,6 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Camera, Loader2, Sparkles, Upload, X, Plus, Trash2, Calendar } from "lucide-react";
 import { analyzeReceipt, type ReceiptAnalysisResult, type ExpenseItem } from "@/lib/gemini";
-import { CATEGORY_LIST, getCategoryIcon, getSubcategories } from "@/lib/constants";
 import { supabase } from "@/lib/supabase";
 import { useApp } from "@/contexts/app-context";
 
@@ -20,6 +19,37 @@ interface AddExpenseDialogProps {
 
 export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpenseDialogProps) {
   const { triggerRefresh } = useApp();
+  
+  // DBからカテゴリを常に最新で取得
+  const [dbCategories, setDbCategories] = useState<{ main: string; icon: string; subs: string[] }[]>([]);
+  
+  useEffect(() => {
+    if (open) {
+      supabase
+        .from('categories')
+        .select('main_category, icon, subcategories')
+        .order('sort_order')
+        .then(({ data }) => {
+          if (data) {
+            setDbCategories(data.map(d => ({
+              main: d.main_category,
+              icon: d.icon || '📦',
+              subs: d.subcategories || ['その他'],
+            })));
+          }
+        });
+    }
+  }, [open]);
+  
+  const getSubcategoriesFromDB = (mainCat: string): string[] => {
+    const found = dbCategories.find(c => c.main === mainCat);
+    return found?.subs || ["その他"];
+  };
+  
+  const getCategoryIconFromDB = (mainCat: string): string => {
+    const found = dbCategories.find(c => c.main === mainCat);
+    return found?.icon || "📦";
+  };
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
@@ -144,7 +174,7 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
     
     // 大カテゴリーが変更された場合、小カテゴリーをリセット
     if (field === 'categoryMain') {
-      const subcategories = getSubcategories(value as string);
+      const subcategories = getSubcategoriesFromDB(value as string);
       newItems[index].categorySub = subcategories[0];
     }
     
@@ -429,7 +459,7 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {CATEGORY_LIST.map((category) => (
+                          {dbCategories.map((category) => (
                             <SelectItem key={category.main} value={category.main}>
                               {category.icon} {category.main}
                             </SelectItem>
@@ -449,7 +479,7 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {getSubcategories(item.categoryMain).map((sub) => (
+                          {getSubcategoriesFromDB(item.categoryMain).map((sub) => (
                             <SelectItem key={sub} value={sub}>
                               {sub}
                             </SelectItem>
