@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { PiggyBank, Plus, Trash2, Target, Calendar, TrendingUp } from "lucide-react";
+import { PiggyBank, Plus, Trash2, Target, Calendar, TrendingUp, Pencil, MinusCircle, ChevronUp, ChevronDown } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useApp } from "@/contexts/app-context";
 
@@ -18,14 +18,27 @@ interface SavingGoal {
   deadline: string | null;
   icon: string;
   color: string;
+  sort_order?: number;
 }
 
 export function Savings() {
-  const { selectedUser, theme } = useApp();
+  const { selectedUser, theme, user } = useApp();
   const [goals, setGoals] = useState<SavingGoal[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isWithdrawDialogOpen, setIsWithdrawDialogOpen] = useState(false);
+  const [editingGoal, setEditingGoal] = useState<SavingGoal | null>(null);
+  const [withdrawGoal, setWithdrawGoal] = useState<SavingGoal | null>(null);
+  const [withdrawAmount, setWithdrawAmount] = useState("");
+  const [withdrawMemo, setWithdrawMemo] = useState("");
   const [newGoal, setNewGoal] = useState({
+    goal_name: "",
+    target_amount: "",
+    deadline: "",
+    icon: "🎯",
+  });
+  const [editForm, setEditForm] = useState({
     goal_name: "",
     target_amount: "",
     deadline: "",
@@ -39,6 +52,7 @@ export function Savings() {
         .from('saving_goals')
         .select('*')
         .eq('user_type', selectedUser)
+        .order('sort_order', { ascending: true })
         .order('created_at', { ascending: false });
       
       setGoals(data || []);
@@ -53,7 +67,6 @@ export function Savings() {
     fetchGoals();
   }, [selectedUser]);
 
-  // refreshTriggerの変更を監視して自動更新
   const { refreshTrigger } = useApp();
   useEffect(() => {
     if (refreshTrigger > 0) {
@@ -68,6 +81,7 @@ export function Savings() {
     }
 
     try {
+      const maxSort = Math.max(...goals.map(g => g.sort_order || 0), 0);
       const { error } = await supabase
         .from('saving_goals')
         .insert({
@@ -77,6 +91,7 @@ export function Savings() {
           deadline: newGoal.deadline || null,
           icon: newGoal.icon,
           current_amount: 0,
+          sort_order: maxSort + 1,
         });
 
       if (error) throw error;
@@ -107,6 +122,120 @@ export function Savings() {
     }
   };
 
+  // 目標の編集
+  const startEdit = (goal: SavingGoal) => {
+    setEditingGoal(goal);
+    setEditForm({
+      goal_name: goal.goal_name,
+      target_amount: String(goal.target_amount),
+      deadline: goal.deadline || "",
+      icon: goal.icon,
+    });
+    setIsEditDialogOpen(true);
+  };
+
+  const saveEdit = async () => {
+    if (!editingGoal || !editForm.goal_name || !editForm.target_amount) return;
+
+    try {
+      const { error } = await supabase
+        .from('saving_goals')
+        .update({
+          goal_name: editForm.goal_name,
+          target_amount: parseInt(editForm.target_amount),
+          deadline: editForm.deadline || null,
+          icon: editForm.icon,
+        })
+        .eq('id', editingGoal.id);
+
+      if (error) throw error;
+      await fetchGoals();
+      setIsEditDialogOpen(false);
+      setEditingGoal(null);
+    } catch (error) {
+      console.error('編集エラー:', error);
+      alert('編集に失敗しました');
+    }
+  };
+
+  // 貯金の取り崩し
+  const startWithdraw = (goal: SavingGoal) => {
+    setWithdrawGoal(goal);
+    setWithdrawAmount("");
+    setWithdrawMemo("");
+    setIsWithdrawDialogOpen(true);
+  };
+
+  const executeWithdraw = async () => {
+    if (!withdrawGoal || !withdrawAmount || !user) return;
+
+    const amount = parseInt(withdrawAmount);
+    if (amount <= 0) {
+      alert('正の金額を入力してください');
+      return;
+    }
+    if (amount > withdrawGoal.current_amount) {
+      alert('取り崩し額が現在の貯金額を超えています');
+      return;
+    }
+
+    try {
+      // current_amountを減算
+      const newAmount = withdrawGoal.current_amount - amount;
+      const { error: updateError } = await supabase
+        .from('saving_goals')
+        .update({ current_amount: newAmount })
+        .eq('id', withdrawGoal.id);
+
+      if (updateError) throw updateError;
+
+      // transactionsに「貯金からの取り崩し」として履歴を残す
+      const { error: insertError } = await supabase
+        .from('transactions')
+        .insert({
+          user_id: user.id,
+          user_type: selectedUser,
+          type: 'expense',
+          date: new Date().toISOString().split('T')[0],
+          category_main: '資金',
+          category_sub: '貯金・積立',
+          store_name: '',
+          amount: amount,
+          memo: `【貯金取崩】${withdrawGoal.goal_name}${withdrawMemo ? ` - ${withdrawMemo}` : ''}`,
+        });
+
+      if (insertError) throw insertError;
+
+      await fetchGoals();
+      setIsWithdrawDialogOpen(false);
+      setWithdrawGoal(null);
+    } catch (error) {
+      console.error('取り崩しエラー:', error);
+      alert('取り崩しに失敗しました');
+    }
+  };
+
+  // 並べ替え
+  const moveGoal = async (index: number, direction: 'up' | 'down') => {
+    const swapIndex = direction === 'up' ? index - 1 : index + 1;
+    if (swapIndex < 0 || swapIndex >= goals.length) return;
+
+    const newGoals = [...goals];
+    [newGoals[index], newGoals[swapIndex]] = [newGoals[swapIndex], newGoals[index]];
+
+    try {
+      for (let i = 0; i < newGoals.length; i++) {
+        await supabase
+          .from('saving_goals')
+          .update({ sort_order: i })
+          .eq('id', newGoals[i].id);
+      }
+      setGoals(newGoals.map((g, i) => ({ ...g, sort_order: i })));
+    } catch (error) {
+      console.error('並べ替えエラー:', error);
+    }
+  };
+
   const calculateMonthlyRequired = (goal: SavingGoal) => {
     if (!goal.deadline) return null;
     
@@ -126,7 +255,7 @@ export function Savings() {
 
   return (
     <div className="space-y-3 pb-24 pt-3">
-      {/* ヘッダー（テーマカラーのボーダー） */}
+      {/* ヘッダー */}
       <div 
         className="relative overflow-hidden rounded-xl p-3 shadow-xl backdrop-blur-xl"
         style={{
@@ -167,8 +296,8 @@ export function Savings() {
         </div>
       ) : (
         <div className="space-y-4">
-          {goals.map((goal) => {
-            const progress = (goal.current_amount / goal.target_amount) * 100;
+          {goals.map((goal, index) => {
+            const progress = goal.target_amount > 0 ? (goal.current_amount / goal.target_amount) * 100 : 0;
             const monthlyRequired = calculateMonthlyRequired(goal);
             const daysRemaining = goal.deadline ? calculateDaysRemaining(goal.deadline) : null;
 
@@ -185,14 +314,41 @@ export function Savings() {
                         </p>
                       </div>
                     </div>
-                    <Button
-                      onClick={() => deleteGoal(goal.id, goal.goal_name)}
-                      variant="ghost"
-                      size="sm"
-                      className="text-red-400 hover:text-red-300"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    <div className="flex items-center gap-0.5">
+                      <button
+                        onClick={() => moveGoal(index, 'up')}
+                        disabled={index === 0}
+                        className="p-1 rounded-lg hover:bg-white/10 text-white/30 hover:text-white/60 disabled:opacity-20"
+                      >
+                        <ChevronUp className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={() => moveGoal(index, 'down')}
+                        disabled={index === goals.length - 1}
+                        className="p-1 rounded-lg hover:bg-white/10 text-white/30 hover:text-white/60 disabled:opacity-20"
+                      >
+                        <ChevronDown className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={() => startEdit(goal)}
+                        className="p-1.5 rounded-lg hover:bg-white/10 text-white/40 hover:text-white/70"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={() => startWithdraw(goal)}
+                        className="p-1.5 rounded-lg hover:bg-orange-500/20 text-white/40 hover:text-orange-400"
+                        title="取り崩し"
+                      >
+                        <MinusCircle className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={() => deleteGoal(goal.id, goal.goal_name)}
+                        className="p-1.5 rounded-lg hover:bg-red-500/20 text-white/40 hover:text-red-400"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </div>
 
                   {/* プログレスバー */}
@@ -248,7 +404,7 @@ export function Savings() {
 
                   {monthlyRequired && (
                     <p className="mt-4 text-sm text-gray-400 text-center">
-                      💡 毎月 ¥{monthlyRequired.toLocaleString()} 貯めれば達成できます
+                      毎月 ¥{monthlyRequired.toLocaleString()} 貯めれば達成できます
                     </p>
                   )}
                 </div>
@@ -312,6 +468,116 @@ export function Savings() {
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* 目標編集ダイアログ */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="bg-slate-900/95 backdrop-blur-xl border-slate-700">
+          <DialogHeader>
+            <DialogTitle className="text-white flex items-center gap-2">
+              <Pencil className="h-4 w-4" style={{ color: theme.primary }} />
+              目標を編集
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label className="text-white">目標名</Label>
+              <Input
+                value={editForm.goal_name}
+                onChange={(e) => setEditForm({ ...editForm, goal_name: e.target.value })}
+                className="bg-slate-800/50 border-slate-700 text-white"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-white">目標金額</Label>
+              <Input
+                type="number"
+                value={editForm.target_amount}
+                onChange={(e) => setEditForm({ ...editForm, target_amount: e.target.value })}
+                className="bg-slate-800/50 border-slate-700 text-white"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-white">期限</Label>
+              <Input
+                type="date"
+                value={editForm.deadline}
+                onChange={(e) => setEditForm({ ...editForm, deadline: e.target.value })}
+                className="bg-slate-800/50 border-slate-700 text-white"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-white">アイコン</Label>
+              <Input
+                value={editForm.icon}
+                onChange={(e) => setEditForm({ ...editForm, icon: e.target.value })}
+                maxLength={2}
+                className="bg-slate-800/50 border-slate-700 text-white"
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button onClick={saveEdit} className="flex-1" style={{ background: `linear-gradient(135deg, ${theme.primary}, ${theme.secondary})` }}>
+                保存
+              </Button>
+              <Button onClick={() => setIsEditDialogOpen(false)} variant="outline" className="flex-1">
+                キャンセル
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* 取り崩しダイアログ */}
+      <Dialog open={isWithdrawDialogOpen} onOpenChange={setIsWithdrawDialogOpen}>
+        <DialogContent className="bg-slate-900/95 backdrop-blur-xl border-slate-700">
+          <DialogHeader>
+            <DialogTitle className="text-white flex items-center gap-2">
+              <MinusCircle className="h-4 w-4 text-orange-400" />
+              貯金を取り崩す
+            </DialogTitle>
+          </DialogHeader>
+          {withdrawGoal && (
+            <div className="space-y-4">
+              <div className="rounded-xl p-3 bg-orange-500/10 border border-orange-500/20">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-2xl">{withdrawGoal.icon}</span>
+                  <span className="font-bold text-white">{withdrawGoal.goal_name}</span>
+                </div>
+                <p className="text-sm text-orange-300/70">
+                  現在の貯金額: ¥{withdrawGoal.current_amount.toLocaleString()}
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-white">取り崩し金額 *</Label>
+                <Input
+                  type="number"
+                  value={withdrawAmount}
+                  onChange={(e) => setWithdrawAmount(e.target.value)}
+                  placeholder="10000"
+                  max={withdrawGoal.current_amount}
+                  className="bg-slate-800/50 border-slate-700 text-white"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-white">メモ（使用目的）</Label>
+                <Input
+                  value={withdrawMemo}
+                  onChange={(e) => setWithdrawMemo(e.target.value)}
+                  placeholder="例：旅行の航空券購入"
+                  className="bg-slate-800/50 border-slate-700 text-white"
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button onClick={executeWithdraw} className="flex-1 bg-gradient-to-r from-orange-600 to-amber-600">
+                  取り崩す
+                </Button>
+                <Button onClick={() => setIsWithdrawDialogOpen(false)} variant="outline" className="flex-1">
+                  キャンセル
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

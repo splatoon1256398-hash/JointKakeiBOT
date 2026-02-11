@@ -11,6 +11,12 @@ export interface ParsedTransaction {
   memo: string;
 }
 
+/** 複数商品対応の戻り値 */
+export interface ParsedEmailResult {
+  is_transaction: boolean;
+  items: ParsedTransaction[];
+}
+
 interface GmailFilter {
   filter_type: "WHITELIST" | "BLACKLIST";
   target_type: "SUBJECT" | "SENDER";
@@ -52,14 +58,15 @@ export function shouldProcessEmail(
 }
 
 /**
- * Gemini AI でメール本文から取引情報を解析
- * @param categories DBから取得したカテゴリ一覧。渡された場合はその中からのみ選択する
+ * Gemini AI でメール本文から取引情報を解析（複数商品対応）
+ * @param categories DBから取得したカテゴリ一覧
+ * @returns 複数のParsedTransactionを含むResult、またはnull
  */
 export async function parseEmailWithAI(
   emailBody: string,
   subject: string,
   categories?: CategoryDefinition[]
-): Promise<ParsedTransaction | null> {
+): Promise<ParsedTransaction[] | null> {
   try {
     const model = genAI.getGenerativeModel({
       model: "gemini-2.5-flash-lite",
@@ -69,19 +76,27 @@ export async function parseEmailWithAI(
           type: SchemaType.OBJECT,
           properties: {
             is_transaction: { type: SchemaType.BOOLEAN },
-            date: { type: SchemaType.STRING },
-            amount: { type: SchemaType.NUMBER },
-            store: { type: SchemaType.STRING },
-            category_main: { type: SchemaType.STRING },
-            category_sub: { type: SchemaType.STRING },
-            memo: { type: SchemaType.STRING },
+            items: {
+              type: SchemaType.ARRAY,
+              items: {
+                type: SchemaType.OBJECT,
+                properties: {
+                  date: { type: SchemaType.STRING },
+                  amount: { type: SchemaType.NUMBER },
+                  store: { type: SchemaType.STRING },
+                  category_main: { type: SchemaType.STRING },
+                  category_sub: { type: SchemaType.STRING },
+                  memo: { type: SchemaType.STRING },
+                },
+                required: ["date", "amount", "store", "category_main", "category_sub", "memo"],
+              },
+            },
           },
           required: ["is_transaction"],
         },
       },
     });
 
-    // カテゴリ一覧をプロンプトに埋め込み
     let categoryInstruction: string;
     if (categories && categories.length > 0) {
       const catLines = categories.map(
@@ -96,31 +111,43 @@ ${catLines.join("\n")}`;
     }
 
     const prompt = `以下のメールから決済・取引情報を抽出してください。
-決済メールでない場合は is_transaction: false を返してください。
+決済メールでない場合は is_transaction: false, items: [] を返してください。
+
+【重要: 複数商品対応】
+- 1通のメールに複数の商品がある場合（Amazon注文確認、まとめ買い等）、items配列に個別に登録してください。
+- 各itemのmemoには「Gmail自動：件名」ではなく、AIが抽出した**具体的な商品名**をセットしてください。
+  - 例: memo="UGREEN LANケーブル CAT8 2m" のように具体的に
+  - 商品名が不明な場合のみ件名から推測してください
+- 各itemのstoreには店名・サービス名を入れてください（Amazon, 楽天市場, etc）
 
 ${categoryInstruction}
 
 件名: ${subject}
 
 メール本文:
-${emailBody.substring(0, 3000)}`;
+${emailBody.substring(0, 4000)}`;
 
     const result = await model.generateContent(prompt);
     const text = result.response.text();
-    const parsed = JSON.parse(text);
+    const parsed: ParsedEmailResult = JSON.parse(text);
 
-    if (!parsed.is_transaction) {
+    if (!parsed.is_transaction || !parsed.items || parsed.items.length === 0) {
       return null;
     }
 
-    return {
-      date: parsed.date || new Date().toISOString().split("T")[0],
-      amount: parsed.amount || 0,
-      store: parsed.store || "",
-      category_main: parsed.category_main || "その他",
-      category_sub: parsed.category_sub || "その他",
-      memo: parsed.memo || "",
-    };
+    // 各itemをバリデーション
+    const validItems = parsed.items
+      .filter((item) => item.amount > 0)
+      .map((item) => ({
+        date: item.date || new Date().toISOString().split("T")[0],
+        amount: item.amount,
+        store: item.store || "",
+        category_main: item.category_main || "その他",
+        category_sub: item.category_sub || "その他",
+        memo: item.memo || "",
+      }));
+
+    return validItems.length > 0 ? validItems : null;
   } catch (error) {
     console.error("Gmail AI parse error:", error);
     return null;

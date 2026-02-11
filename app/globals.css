@@ -175,15 +175,24 @@
     animation: pulse-glow 2s ease-in-out infinite;
   }
   
+  /* カレンダーラッパー: 内部カレンダーを中央配置 */
+  .calendar-wrapper {
+    display: flex;
+    justify-content: center;
+    width: 100%;
+  }
+
   /* React Calendar カスタムスタイル */
   .react-calendar {
     border: none !important;
     font-family: inherit;
     background: rgba(255, 255, 255, 0.95) !important;
-    width: 100%;
+    width: 100% !important;
+    max-width: 100% !important;
     border-radius: 1.5rem !important;
     padding: 0.75rem !important;
     box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15) !important;
+    margin: 0 auto !important;
   }
 
   .react-calendar__navigation {

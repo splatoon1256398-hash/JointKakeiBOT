@@ -159,7 +159,7 @@ export function History({ isCompact = false }: HistoryProps) {
         {viewMode === 'calendar' && (
           <div className="space-y-6">
             {/* カレンダーコンテナ: card-solid + 中央配置 */}
-            <div className="card-solid overflow-hidden mx-auto max-w-md">
+            <div className="card-solid overflow-hidden mx-auto max-w-md w-full">
               <style>{`
                 :root {
                   --theme-primary: ${theme.primary};

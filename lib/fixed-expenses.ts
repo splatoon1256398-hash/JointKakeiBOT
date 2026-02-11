@@ -50,8 +50,10 @@ export async function processFixedExpenses(userId: string): Promise<{
     }
 
     // 今月の固定費取引を取得（重複チェック用）
+    // 月末日を動的に計算（2月=28/29, 4月=30, etc）
+    const lastDayOfMonth = new Date(currentYear, currentMonth, 0).getDate();
     const monthStart = `${currentYear}-${String(currentMonth).padStart(2, "0")}-01`;
-    const monthEnd = `${currentYear}-${String(currentMonth).padStart(2, "0")}-31`;
+    const monthEnd = `${currentYear}-${String(currentMonth).padStart(2, "0")}-${String(lastDayOfMonth).padStart(2, "0")}`;
 
     const { data: existingTransactions, error: txError } = await supabase
       .from("transactions")
@@ -85,8 +87,9 @@ export async function processFixedExpenses(userId: string): Promise<{
         continue;
       }
 
-      // 引き落とし日の日付を生成
-      const paymentDate = `${currentYear}-${String(currentMonth).padStart(2, "0")}-${String(expense.payment_day).padStart(2, "0")}`;
+      // 引き落とし日の日付を生成（月末を超えないよう調整）
+      const actualPayDay = Math.min(expense.payment_day, lastDayOfMonth);
+      const paymentDate = `${currentYear}-${String(currentMonth).padStart(2, "0")}-${String(actualPayDay).padStart(2, "0")}`;
 
       // transactionsに追加
       const { error: insertError } = await supabase.from("transactions").insert({

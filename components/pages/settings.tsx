@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Pencil, Trash2, Save, X, Tag } from "lucide-react";
+import { Plus, Pencil, Trash2, Save, X, Tag, ChevronUp, ChevronDown } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useApp } from "@/contexts/app-context";
 
@@ -100,6 +100,27 @@ export function Settings() {
     } catch (error) {
       console.error('追加エラー:', error);
       alert('追加に失敗しました');
+    }
+  };
+
+  const moveCategory = async (index: number, direction: 'up' | 'down') => {
+    const swapIndex = direction === 'up' ? index - 1 : index + 1;
+    if (swapIndex < 0 || swapIndex >= categories.length) return;
+
+    const newCategories = [...categories];
+    [newCategories[index], newCategories[swapIndex]] = [newCategories[swapIndex], newCategories[index]];
+
+    // sort_orderを更新
+    try {
+      for (let i = 0; i < newCategories.length; i++) {
+        await supabase
+          .from('categories')
+          .update({ sort_order: i })
+          .eq('id', newCategories[i].id);
+      }
+      setCategories(newCategories.map((c, i) => ({ ...c, sort_order: i })));
+    } catch (error) {
+      console.error('並べ替えエラー:', error);
     }
   };
 
@@ -204,7 +225,21 @@ export function Settings() {
                       <span className="text-2xl">{category.icon}</span>
                       <span className="text-sm font-bold text-white">{category.main_category}</span>
                     </div>
-                    <div className="flex gap-1.5">
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() => moveCategory(categories.indexOf(category), 'up')}
+                        disabled={categories.indexOf(category) === 0}
+                        className="p-1 rounded-lg hover:bg-white/10 transition-colors text-white/30 hover:text-white/60 disabled:opacity-20"
+                      >
+                        <ChevronUp className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={() => moveCategory(categories.indexOf(category), 'down')}
+                        disabled={categories.indexOf(category) === categories.length - 1}
+                        className="p-1 rounded-lg hover:bg-white/10 transition-colors text-white/30 hover:text-white/60 disabled:opacity-20"
+                      >
+                        <ChevronDown className="h-3.5 w-3.5" />
+                      </button>
                       <button
                         onClick={() => startEdit(category)}
                         className="p-1.5 rounded-lg hover:bg-white/10 transition-colors text-white/40 hover:text-white/70"

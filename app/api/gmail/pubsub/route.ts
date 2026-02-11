@@ -4,6 +4,7 @@ import { parseEmailWithAI, shouldProcessEmail, CategoryDefinition } from "@/lib/
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
+const PROCESSED_LABEL_NAME = "Kakeibo/Processed";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL || "",
@@ -64,8 +65,7 @@ function extractHeader(headers: any[], name: string): string {
 }
 
 /**
- * 重複排除: messageId が既に処理済みかチェック
- * transactions テーブルの source カラムに "gmail_pubsub:<messageId>" を記録して判定
+ * DB重複排除: messageId が既に処理済みかチェック
  */
 async function isMessageAlreadyProcessed(messageId: string): Promise<boolean> {
   const { data } = await supabaseAdmin
@@ -77,7 +77,7 @@ async function isMessageAlreadyProcessed(messageId: string): Promise<boolean> {
 }
 
 /**
- * DB からカテゴリ一覧を取得して AI に渡す形式に変換
+ * DB からカテゴリ一覧を取得
  */
 async function fetchCategoryDefinitions(): Promise<CategoryDefinition[]> {
   const { data } = await supabaseAdmin
@@ -90,6 +90,76 @@ async function fetchCategoryDefinitions(): Promise<CategoryDefinition[]> {
     main_category: c.main_category,
     subcategories: c.subcategories || [],
   }));
+}
+
+/**
+ * Gmail ラベル ID を取得（なければ作成）
+ */
+async function getOrCreateLabelId(accessToken: string): Promise<string | null> {
+  try {
+    // 既存ラベルを検索
+    const listRes = await fetch(
+      "https://gmail.googleapis.com/gmail/v1/users/me/labels",
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+    const listData = await listRes.json();
+    const existing = listData.labels?.find(
+      (l: any) => l.name === PROCESSED_LABEL_NAME
+    );
+    if (existing) return existing.id;
+
+    // なければ新規作成
+    const createRes = await fetch(
+      "https://gmail.googleapis.com/gmail/v1/users/me/labels",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: PROCESSED_LABEL_NAME,
+          labelListVisibility: "labelShow",
+          messageListVisibility: "show",
+        }),
+      }
+    );
+    const createData = await createRes.json();
+    return createData.id || null;
+  } catch (err) {
+    console.error("Label get/create error:", err);
+    return null;
+  }
+}
+
+/**
+ * メールにラベルがついているか確認
+ */
+function hasLabel(message: any, labelId: string): boolean {
+  return message.labelIds?.includes(labelId) || false;
+}
+
+/**
+ * メールにラベルを付与
+ */
+async function addLabelToMessage(
+  accessToken: string,
+  messageId: string,
+  labelId: string
+): Promise<void> {
+  await fetch(
+    `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}/modify`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        addLabelIds: [labelId],
+      }),
+    }
+  );
 }
 
 export async function POST(request: Request) {
@@ -120,7 +190,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: "No users with Google linked" });
     }
 
-    // カテゴリ一覧を事前に取得（全ユーザー共通）
     const categoryDefs = await fetchCategoryDefinitions();
 
     for (const userSettings of users) {
@@ -136,6 +205,9 @@ export async function POST(request: Request) {
 
         if (profile.emailAddress !== emailAddress) continue;
 
+        // 処理済みラベルを取得 or 作成
+        const processedLabelId = await getOrCreateLabelId(accessToken);
+
         // 最新メッセージを取得
         const messagesRes = await fetch(
           `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=3&labelIds=INBOX`,
@@ -145,24 +217,29 @@ export async function POST(request: Request) {
 
         if (!messagesData.messages || messagesData.messages.length === 0) continue;
 
-        // 最新3件を処理対象にし、重複チェック
         for (const msg of messagesData.messages) {
           const messageId: string = msg.id;
 
-          // 重複排除: 既に処理済みならスキップ
+          // DB重複排除
           if (await isMessageAlreadyProcessed(messageId)) {
-            console.log(`Already processed messageId: ${messageId}`);
+            console.log(`Already processed (DB) messageId: ${messageId}`);
             continue;
           }
 
           const message = await getEmailContent(accessToken, messageId);
+
+          // Gmail ラベル重複排除
+          if (processedLabelId && hasLabel(message, processedLabelId)) {
+            console.log(`Already processed (Label) messageId: ${messageId}`);
+            continue;
+          }
 
           const headers = message.payload?.headers || [];
           const subject = extractHeader(headers, "Subject");
           const sender = extractHeader(headers, "From");
           const emailBody = extractEmailBody(message);
 
-          // フィルタ取得・適用
+          // フィルタ適用
           const { data: filters } = await supabaseAdmin
             .from("gmail_filters")
             .select("filter_type, target_type, keyword")
@@ -173,52 +250,67 @@ export async function POST(request: Request) {
             continue;
           }
 
-          // AI解析（カテゴリ一覧付き）
-          const parsed = await parseEmailWithAI(emailBody, subject, categoryDefs);
-          if (!parsed || parsed.amount <= 0) {
+          // AI解析（複数商品対応）
+          const parsedItems = await parseEmailWithAI(emailBody, subject, categoryDefs);
+          if (!parsedItems || parsedItems.length === 0) {
             console.log(`Not a transaction email: ${subject}`);
             continue;
           }
 
-          // transactions テーブルに INSERT（source に messageId を記録）
+          // 各商品を個別トランザクションとしてINSERT
           const userType = userSettings.linked_user_type || "共同";
-          const { error: insertError } = await supabaseAdmin
-            .from("transactions")
-            .insert({
-              user_id: userSettings.user_id,
-              user_type: userType,
-              type: "expense",
-              date: parsed.date,
-              category_main: parsed.category_main,
-              category_sub: parsed.category_sub,
-              store_name: parsed.store,
-              amount: parsed.amount,
-              memo: parsed.memo || `Gmail自動: ${subject.substring(0, 50)}`,
-              source: `gmail_pubsub:${messageId}`,
-            });
+          let insertedCount = 0;
 
-          if (insertError) {
-            console.error("Transaction insert error:", insertError);
-            continue;
+          for (const item of parsedItems) {
+            const { error: insertError } = await supabaseAdmin
+              .from("transactions")
+              .insert({
+                user_id: userSettings.user_id,
+                user_type: userType,
+                type: "expense",
+                date: item.date,
+                category_main: item.category_main,
+                category_sub: item.category_sub,
+                store_name: item.store,
+                amount: item.amount,
+                memo: item.memo || `${item.store} - ${subject.substring(0, 50)}`,
+                source: `gmail_pubsub:${messageId}`,
+              });
+
+            if (insertError) {
+              console.error("Transaction insert error:", insertError);
+            } else {
+              insertedCount++;
+            }
           }
 
-          // Push 通知を本人に送信
-          try {
-            const appUrl = process.env.NEXT_PUBLIC_APP_URL || "";
-            await fetch(`${appUrl}/api/push/send`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                title: "自動記録完了",
-                body: `${parsed.store || "不明"}での決済(¥${parsed.amount.toLocaleString()})を自動記録しました`,
-                targetUserId: userSettings.user_id,
-              }),
-            });
-          } catch (pushError) {
-            console.error("Push notification error:", pushError);
+          // 成功したらラベルを付与
+          if (insertedCount > 0 && processedLabelId) {
+            await addLabelToMessage(accessToken, messageId, processedLabelId);
           }
 
-          console.log(`Auto-recorded [${messageId}]: ${parsed.store} ¥${parsed.amount}`);
+          // Push通知
+          if (insertedCount > 0) {
+            try {
+              const totalAmount = parsedItems.reduce((s, i) => s + i.amount, 0);
+              const storeName = parsedItems[0]?.store || "不明";
+              const itemCount = parsedItems.length > 1 ? `(${parsedItems.length}件)` : "";
+              const appUrl = process.env.NEXT_PUBLIC_APP_URL || "";
+              await fetch(`${appUrl}/api/push/send`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  title: "自動記録完了",
+                  body: `${storeName}${itemCount}での決済(¥${totalAmount.toLocaleString()})を自動記録しました`,
+                  targetUserId: userSettings.user_id,
+                }),
+              });
+            } catch (pushError) {
+              console.error("Push notification error:", pushError);
+            }
+          }
+
+          console.log(`Auto-recorded [${messageId}]: ${insertedCount} items from "${subject}"`);
         }
       } catch (userError) {
         console.error(`Error processing user ${userSettings.user_id}:`, userError);
