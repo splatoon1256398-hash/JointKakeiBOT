@@ -7,6 +7,7 @@ import { useApp } from "@/contexts/app-context";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { ExpenseCard } from "@/components/widgets/expense-card";
 import { EditTransactionDialog, TransactionForEdit } from "@/components/edit-transaction-dialog";
+import { type TransactionItem } from "@/lib/gemini";
 
 interface Transaction {
   id: string;
@@ -17,6 +18,24 @@ interface Transaction {
   amount: number;
   memo: string;
   type: string;
+  items?: TransactionItem[] | null;
+}
+
+interface CategoryDataItem {
+  name: string;
+  value: number;
+  icon: string;
+}
+
+interface SubCategoryDataItem {
+  name: string;
+  value: number;
+}
+
+interface YearlyDataItem {
+  month: string;
+  支出: number;
+  fullMonth: string;
 }
 
 type DrillLevel = 'overview' | 'subcategory' | 'detail';
@@ -26,10 +45,10 @@ const CHART_COLORS = ['#8b5cf6', '#ec4899', '#06b6d4', '#10b981', '#f59e0b', '#e
 export function Analysis() {
   const { selectedUser, refreshTrigger, theme } = useApp();
   const [isLoading, setIsLoading] = useState(true);
-  const [yearlyData, setYearlyData] = useState<any[]>([]);
-  const [categoryData, setCategoryData] = useState<any[]>([]);
+  const [yearlyData, setYearlyData] = useState<YearlyDataItem[]>([]);
+  const [categoryData, setCategoryData] = useState<CategoryDataItem[]>([]);
   const [categoryIcons, setCategoryIcons] = useState<Record<string, string>>({});
-  const [subCategoryData, setSubCategoryData] = useState<Record<string, any[]>>({});
+  const [subCategoryData, setSubCategoryData] = useState<Record<string, SubCategoryDataItem[]>>({});
   const [transactions, setTransactions] = useState<Transaction[]>([]);
 
   // 月選択
@@ -147,12 +166,18 @@ export function Analysis() {
         }));
       setYearlyData(yearly);
 
-      // カテゴリー別支出（選択月）
+      // カテゴリー別支出（選択月）- items対応
       const categoryMap: Record<string, number> = {};
       transactionsData
         ?.filter(t => t.type === 'expense' && t.date >= firstDayStr && t.date <= lastDayStr)
         .forEach(t => {
-          categoryMap[t.category_main] = (categoryMap[t.category_main] || 0) + t.amount;
+          if (t.items && Array.isArray(t.items) && t.items.length > 0) {
+            (t.items as TransactionItem[]).forEach(item => {
+              categoryMap[item.categoryMain] = (categoryMap[item.categoryMain] || 0) + item.amount;
+            });
+          } else {
+            categoryMap[t.category_main] = (categoryMap[t.category_main] || 0) + t.amount;
+          }
         });
 
       const categoryArray = Object.entries(categoryMap)
@@ -160,19 +185,29 @@ export function Analysis() {
         .sort((a, b) => b.value - a.value);
       setCategoryData(categoryArray);
 
-      // 小カテゴリー別データ（選択月）
+      // 小カテゴリー別データ（選択月）- items対応
       const subCatMap: Record<string, Record<string, number>> = {};
       transactionsData
         ?.filter(t => t.type === 'expense' && t.date >= firstDayStr && t.date <= lastDayStr)
         .forEach(t => {
-          if (!subCatMap[t.category_main]) {
-            subCatMap[t.category_main] = {};
+          if (t.items && Array.isArray(t.items) && t.items.length > 0) {
+            (t.items as TransactionItem[]).forEach(item => {
+              if (!subCatMap[item.categoryMain]) {
+                subCatMap[item.categoryMain] = {};
+              }
+              subCatMap[item.categoryMain][item.categorySub] = 
+                (subCatMap[item.categoryMain][item.categorySub] || 0) + item.amount;
+            });
+          } else {
+            if (!subCatMap[t.category_main]) {
+              subCatMap[t.category_main] = {};
+            }
+            subCatMap[t.category_main][t.category_sub] = 
+              (subCatMap[t.category_main][t.category_sub] || 0) + t.amount;
           }
-          subCatMap[t.category_main][t.category_sub] = 
-            (subCatMap[t.category_main][t.category_sub] || 0) + t.amount;
         });
 
-      const subCatData: Record<string, any[]> = {};
+      const subCatData: Record<string, SubCategoryDataItem[]> = {};
       Object.entries(subCatMap).forEach(([mainCat, subs]) => {
         subCatData[mainCat] = Object.entries(subs)
           .map(([name, value]) => ({ name, value }))
@@ -210,17 +245,23 @@ export function Analysis() {
     }
   };
 
-  // 選択月のトランザクションをフィルタ
+  // 選択月のトランザクションをフィルタ（items対応）
   const getFilteredTransactions = () => {
-    const firstDay = new Date(selectedYear, selectedMonth - 1, 1).toISOString().split('T')[0];
-    const lastDay = new Date(selectedYear, selectedMonth, 0).toISOString().split('T')[0];
-    return transactions.filter(
-      t => t.type === 'expense' &&
-        t.date >= firstDay &&
-        t.date <= lastDay &&
-        t.category_main === selectedMainCategory &&
-        (drillLevel === 'subcategory' || t.category_sub === selectedSubCategory)
-    );
+    const mm = String(selectedMonth).padStart(2, '0');
+    const firstDayStr = `${selectedYear}-${mm}-01`;
+    const lastDay = new Date(selectedYear, selectedMonth, 0);
+    const lastDayStr = `${selectedYear}-${mm}-${String(lastDay.getDate()).padStart(2, '0')}`;
+    return transactions.filter(t => {
+      if (t.type !== 'expense' || t.date < firstDayStr || t.date > lastDayStr) return false;
+      if (t.items && Array.isArray(t.items) && t.items.length > 0) {
+        return (t.items as TransactionItem[]).some(item =>
+          item.categoryMain === selectedMainCategory &&
+          (drillLevel === 'subcategory' || item.categorySub === selectedSubCategory)
+        );
+      }
+      return t.category_main === selectedMainCategory &&
+        (drillLevel === 'subcategory' || t.category_sub === selectedSubCategory);
+    });
   };
 
   // 月選択ナビゲーション
@@ -430,10 +471,54 @@ export function Analysis() {
     );
   };
 
-  // Level 3: 個別トランザクション
+  // Level 3: 個別トランザクション（items対応）
   const renderDetail = () => {
-    const filtered = getFilteredTransactions().filter(t => t.category_sub === selectedSubCategory);
-    const subTotal = filtered.reduce((sum, t) => sum + t.amount, 0);
+    const filtered = getFilteredTransactions();
+
+    // items対応: マッチする明細を展開表示
+    interface DetailItem {
+      id: string;
+      date: string;
+      category_main: string;
+      category_sub: string;
+      store_name: string;
+      amount: number;
+      memo: string;
+      parentId?: string;
+    }
+
+    const detailItems: DetailItem[] = [];
+    filtered.forEach(t => {
+      if (t.items && Array.isArray(t.items) && t.items.length > 0) {
+        (t.items as TransactionItem[]).filter(item =>
+          item.categoryMain === selectedMainCategory &&
+          item.categorySub === selectedSubCategory
+        ).forEach((item, idx) => {
+          detailItems.push({
+            id: `${t.id}-item-${idx}`,
+            date: t.date,
+            category_main: item.categoryMain,
+            category_sub: item.categorySub,
+            store_name: item.storeName,
+            amount: item.amount,
+            memo: item.memo,
+            parentId: t.id,
+          });
+        });
+      } else if (t.category_sub === selectedSubCategory) {
+        detailItems.push({
+          id: t.id,
+          date: t.date,
+          category_main: t.category_main,
+          category_sub: t.category_sub,
+          store_name: t.store_name,
+          amount: t.amount,
+          memo: t.memo,
+        });
+      }
+    });
+
+    const subTotal = detailItems.reduce((sum, i) => sum + i.amount, 0);
 
     return (
       <div className="space-y-3">
@@ -449,32 +534,32 @@ export function Analysis() {
             <p className="text-red-400 font-bold mt-1">合計: ¥{subTotal.toLocaleString()}</p>
           </div>
 
-          {filtered.length === 0 ? (
+          {detailItems.length === 0 ? (
             <p className="text-white/40 text-center py-8">データがありません</p>
           ) : (
             <div className="space-y-1.5">
-              {filtered
+              {detailItems
                 .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-                .map((t) => (
+                .map((item) => (
                   <ExpenseCard
-                    key={t.id}
-                    memo={t.memo}
-                    storeName={t.store_name}
-                    categoryMain={t.category_main}
-                    categorySub={t.category_sub}
-                    categoryIcon={categoryIcons[t.category_main] || '📦'}
-                    amount={t.amount}
-                    date={t.date}
+                    key={item.id}
+                    memo={item.memo}
+                    storeName={item.store_name}
+                    categoryMain={item.category_main}
+                    categorySub={item.category_sub}
+                    categoryIcon={categoryIcons[item.category_main] || '📦'}
+                    amount={item.amount}
+                    date={item.date}
                     showDate
-                    onEdit={() => {
+                    onEdit={item.parentId ? undefined : () => {
                       setEditingTransaction({
-                        id: t.id,
-                        date: t.date,
-                        category_main: t.category_main,
-                        category_sub: t.category_sub,
-                        store_name: t.store_name,
-                        amount: t.amount,
-                        memo: t.memo,
+                        id: item.id,
+                        date: item.date,
+                        category_main: item.category_main,
+                        category_sub: item.category_sub,
+                        store_name: item.store_name,
+                        amount: item.amount,
+                        memo: item.memo,
                         user_type: selectedUser,
                       });
                       setIsEditDialogOpen(true);

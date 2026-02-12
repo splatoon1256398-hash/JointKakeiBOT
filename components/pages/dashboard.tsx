@@ -410,7 +410,9 @@ export function Dashboard({ onNavigateToAnalysis }: DashboardProps) {
     }
   };
 
-  const renderCustomLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, name }: any) => {
+  const renderCustomLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, name }: {
+    cx: number; cy: number; midAngle: number; innerRadius: number; outerRadius: number; percent: number; name: string;
+  }) => {
     if (percent < 0.08) return null;
     const RADIAN = Math.PI / 180;
     const radius = innerRadius + (outerRadius - innerRadius) * 0.5;

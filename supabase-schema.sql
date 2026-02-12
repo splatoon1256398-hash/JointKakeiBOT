@@ -24,12 +24,18 @@ CREATE INDEX IF NOT EXISTS idx_transactions_category_main ON transactions(catego
 -- RLS (Row Level Security) の有効化
 ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
 
--- 全員が読み書きできるポリシー（開発用）
--- 本番環境では適切な認証ベースのポリシーに変更してください
-CREATE POLICY "Enable all access for all users" ON transactions
-  FOR ALL
-  USING (true)
-  WITH CHECK (true);
+-- 認証ベースのRLSポリシー
+CREATE POLICY "Users can view own transactions" ON transactions
+  FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert own transactions" ON transactions
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own transactions" ON transactions
+  FOR UPDATE USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own transactions" ON transactions
+  FOR DELETE USING (auth.uid() = user_id);
 
 -- updated_at を自動更新するトリガー
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -73,11 +79,14 @@ CREATE INDEX IF NOT EXISTS idx_categories_sort_order ON categories(sort_order);
 -- RLS (Row Level Security) の有効化
 ALTER TABLE categories ENABLE ROW LEVEL SECURITY;
 
--- 全員が読み書きできるポリシー（開発用）
-CREATE POLICY "Enable all access for all users on categories" ON categories
+-- カテゴリーは全ユーザーが読み取り可能、書き込みは認証ユーザーのみ
+CREATE POLICY "Anyone can read categories" ON categories
+  FOR SELECT USING (true);
+
+CREATE POLICY "Authenticated users can modify categories" ON categories
   FOR ALL
-  USING (true)
-  WITH CHECK (true);
+  USING (auth.role() = 'authenticated')
+  WITH CHECK (auth.role() = 'authenticated');
 
 -- updated_at を自動更新するトリガー
 CREATE TRIGGER update_categories_updated_at BEFORE UPDATE ON categories
@@ -130,11 +139,18 @@ CREATE INDEX IF NOT EXISTS idx_saving_goals_user_type ON saving_goals(user_type)
 -- RLS (Row Level Security) の有効化
 ALTER TABLE saving_goals ENABLE ROW LEVEL SECURITY;
 
--- 全員が読み書きできるポリシー（開発用）
-CREATE POLICY "Enable all access for all users on saving_goals" ON saving_goals
-  FOR ALL
-  USING (true)
-  WITH CHECK (true);
+-- 認証ベースのRLSポリシー
+CREATE POLICY "Users can view own saving_goals" ON saving_goals
+  FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert own saving_goals" ON saving_goals
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own saving_goals" ON saving_goals
+  FOR UPDATE USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own saving_goals" ON saving_goals
+  FOR DELETE USING (auth.uid() = user_id);
 
 -- updated_at を自動更新するトリガー
 CREATE TRIGGER update_saving_goals_updated_at BEFORE UPDATE ON saving_goals
@@ -189,11 +205,18 @@ CREATE INDEX IF NOT EXISTS idx_budgets_category_main ON budgets(category_main);
 -- RLS (Row Level Security) の有効化
 ALTER TABLE budgets ENABLE ROW LEVEL SECURITY;
 
--- 全員が読み書きできるポリシー（開発用）
-CREATE POLICY "Enable all access for all users on budgets" ON budgets
-  FOR ALL
-  USING (true)
-  WITH CHECK (true);
+-- 認証ベースのRLSポリシー
+CREATE POLICY "Users can view own budgets" ON budgets
+  FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert own budgets" ON budgets
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own budgets" ON budgets
+  FOR UPDATE USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own budgets" ON budgets
+  FOR DELETE USING (auth.uid() = user_id);
 
 -- updated_at を自動更新するトリガー
 CREATE TRIGGER update_budgets_updated_at BEFORE UPDATE ON budgets
@@ -203,3 +226,18 @@ COMMENT ON TABLE budgets IS '予算管理テーブル';
 COMMENT ON COLUMN budgets.user_type IS 'ユーザータイプ（共同、れん、あかね）';
 COMMENT ON COLUMN budgets.category_main IS '大カテゴリー名';
 COMMENT ON COLUMN budgets.monthly_budget IS '月間予算額（円）';
+
+-- ==========================================
+-- マイグレーション: transactions テーブルに items カラムを追加
+-- ==========================================
+
+DO $$ 
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'transactions' AND column_name = 'items'
+  ) THEN
+    ALTER TABLE transactions ADD COLUMN items JSONB;
+    COMMENT ON COLUMN transactions.items IS 'レシート解析時の明細配列（JSON）。各要素: {categoryMain, categorySub, storeName, amount, memo}';
+  END IF;
+END $$;

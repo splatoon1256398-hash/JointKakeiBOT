@@ -58,10 +58,11 @@ export async function POST(request: NextRequest) {
       .insert({
         user_id: settings.user_id,
         user_type: body.user_type,
-        type: "expense", // Gmailからの通知は基本的に支出
+        type: "expense",
         amount: body.amount,
         category_main: body.category_main,
         category_sub: body.category_sub,
+        store_name: body.store,
         memo: body.memo || `Gmail自動登録: ${body.store}`,
         date: body.date,
       })
@@ -76,12 +77,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 「共同」支出の場合、パートナーにPush通知を送信
+    // 自分自身にGmail処理成功の通知を送信
+    const pushUrl = `${new URL(request.url).origin}/api/push/send`;
+    try {
+      await fetch(pushUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: "Gmail支出が自動登録されました",
+          body: `¥${body.amount.toLocaleString()} (${body.memo || body.store})`,
+          targetUserId: settings.user_id,
+        }),
+      });
+    } catch (pushError) {
+      console.error("Self push notification error:", pushError);
+    }
+
+    // 「共同」支出の場合、パートナーにもPush通知を送信
     if (body.user_type === "共同") {
       try {
-        const origin = request.headers.get("origin") || request.headers.get("referer")?.replace(/\/$/, "") || "";
-        const pushUrl = origin ? `${origin}/api/push/send` : `${new URL(request.url).origin}/api/push/send`;
-        
         await fetch(pushUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -92,8 +106,7 @@ export async function POST(request: NextRequest) {
           }),
         });
       } catch (pushError) {
-        // Push通知の失敗はメイン処理に影響させない
-        console.error("Push notification error:", pushError);
+        console.error("Partner push notification error:", pushError);
       }
     }
 

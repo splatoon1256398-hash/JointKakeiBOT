@@ -31,8 +31,9 @@ export function Login({ onLoginSuccess }: LoginProps) {
 
       if (error) throw error;
       onLoginSuccess();
-    } catch (error: any) {
-      alert(error.message || "ログインに失敗しました");
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'ログインに失敗しました';
+      alert(msg);
     } finally {
       setIsLoading(false);
     }
@@ -57,8 +58,9 @@ export function Login({ onLoginSuccess }: LoginProps) {
       
       alert("登録完了！ログインしてください。");
       setIsSignUp(false);
-    } catch (error: any) {
-      alert(error.message || "登録に失敗しました");
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : '登録に失敗しました';
+      alert(msg);
     } finally {
       setIsLoading(false);
     }

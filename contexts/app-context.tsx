@@ -242,7 +242,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       .channel('transactions-realtime')
       .on(
         'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'transactions' },
+        { event: '*', schema: 'public', table: 'transactions' },
         () => { triggerRefresh(); }
       )
       .subscribe();

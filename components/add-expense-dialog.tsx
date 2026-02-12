@@ -6,8 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Camera, Loader2, Sparkles, Upload, X, Plus, Trash2, Calendar } from "lucide-react";
-import { analyzeReceipt, type ReceiptAnalysisResult, type ExpenseItem } from "@/lib/gemini";
+import { Camera, Loader2, Sparkles, Upload, X, Plus, Trash2, Calendar, FileText } from "lucide-react";
+import { type ReceiptAnalysisResult, type ExpenseItem } from "@/lib/gemini";
 import { supabase } from "@/lib/supabase";
 import { useApp } from "@/contexts/app-context";
 
@@ -53,6 +53,7 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
+  const [isPdf, setIsPdf] = useState(false);
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [items, setItems] = useState<ExpenseItem[]>([
     {
@@ -65,72 +66,67 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
   ]);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const [isCameraActive, setIsCameraActive] = useState(false);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
 
-  // カメラを起動
-  const startCamera = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: "environment" } 
-      });
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        setIsCameraActive(true);
-      }
-    } catch (error) {
-      console.error("カメラの起動に失敗しました:", error);
-      alert("カメラにアクセスできませんでした");
-    }
+  // ネイティブカメラを起動（iOS/Android対応）
+  const handleCameraCapture = () => {
+    cameraInputRef.current?.click();
   };
 
-  // カメラを停止
-  const stopCamera = () => {
-    if (videoRef.current && videoRef.current.srcObject) {
-      const stream = videoRef.current.srcObject as MediaStream;
-      stream.getTracks().forEach(track => track.stop());
-      videoRef.current.srcObject = null;
-      setIsCameraActive(false);
-    }
-  };
-
-  // 写真を撮影
-  const capturePhoto = () => {
-    if (videoRef.current) {
-      const canvas = document.createElement('canvas');
-      canvas.width = videoRef.current.videoWidth;
-      canvas.height = videoRef.current.videoHeight;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.drawImage(videoRef.current, 0, 0);
-        const imageData = canvas.toDataURL('image/jpeg');
-        setCapturedImage(imageData);
-        stopCamera();
-        analyzeImage(imageData);
-      }
-    }
-  };
-
-  // ファイルから画像を読み込み
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // カメラ撮影結果の処理
+  const handleCameraChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
       reader.onload = (event) => {
         const imageData = event.target?.result as string;
         setCapturedImage(imageData);
-        analyzeImage(imageData);
+        setIsPdf(false);
+        analyzeImage(imageData, file.type);
       };
       reader.readAsDataURL(file);
+      // inputをリセットして同じファイルも再選択可能に
+      e.target.value = '';
     }
   };
 
-  // 画像を解析
-  const analyzeImage = async (imageData: string) => {
+  // ファイルから画像/PDFを読み込み
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const fileData = event.target?.result as string;
+        const isFilePdf = file.type === 'application/pdf';
+        setCapturedImage(fileData);
+        setIsPdf(isFilePdf);
+        analyzeImage(fileData, file.type);
+      };
+      reader.readAsDataURL(file);
+      e.target.value = '';
+    }
+  };
+
+  // サーバーサイドAPIでレシート解析
+  const analyzeImage = async (imageData: string, mimeType: string) => {
     setIsAnalyzing(true);
     try {
-      const mimeType = imageData.split(';')[0].split(':')[1];
-      const result: ReceiptAnalysisResult = await analyzeReceipt(imageData, mimeType);
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      const response = await fetch('/api/receipt', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          imageBase64: imageData,
+          mimeType: mimeType || 'image/jpeg',
+        }),
+      });
+
+      const result: ReceiptAnalysisResult = await response.json();
       
       // 解析結果をフォームに反映
       setDate(result.date);
@@ -142,8 +138,8 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
         memo: item.memo,
       })));
     } catch (error) {
-      console.error("画像解析エラー:", error);
-      alert("画像の解析に失敗しました");
+      console.error("レシート解析エラー:", error);
+      alert("レシートの解析に失敗しました");
     } finally {
       setIsAnalyzing(false);
     }
@@ -190,37 +186,63 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
       // 現在のユーザーIDを取得
       const { data: { user } } = await supabase.auth.getUser();
       
-      // 各項目をSupabaseに保存
-      const transactionsToInsert = items.map(item => ({
-        user_id: user?.id,
-        user_type: selectedUser,
-        type: 'expense',
-        date: date,
-        category_main: item.categoryMain,
-        category_sub: item.categorySub,
-        store_name: item.storeName,
-        amount: item.amount,
-        memo: item.memo,
-        created_at: new Date().toISOString(),
-      }));
+      if (items.length > 1) {
+        // 複数項目 → 1つのトランザクション + items JSONB に格納
+        const { error } = await supabase
+          .from('transactions')
+          .insert({
+            user_id: user?.id,
+            user_type: selectedUser,
+            type: 'expense',
+            date: date,
+            category_main: items[0].categoryMain,
+            category_sub: items[0].categorySub,
+            store_name: items[0].storeName,
+            amount: totalAmount,
+            memo: items.map(i => `${i.categoryMain}(¥${i.amount.toLocaleString()})`).join(', '),
+            items: items.map(item => ({
+              categoryMain: item.categoryMain,
+              categorySub: item.categorySub,
+              storeName: item.storeName,
+              amount: item.amount,
+              memo: item.memo,
+            })),
+          });
 
-      const { data, error } = await supabase
-        .from('transactions')
-        .insert(transactionsToInsert);
+        if (error) {
+          console.error('Supabase保存エラー:', error);
+          alert(`保存に失敗しました: ${error.message}`);
+          return;
+        }
+      } else {
+        // 単一項目 → 通常のトランザクション
+        const item = items[0];
+        const { error } = await supabase
+          .from('transactions')
+          .insert({
+            user_id: user?.id,
+            user_type: selectedUser,
+            type: 'expense',
+            date: date,
+            category_main: item.categoryMain,
+            category_sub: item.categorySub,
+            store_name: item.storeName,
+            amount: item.amount,
+            memo: item.memo,
+          });
 
-      if (error) {
-        console.error('Supabase保存エラー:', error);
-        alert(`保存に失敗しました: ${error.message}`);
-        return;
+        if (error) {
+          console.error('Supabase保存エラー:', error);
+          alert(`保存に失敗しました: ${error.message}`);
+          return;
+        }
       }
 
-      console.log('保存成功:', data);
       alert('支出を追加しました！');
       
       // 共同支出の場合、パートナーに Push 通知を送信
       if (selectedUser === "共同") {
         try {
-          const totalAmount = items.reduce((sum, item) => sum + Number(item.amount || 0), 0);
           const memoText = items[0]?.memo || items[0]?.storeName || items[0]?.categorySub || "支出";
           await fetch("/api/push/send", {
             method: "POST",
@@ -261,12 +283,12 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
       memo: "",
     }]);
     setCapturedImage(null);
+    setIsPdf(false);
   };
 
-  // ダイアログを閉じる際にカメラを停止
+  // ダイアログを閉じる際のクリーンアップ
   const handleOpenChange = (newOpen: boolean) => {
     if (!newOpen) {
-      stopCamera();
       resetForm();
     }
     onOpenChange(newOpen);
@@ -310,14 +332,14 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
         )}
 
         <div className="space-y-4">
-          {/* カメラ/画像アップロードセクション */}
-          {!capturedImage && !isCameraActive && (
+          {/* カメラ/アップロードセクション（iOSネイティブカメラ対応 + PDF対応） */}
+          {!capturedImage && (
             <div className="grid gap-2 grid-cols-2">
               <Button
                 type="button"
                 variant="outline"
                 className="h-20 border-dashed border-2 hover:border-purple-600 hover:bg-gradient-to-br hover:from-purple-50 hover:to-pink-50 dark:hover:from-purple-950 dark:hover:to-pink-950 transition-all text-xs"
-                onClick={startCamera}
+                onClick={handleCameraCapture}
               >
                 <div className="flex flex-col items-center gap-1">
                   <Camera className="h-6 w-6" />
@@ -332,60 +354,46 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
               >
                 <div className="flex flex-col items-center gap-1">
                   <Upload className="h-6 w-6" />
-                  <span className="font-semibold">画像アップロード</span>
+                  <span className="font-semibold">画像 / PDF</span>
                 </div>
               </Button>
+              {/* カメラ用: capture属性でiOS/Androidネイティブカメラを起動 */}
+              <input
+                ref={cameraInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={handleCameraChange}
+              />
+              {/* アップロード用: 画像 + PDF対応 */}
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/*"
+                accept="image/*,application/pdf"
                 className="hidden"
                 onChange={handleFileChange}
               />
             </div>
           )}
 
-          {/* カメラビュー */}
-          {isCameraActive && (
-            <div className="relative rounded-xl overflow-hidden bg-black shadow-2xl">
-              <video
-                ref={videoRef}
-                autoPlay
-                playsInline
-                className="w-full"
-              />
-              <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-3">
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={capturePhoto}
-                  className="rounded-full h-12 w-12 bg-white hover:bg-gray-100 text-black shadow-lg"
-                >
-                  <Camera className="h-5 w-5" />
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="destructive"
-                  onClick={stopCamera}
-                  className="rounded-full h-12 w-12 shadow-lg"
-                >
-                  <X className="h-5 w-5" />
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {/* 撮影した画像のプレビュー */}
+          {/* プレビュー（画像 or PDFアイコン） */}
           {capturedImage && (
             <div className="relative rounded-lg overflow-hidden border border-purple-200 dark:border-purple-800 shadow-lg">
-              <img src={capturedImage} alt="撮影したレシート" className="w-full" />
+              {isPdf ? (
+                <div className="flex items-center justify-center gap-2 p-6 bg-slate-100 dark:bg-slate-800">
+                  <FileText className="h-10 w-10 text-red-500" />
+                  <span className="text-sm font-semibold">PDFファイル</span>
+                </div>
+              ) : (
+                <img src={capturedImage} alt="撮影したレシート" className="w-full" />
+              )}
               <Button
                 type="button"
                 size="sm"
                 variant="destructive"
                 className="absolute top-2 right-2 rounded-full h-7 w-7 p-0"
-                onClick={() => setCapturedImage(null)}
+                onClick={() => { setCapturedImage(null); setIsPdf(false); }}
               >
                 <X className="h-3 w-3" />
               </Button>

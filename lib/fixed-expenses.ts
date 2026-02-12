@@ -79,10 +79,13 @@ export async function processFixedExpenses(userId: string): Promise<{
       }
 
       // 固定費の識別子（メモに埋め込み、重複チェック用）
-      const fixedExpenseMemo = `【固定費】${expense.category_main}/${expense.category_sub}${expense.memo ? ` - ${expense.memo}` : ""}`;
+      // 新フォーマット: 【固定費】メモ内容 or 【固定費】小カテゴリー
+      const fixedExpenseMemo = `【固定費】${expense.memo || expense.category_sub}`;
+      // 旧フォーマットとの互換性チェック用
+      const oldFormatMemo = `【固定費】${expense.category_main}/${expense.category_sub}${expense.memo ? ` - ${expense.memo}` : ""}`;
 
-      // 今月すでに登録済みならスキップ
-      if (existingMemos.has(fixedExpenseMemo)) {
+      // 今月すでに登録済みならスキップ（新旧両フォーマットに対応）
+      if (existingMemos.has(fixedExpenseMemo) || existingMemos.has(oldFormatMemo)) {
         result.skipped++;
         continue;
       }

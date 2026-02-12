@@ -22,7 +22,7 @@ interface CategoryDetailDialogProps {
   onOpenChange: (open: boolean) => void;
   categoryName: string;
   categoryIcon: string;
-  subCategoryData: any[];
+  subCategoryData: Array<{ name: string; value: number }>;
   transactions: Transaction[];
 }
 

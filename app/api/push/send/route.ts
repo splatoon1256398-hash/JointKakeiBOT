@@ -60,9 +60,10 @@ export async function POST(request: NextRequest) {
             },
             payload
           );
-        } catch (err: any) {
+        } catch (err: unknown) {
           // 410 Gone = 購読が無効 → 削除
-          if (err.statusCode === 410 || err.statusCode === 404) {
+          const statusCode = (err as { statusCode?: number })?.statusCode;
+          if (statusCode === 410 || statusCode === 404) {
             await supabaseAdmin
               .from("push_subscriptions")
               .delete()
