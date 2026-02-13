@@ -146,16 +146,16 @@ export function Analysis() {
 
       setTransactions(transactionsData || []);
 
-      // 月別データ（年間推移）
+      // 月別データ（年間推移） - 収入はtarget_month優先
       const monthlyMap: Record<string, { income: number; expense: number }> = {};
       transactionsData?.forEach(t => {
-        const month = t.date.substring(0, 7);
-        if (!monthlyMap[month]) {
-          monthlyMap[month] = { income: 0, expense: 0 };
-        }
         if (t.type === 'income') {
-          monthlyMap[month].income += t.amount;
+          const effectiveMonth = t.target_month ? t.target_month.substring(0, 7) : t.date.substring(0, 7);
+          if (!monthlyMap[effectiveMonth]) monthlyMap[effectiveMonth] = { income: 0, expense: 0 };
+          monthlyMap[effectiveMonth].income += t.amount;
         } else {
+          const month = t.date.substring(0, 7);
+          if (!monthlyMap[month]) monthlyMap[month] = { income: 0, expense: 0 };
           monthlyMap[month].expense += t.amount;
         }
       });
@@ -218,9 +218,14 @@ export function Analysis() {
       });
       setSubCategoryData(subCatData);
 
-      // 選択月の収入
+      // 選択月の収入 - target_month優先
+      const selectedMonthStr = `${selectedYear}-${mm}`;
       const incomeInMonth = transactionsData
-        ?.filter(t => t.type === 'income' && t.date >= firstDayStr && t.date <= lastDayStr) || [];
+        ?.filter(t => {
+          if (t.type !== 'income') return false;
+          const effectiveMonth = t.target_month ? t.target_month.substring(0, 7) : t.date.substring(0, 7);
+          return effectiveMonth === selectedMonthStr;
+        }) || [];
       const totalInc = incomeInMonth.reduce((s, t) => s + t.amount, 0);
       setMonthIncome(totalInc);
       const mainIncome = incomeInMonth.length > 0 ? (incomeInMonth[0].memo || incomeInMonth[0].store_name || incomeInMonth[0].category_sub) : '';

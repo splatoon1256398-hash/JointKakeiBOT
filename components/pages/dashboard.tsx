@@ -129,21 +129,28 @@ export function Dashboard({ onNavigateToAnalysis, onNavigateToHistory }: Dashboa
       const total = monthlyData?.reduce((sum, t) => sum + t.amount, 0) || 0;
       setMonthlySpent(total);
 
+      // 収入: target_month があればそれを基準、なければ date を基準に月別集計
+      const currentMonth = start.substring(0, 7); // "YYYY-MM"
+
       let incomeQuery = supabase
         .from('transactions')
-        .select('amount')
-        .eq('type', 'income')
-        .gte('date', start)
-        .lte('date', end);
+        .select('amount, date, target_month')
+        .eq('type', 'income');
 
       if (userType === '共同') {
         const { data: incomeData } = await incomeQuery.in('user_type', ['れん', 'あかね']);
-        const totalIncome = incomeData?.reduce((sum, t) => sum + t.amount, 0) || 0;
-        setIncome(totalIncome);
+        const filtered = incomeData?.filter(t => {
+          const effectiveMonth = t.target_month ? t.target_month.substring(0, 7) : t.date.substring(0, 7);
+          return effectiveMonth === currentMonth;
+        }) || [];
+        setIncome(filtered.reduce((sum, t) => sum + t.amount, 0));
       } else {
         const { data: incomeData } = await incomeQuery.eq('user_type', userType);
-        const totalIncome = incomeData?.reduce((sum, t) => sum + t.amount, 0) || 0;
-        setIncome(totalIncome);
+        const filtered = incomeData?.filter(t => {
+          const effectiveMonth = t.target_month ? t.target_month.substring(0, 7) : t.date.substring(0, 7);
+          return effectiveMonth === currentMonth;
+        }) || [];
+        setIncome(filtered.reduce((sum, t) => sum + t.amount, 0));
       }
 
       // items対応: 明細ベースでカテゴリ集計（分析ページと同じロジック）

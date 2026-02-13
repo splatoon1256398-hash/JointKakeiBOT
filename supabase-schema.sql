@@ -257,3 +257,19 @@ BEGIN
     COMMENT ON COLUMN transactions.metadata IS '追加情報（JSON）。給与: {gross_amount: 総支給額}';
   END IF;
 END $$;
+
+-- ==========================================
+-- マイグレーション: transactions テーブルに target_month カラムを追加
+-- 収入の「予算対象月」を管理（例: 1月25日の給与 → 2月の予算として扱う）
+-- ==========================================
+
+DO $$ 
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'transactions' AND column_name = 'target_month'
+  ) THEN
+    ALTER TABLE transactions ADD COLUMN target_month DATE;
+    COMMENT ON COLUMN transactions.target_month IS '予算対象月（収入がどの月の予算に充てられるか）。NULLの場合はdateと同月扱い';
+  END IF;
+END $$;

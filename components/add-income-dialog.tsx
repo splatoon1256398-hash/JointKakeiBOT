@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { TrendingUp, Loader2, Sparkles, Camera, Upload, X, FileText } from "lucide-react";
+import { TrendingUp, Loader2, Sparkles, Camera, Upload, X, FileText, CalendarCheck } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useApp } from "@/contexts/app-context";
 
@@ -37,6 +37,16 @@ export function AddIncomeDialog({ open, onOpenChange, selectedUser }: AddIncomeD
   const [amount, setAmount] = useState<string>("");
   const [grossAmount, setGrossAmount] = useState<string>("");
   const [memo, setMemo] = useState("");
+  const [targetMonth, setTargetMonth] = useState<string>(() => {
+    // インテリジェントデフォルト: 25日以前→当月、26日以降→翌月
+    const now = new Date();
+    if (now.getDate() <= 25) {
+      return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    } else {
+      const next = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+      return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`;
+    }
+  });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -137,6 +147,7 @@ export function AddIncomeDialog({ open, onOpenChange, selectedUser }: AddIncomeD
           amount: Number(amount),
           memo: memo,
           metadata: grossAmount ? { gross_amount: Number(grossAmount) } : null,
+          target_month: targetMonth ? `${targetMonth}-01` : null,
           created_at: new Date().toISOString(),
         });
 
@@ -173,6 +184,14 @@ export function AddIncomeDialog({ open, onOpenChange, selectedUser }: AddIncomeD
     setMemo("");
     setCapturedImage(null);
     setIsPdf(false);
+    // targetMonth をリセット
+    const now = new Date();
+    if (now.getDate() <= 25) {
+      setTargetMonth(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
+    } else {
+      const next = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+      setTargetMonth(`${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`);
+    }
   };
 
   const handleOpenChange = (newOpen: boolean) => {
@@ -300,6 +319,46 @@ export function AddIncomeDialog({ open, onOpenChange, selectedUser }: AddIncomeD
               required
               className="max-w-xs h-8 text-sm bg-white dark:bg-slate-800"
             />
+          </div>
+
+          {/* 予算対象月 */}
+          <div className="space-y-1.5">
+            <Label className="text-xs text-white flex items-center gap-1.5">
+              <CalendarCheck className="h-3.5 w-3.5 text-emerald-400" />
+              この収入を充てる月
+            </Label>
+            <div className="flex gap-1.5">
+              {(() => {
+                const d = date ? new Date(date) : new Date();
+                const thisM = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                const nextD = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+                const nextM = `${nextD.getFullYear()}-${String(nextD.getMonth() + 1).padStart(2, '0')}`;
+                const prevD = new Date(d.getFullYear(), d.getMonth() - 1, 1);
+                const prevM = `${prevD.getFullYear()}-${String(prevD.getMonth() + 1).padStart(2, '0')}`;
+                const options = [
+                  { label: `${prevD.getMonth() + 1}月`, value: prevM },
+                  { label: `${d.getMonth() + 1}月（当月）`, value: thisM },
+                  { label: `${nextD.getMonth() + 1}月（翌月）`, value: nextM },
+                ];
+                return options.map(opt => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setTargetMonth(opt.value)}
+                    className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-semibold transition-all border ${
+                      targetMonth === opt.value
+                        ? 'bg-emerald-600 text-white border-emerald-500 shadow-md'
+                        : 'bg-slate-800/50 text-white/50 border-slate-700 hover:bg-slate-700/50 hover:text-white/70'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ));
+              })()}
+            </div>
+            <p className="text-[10px] text-white/30">
+              選択した月の予算・分析に反映されます
+            </p>
           </div>
 
           {/* カテゴリー */}

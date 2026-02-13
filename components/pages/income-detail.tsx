@@ -64,10 +64,10 @@ export function IncomeDetail({ onBack, selectedYear, selectedMonth }: Props) {
       const { data } = await query;
       const txs = data || [];
 
-      // 年間推移
+      // 年間推移 - target_month優先
       const monthlyMap: Record<string, { net: number; gross: number }> = {};
       txs.forEach((t) => {
-        const m = t.date.substring(0, 7);
+        const m = t.target_month ? t.target_month.substring(0, 7) : t.date.substring(0, 7);
         if (!monthlyMap[m]) monthlyMap[m] = { net: 0, gross: 0 };
         monthlyMap[m].net += t.amount;
         const gross = t.metadata?.gross_amount || t.amount;
@@ -84,9 +84,12 @@ export function IncomeDetail({ onBack, selectedYear, selectedMonth }: Props) {
         }));
       setYearlyData(yearly);
 
-      // 選択月のデータ
-      const firstDayStr = `${selectedYear}-${mm}-01`;
-      const monthTxs = txs.filter((t) => t.date >= firstDayStr && t.date <= endStr);
+      // 選択月のデータ - target_month優先
+      const selectedMonthStr = `${selectedYear}-${mm}`;
+      const monthTxs = txs.filter((t) => {
+        const effectiveMonth = t.target_month ? t.target_month.substring(0, 7) : t.date.substring(0, 7);
+        return effectiveMonth === selectedMonthStr;
+      });
       setMonthTransactions(monthTxs);
 
       const net = monthTxs.reduce((s, t) => s + t.amount, 0);
