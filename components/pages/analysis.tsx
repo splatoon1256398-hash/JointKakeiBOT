@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { ChevronRight, ChevronLeft, ChevronsLeft, ChevronsRight, TrendingUp, TrendingDown } from "lucide-react";
+import { ChevronRight, ChevronLeft, ChevronsLeft, ChevronsRight, TrendingUp, TrendingDown, Calendar as CalendarIcon } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useApp } from "@/contexts/app-context";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
@@ -471,7 +471,7 @@ export function Analysis() {
     );
   };
 
-  // Level 3: 個別トランザクション（items対応）
+  // Level 3: 個別トランザクション（items対応 + 日付グループ化）
   const renderDetail = () => {
     const filtered = getFilteredTransactions();
 
@@ -484,7 +484,7 @@ export function Analysis() {
       store_name: string;
       amount: number;
       memo: string;
-      parentId?: string;
+      parentId?: string;  // レシート由来の場合、親トランザクションID
     }
 
     const detailItems: DetailItem[] = [];
@@ -520,6 +520,14 @@ export function Analysis() {
 
     const subTotal = detailItems.reduce((sum, i) => sum + i.amount, 0);
 
+    // 日付でグループ化（降順）
+    const grouped: Record<string, DetailItem[]> = {};
+    detailItems.forEach(item => {
+      if (!grouped[item.date]) grouped[item.date] = [];
+      grouped[item.date].push(item);
+    });
+    const sortedDates = Object.keys(grouped).sort((a, b) => b.localeCompare(a));
+
     return (
       <div className="space-y-3">
         <button onClick={handleBack} className="flex items-center gap-2 text-white/60 hover:text-white transition-colors">
@@ -533,41 +541,121 @@ export function Analysis() {
             <p className="text-xs text-white/40">{selectedMainCategory} &gt; {selectedSubCategory}</p>
             <p className="text-red-400 font-bold mt-1">合計: ¥{subTotal.toLocaleString()}</p>
           </div>
+        </div>
 
-          {detailItems.length === 0 ? (
+        {detailItems.length === 0 ? (
+          <div className="card-solid p-4">
             <p className="text-white/40 text-center py-8">データがありません</p>
-          ) : (
-            <div className="space-y-1.5">
-              {detailItems
-                .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-                .map((item) => (
-                  <ExpenseCard
-                    key={item.id}
-                    memo={item.memo}
-                    storeName={item.store_name}
-                    categoryMain={item.category_main}
-                    categorySub={item.category_sub}
-                    categoryIcon={categoryIcons[item.category_main] || '📦'}
-                    amount={item.amount}
-                    date={item.date}
-                    showDate
-                    onEdit={item.parentId ? undefined : () => {
-                      setEditingTransaction({
-                        id: item.id,
-                        date: item.date,
-                        category_main: item.category_main,
-                        category_sub: item.category_sub,
-                        store_name: item.store_name,
-                        amount: item.amount,
-                        memo: item.memo,
-                        user_type: selectedUser,
-                      });
-                      setIsEditDialogOpen(true);
-                    }}
-                  />
-                ))}
-            </div>
-          )}
+          </div>
+        ) : (
+          sortedDates.map(date => {
+            const items = grouped[date];
+            const dayTotal = items.reduce((sum, i) => sum + i.amount, 0);
+            const d = new Date(date + 'T00:00:00');
+            const dateLabel = `${d.getMonth() + 1}/${d.getDate()}（${['日','月','火','水','木','金','土'][d.getDay()]}）`;
+
+            // 同じparentIdを持つ連続するアイテムをグループ化して「セット感」を出す
+            const renderItems = () => {
+              const result: React.ReactNode[] = [];
+              let i = 0;
+              while (i < items.length) {
+                const item = items[i];
+                // レシート由来のセット（parentId が同じ連続アイテム）
+                if (item.parentId) {
+                  const setItems: DetailItem[] = [item];
+                  let j = i + 1;
+                  while (j < items.length && items[j].parentId === item.parentId) {
+                    setItems.push(items[j]);
+                    j++;
+                  }
+                  if (setItems.length > 1) {
+                    // 複数明細 → 左ボーダーでセット表示
+                    result.push(
+                      <div key={`set-${item.parentId}-${i}`} className="relative pl-3">
+                        <div
+                          className="absolute left-0 top-1 bottom-1 w-0.5 rounded-full"
+                          style={{ backgroundColor: theme.primary }}
+                        />
+                        <div className="space-y-1">
+                          {setItems.map(si => (
+                            <ExpenseCard
+                              key={si.id}
+                              memo={si.memo}
+                              storeName={si.store_name}
+                              categoryMain={si.category_main}
+                              categorySub={si.category_sub}
+                              categoryIcon={categoryIcons[si.category_main] || '📦'}
+                              amount={si.amount}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  } else {
+                    // 単品レシート明細
+                    result.push(
+                      <ExpenseCard
+                        key={item.id}
+                        memo={item.memo}
+                        storeName={item.store_name}
+                        categoryMain={item.category_main}
+                        categorySub={item.category_sub}
+                        categoryIcon={categoryIcons[item.category_main] || '📦'}
+                        amount={item.amount}
+                      />
+                    );
+                  }
+                  i = j;
+                } else {
+                  // 通常トランザクション（編集可能）
+                  result.push(
+                    <ExpenseCard
+                      key={item.id}
+                      memo={item.memo}
+                      storeName={item.store_name}
+                      categoryMain={item.category_main}
+                      categorySub={item.category_sub}
+                      categoryIcon={categoryIcons[item.category_main] || '📦'}
+                      amount={item.amount}
+                      onEdit={() => {
+                        setEditingTransaction({
+                          id: item.id,
+                          date: item.date,
+                          category_main: item.category_main,
+                          category_sub: item.category_sub,
+                          store_name: item.store_name,
+                          amount: item.amount,
+                          memo: item.memo,
+                          user_type: selectedUser,
+                        });
+                        setIsEditDialogOpen(true);
+                      }}
+                    />
+                  );
+                  i++;
+                }
+              }
+              return result;
+            };
+
+            return (
+              <div key={date} className="card-solid overflow-hidden">
+                {/* 日付ヘッダー */}
+                <div className="flex items-center justify-between px-4 py-2.5" style={{ background: 'rgba(255,255,255,0.05)' }}>
+                  <div className="flex items-center gap-2">
+                    <CalendarIcon className="h-3.5 w-3.5 text-white/40" />
+                    <p className="text-sm font-bold text-white/70">{dateLabel}</p>
+                  </div>
+                  <span className="text-sm font-bold text-red-400">-¥{dayTotal.toLocaleString()}</span>
+                </div>
+                {/* 明細 */}
+                <div className="p-2 space-y-1.5">
+                  {renderItems()}
+                </div>
+              </div>
+            );
+          })
+        )}
         </div>
       </div>
     );
