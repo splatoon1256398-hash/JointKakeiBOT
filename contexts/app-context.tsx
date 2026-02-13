@@ -28,6 +28,8 @@ interface AppContextType {
   setIsSettingsOpen: (open: boolean) => void;
   settingsTab: string;
   setSettingsTab: (tab: string) => void;
+  kakeiboTab: string;
+  setKakeiboTab: (tab: string) => void;
   signOut: () => Promise<void>;
   theme: UserTheme;
   refreshTrigger: number;
@@ -104,6 +106,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [selectedUser, setSelectedUser] = useState<UserType>("__pending__");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState('fixed');
+  const [kakeiboTab, setKakeiboTab] = useState('analysis');
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [customThemeColor, setCustomThemeColor] = useState<string | null>(null);
   const [jointThemeColor, setJointThemeColor] = useState<string | null>(null);
@@ -282,6 +285,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       selectedUser, setSelectedUser,
       isSettingsOpen, setIsSettingsOpen,
       settingsTab, setSettingsTab,
+      kakeiboTab, setKakeiboTab,
       signOut, theme, refreshTrigger, triggerRefresh,
       customThemeColor, setCustomThemeColor, saveCustomThemeColor,
       jointThemeColor, setJointThemeColor, saveJointThemeColor,

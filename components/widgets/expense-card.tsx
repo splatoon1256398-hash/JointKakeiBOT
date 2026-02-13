@@ -13,6 +13,8 @@ export interface ExpenseCardProps {
   date?: string;
   showDate?: boolean;
   onEdit?: () => void;
+  type?: "expense" | "income";
+  items?: { categoryMain: string; categorySub: string; storeName: string; amount: number; memo: string }[] | null;
 }
 
 export function ExpenseCard({
@@ -25,15 +27,25 @@ export function ExpenseCard({
   date,
   showDate = false,
   onEdit,
+  type = "expense",
+  items,
 }: ExpenseCardProps) {
-  const mainText = memo || storeName || categorySub;
-  const subStore = memo && storeName ? storeName : null;
+  const isIncome = type === "income";
+  const hasItems = items && Array.isArray(items) && items.length > 1;
+
+  // レシート（items複数）の場合は店名メインで品目数表示
+  const mainText = hasItems
+    ? storeName || items![0]?.storeName || categoryMain
+    : memo || storeName || categorySub;
+  const subStore = hasItems
+    ? null
+    : memo && storeName ? storeName : null;
 
   return (
     <div className="flex items-center gap-3 p-3 rounded-xl card-solid-inner hover:bg-white/[0.07] transition-colors">
       {/* カテゴリーアイコン */}
       <div className="text-xl leading-none flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center bg-white/10">
-        {categoryIcon}
+        {isIncome ? "💰" : categoryIcon}
       </div>
 
       {/* 左: メモ + 店名/カテゴリ */}
@@ -48,16 +60,22 @@ export function ExpenseCard({
               <span className="text-white/30">·</span>
             </>
           )}
-          <span className="inline-flex items-center bg-white/10 rounded-full px-2 py-0.5 text-[10px] text-white/60">
-            {categorySub}
-          </span>
+          {hasItems ? (
+            <span className="inline-flex items-center bg-blue-500/20 rounded-full px-2 py-0.5 text-[10px] text-blue-300">
+              📋 {items!.length}品目
+            </span>
+          ) : (
+            <span className="inline-flex items-center bg-white/10 rounded-full px-2 py-0.5 text-[10px] text-white/60">
+              {categorySub}
+            </span>
+          )}
         </div>
       </div>
 
       {/* 右: 金額 + 編集ボタン */}
       <div className="flex flex-col items-end flex-shrink-0 ml-2 gap-1">
-        <p className="text-base font-bold text-red-400 leading-tight whitespace-nowrap">
-          -¥{amount.toLocaleString()}
+        <p className={`text-base font-bold leading-tight whitespace-nowrap ${isIncome ? 'text-green-400' : 'text-red-400'}`}>
+          {isIncome ? '+' : '-'}¥{amount.toLocaleString()}
         </p>
         <div className="flex items-center gap-2">
           {showDate && date && (

@@ -1,14 +1,12 @@
 "use client";
 
-import { useState } from "react";
 import { BookOpen } from "lucide-react";
 import { useApp } from "@/contexts/app-context";
 import { History } from "./history";
 import { Analysis } from "./analysis";
 
 export function Kakeibo() {
-  const { selectedUser, theme } = useApp();
-  const [mode, setMode] = useState<'history' | 'analysis'>('analysis');
+  const { selectedUser, theme, kakeiboTab, setKakeiboTab } = useApp();
 
   return (
     <div className="space-y-3 pb-24 pt-3">
@@ -29,26 +27,26 @@ export function Kakeibo() {
             {/* ピル型タブ（分析が左＝優先位置） */}
             <div className="flex bg-white/95 rounded-full p-0.5 shadow-inner">
               <button
-                onClick={() => setMode('analysis')}
+                onClick={() => setKakeiboTab('analysis')}
                 className={`px-3 py-1 text-xs font-bold rounded-full transition-all duration-200 ${
-                  mode === 'analysis' 
+                  kakeiboTab === 'analysis' 
                     ? 'text-white shadow-md' 
                     : 'text-slate-600 hover:text-slate-800'
                 }`}
-                style={mode === 'analysis' ? { 
+                style={kakeiboTab === 'analysis' ? { 
                   background: `linear-gradient(135deg, ${theme.primary}, ${theme.secondary})` 
                 } : {}}
               >
                 分析
               </button>
               <button
-                onClick={() => setMode('history')}
+                onClick={() => setKakeiboTab('history')}
                 className={`px-3 py-1 text-xs font-bold rounded-full transition-all duration-200 ${
-                  mode === 'history' 
+                  kakeiboTab === 'history' 
                     ? 'text-white shadow-md' 
                     : 'text-slate-600 hover:text-slate-800'
                 }`}
-                style={mode === 'history' ? { 
+                style={kakeiboTab === 'history' ? { 
                   background: `linear-gradient(135deg, ${theme.primary}, ${theme.secondary})` 
                 } : {}}
               >
@@ -60,7 +58,7 @@ export function Kakeibo() {
       </div>
 
       {/* コンテンツ */}
-      {mode === 'history' ? <History isCompact /> : <Analysis />}
+      {kakeiboTab === 'history' ? <History isCompact /> : <Analysis />}
     </div>
   );
 }

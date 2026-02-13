@@ -199,7 +199,7 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
             category_sub: items[0].categorySub,
             store_name: items[0].storeName,
             amount: totalAmount,
-            memo: items.map(i => `${i.categoryMain}(¥${i.amount.toLocaleString()})`).join(', '),
+            memo: items.map(i => i.memo || i.categorySub).join(', '),
             items: items.map(item => ({
               categoryMain: item.categoryMain,
               categorySub: item.categorySub,

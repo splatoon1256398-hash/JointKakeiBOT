@@ -33,6 +33,7 @@ interface Transaction {
   amount: number;
   memo: string;
   user_type?: string;
+  items?: { categoryMain: string; categorySub: string; storeName: string; amount: number; memo: string }[] | null;
 }
 
 interface CategoryBudget {
@@ -580,6 +581,7 @@ export function Dashboard({ onNavigateToAnalysis, onNavigateToHistory }: Dashboa
                           categorySub={t.category_sub}
                           categoryIcon={categoryIcons[t.category_main] || '📦'}
                           amount={t.amount}
+                          items={t.items}
                           onEdit={() => {
                             setEditingTransaction({
                               id: t.id,
@@ -590,6 +592,7 @@ export function Dashboard({ onNavigateToAnalysis, onNavigateToHistory }: Dashboa
                               amount: t.amount,
                               memo: t.memo,
                               user_type: selectedUser,
+                              items: t.items,
                             });
                             setIsEditDialogOpen(true);
                           }}

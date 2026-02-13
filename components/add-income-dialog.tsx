@@ -228,18 +228,16 @@ export function AddIncomeDialog({ open, onOpenChange, selectedUser }: AddIncomeD
           <div className="flex gap-2">
             <Button
               type="button"
-              variant="outline"
               onClick={handleCameraCapture}
-              className="flex-1 h-12 text-xs bg-gradient-to-r from-green-900/30 to-emerald-900/30 border-green-700/50 hover:from-green-900/50 hover:to-emerald-900/50 text-green-300"
+              className="flex-1 h-12 text-xs font-bold bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 text-white border-0 shadow-lg"
             >
               <Camera className="h-4 w-4 mr-2" />
               📸 給与明細を撮影
             </Button>
             <Button
               type="button"
-              variant="outline"
               onClick={() => fileInputRef.current?.click()}
-              className="flex-1 h-12 text-xs bg-gradient-to-r from-blue-900/30 to-indigo-900/30 border-blue-700/50 hover:from-blue-900/50 hover:to-indigo-900/50 text-blue-300"
+              className="flex-1 h-12 text-xs font-bold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white border-0 shadow-lg"
             >
               <Upload className="h-4 w-4 mr-2" />
               📄 PDF/画像を選択

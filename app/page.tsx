@@ -17,7 +17,7 @@ import { AddIncomeDialog } from "@/components/add-income-dialog";
 import { AddSavingDialog } from "@/components/add-saving-dialog";
 
 function AppContent() {
-  const { user, isAuthLoading, selectedUser, theme } = useApp();
+  const { user, isAuthLoading, selectedUser, theme, setKakeiboTab } = useApp();
   const [currentPage, setCurrentPage] = useState<NavPage>("dashboard");
   const [isRecordMenuOpen, setIsRecordMenuOpen] = useState(false);
   const [isAddExpenseOpen, setIsAddExpenseOpen] = useState(false);
@@ -64,6 +64,7 @@ function AppContent() {
   };
 
   const handleNavigateToHistory = () => {
+    setKakeiboTab('history');
     setCurrentPage("kakeibo");
   };
 

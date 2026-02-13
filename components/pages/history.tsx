@@ -19,6 +19,9 @@ interface Transaction {
   store_name: string;
   amount: number;
   memo: string;
+  type: string;
+  items?: { categoryMain: string; categorySub: string; storeName: string; amount: number; memo: string }[] | null;
+  metadata?: { gross_amount?: number } | null;
 }
 
 interface HistoryProps {
@@ -56,7 +59,6 @@ export function History({ isCompact = false }: HistoryProps) {
         .from('transactions')
         .select('*')
         .eq('user_type', userType)
-        .eq('type', 'expense')
         .order('date', { ascending: false })
         .order('created_at', { ascending: false })
         .limit(50);
@@ -95,25 +97,24 @@ export function History({ isCompact = false }: HistoryProps) {
   const getDayTotal = (date: Date) => {
     const dateStr = date.toISOString().split('T')[0];
     const dayTransactions = groupedTransactions[dateStr] || [];
-    return dayTransactions.reduce((sum, t) => sum + t.amount, 0);
+    const expenses = dayTransactions.filter(t => t.type !== 'income').reduce((sum, t) => sum + t.amount, 0);
+    const incomes = dayTransactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
+    return { expenses, incomes, net: incomes - expenses };
   };
 
   const tileContent = ({ date, view }: { date: Date; view: string }) => {
     if (view === 'month') {
-      const total = getDayTotal(date);
+      const { expenses, incomes } = getDayTotal(date);
+      const total = expenses + incomes;
       if (total > 0) {
-        let displayAmount: string;
-        if (total >= 10000) {
-          const man = total / 10000;
-          displayAmount = man % 1 === 0 ? `${man.toFixed(0)}万` : `${man.toFixed(1)}万`;
-        } else {
-          displayAmount = `¥${total.toLocaleString()}`;
-        }
+        const displayAmount = expenses > 0
+          ? (expenses >= 10000 ? `${(expenses / 10000).toFixed(expenses % 10000 === 0 ? 0 : 1)}万` : `¥${expenses.toLocaleString()}`)
+          : (incomes >= 10000 ? `+${(incomes / 10000).toFixed(incomes % 10000 === 0 ? 0 : 1)}万` : `+¥${incomes.toLocaleString()}`);
         
         return (
           <div className="w-full text-center mt-0.5">
             <p className="text-[10px] font-bold leading-tight px-0.5 py-0.5 rounded"
-              style={{ color: theme.primary, background: `${theme.primary}15` }}>
+              style={{ color: expenses > 0 ? theme.primary : '#10b981', background: expenses > 0 ? `${theme.primary}15` : '#10b98115' }}>
               {displayAmount}
             </p>
           </div>
@@ -125,8 +126,8 @@ export function History({ isCompact = false }: HistoryProps) {
 
   const tileClassName = ({ date, view }: { date: Date; view: string }) => {
     if (view === 'month') {
-      const total = getDayTotal(date);
-      if (total > 0) return 'has-expense';
+      const { expenses, incomes } = getDayTotal(date);
+      if (expenses > 0 || incomes > 0) return 'has-expense';
     }
     return '';
   };
@@ -185,7 +186,8 @@ export function History({ isCompact = false }: HistoryProps) {
               {(() => {
                 const dateStr = selectedDate.toISOString().split('T')[0];
                 const dayTransactions = groupedTransactions[dateStr] || [];
-                const dayTotal = dayTransactions.reduce((sum, t) => sum + t.amount, 0);
+                const dayExpense = dayTransactions.filter(t => t.type !== 'income').reduce((sum, t) => sum + t.amount, 0);
+                const dayIncome = dayTransactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
 
                 if (dayTransactions.length === 0) {
                   return (
@@ -206,7 +208,10 @@ export function History({ isCompact = false }: HistoryProps) {
                           {selectedDate.toLocaleDateString('ja-JP')}
                         </p>
                       </div>
-                      <span className="text-sm font-bold text-red-400">-¥{dayTotal.toLocaleString()}</span>
+                      <div className="flex items-center gap-2">
+                        {dayIncome > 0 && <span className="text-sm font-bold text-green-400">+¥{dayIncome.toLocaleString()}</span>}
+                        {dayExpense > 0 && <span className="text-sm font-bold text-red-400">-¥{dayExpense.toLocaleString()}</span>}
+                      </div>
                     </div>
 
                     {/* 明細 */}
@@ -220,6 +225,8 @@ export function History({ isCompact = false }: HistoryProps) {
                           categorySub={t.category_sub}
                           categoryIcon={categoryIcons[t.category_main] || '📦'}
                           amount={t.amount}
+                          type={t.type as "expense" | "income"}
+                          items={t.items}
                           onEdit={() => {
                             setEditingTransaction({
                               id: t.id,
@@ -230,6 +237,9 @@ export function History({ isCompact = false }: HistoryProps) {
                               amount: t.amount,
                               memo: t.memo,
                               user_type: selectedUser,
+                              type: t.type,
+                              items: t.items,
+                              metadata: t.metadata,
                             });
                             setIsEditDialogOpen(true);
                           }}
@@ -259,7 +269,8 @@ export function History({ isCompact = false }: HistoryProps) {
             ) : (
               <div className="space-y-3">
                 {Object.entries(groupedTransactions).map(([date, dayTransactions]) => {
-                  const dayTotal = dayTransactions.reduce((sum, t) => sum + t.amount, 0);
+                  const dayExpense = dayTransactions.filter(t => t.type !== 'income').reduce((sum, t) => sum + t.amount, 0);
+                  const dayIncome = dayTransactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
                   
                   return (
                     <div key={date} className="card-solid overflow-hidden">
@@ -269,7 +280,10 @@ export function History({ isCompact = false }: HistoryProps) {
                           <CalendarIcon className="h-3.5 w-3.5 text-white/40" />
                           <p className="text-sm font-bold text-white/70">{date}</p>
                         </div>
-                        <span className="text-sm font-bold text-red-400">-¥{dayTotal.toLocaleString()}</span>
+                        <div className="flex items-center gap-2">
+                          {dayIncome > 0 && <span className="text-sm font-bold text-green-400">+¥{dayIncome.toLocaleString()}</span>}
+                          {dayExpense > 0 && <span className="text-sm font-bold text-red-400">-¥{dayExpense.toLocaleString()}</span>}
+                        </div>
                       </div>
                       
                       {/* 明細（ExpenseCard） */}
@@ -283,6 +297,8 @@ export function History({ isCompact = false }: HistoryProps) {
                             categorySub={t.category_sub}
                             categoryIcon={categoryIcons[t.category_main] || '📦'}
                             amount={t.amount}
+                            type={t.type as "expense" | "income"}
+                            items={t.items}
                             onEdit={() => {
                               setEditingTransaction({
                                 id: t.id,
@@ -293,6 +309,9 @@ export function History({ isCompact = false }: HistoryProps) {
                                 amount: t.amount,
                                 memo: t.memo,
                                 user_type: selectedUser,
+                                type: t.type,
+                                items: t.items,
+                                metadata: t.metadata,
                               });
                               setIsEditDialogOpen(true);
                             }}
