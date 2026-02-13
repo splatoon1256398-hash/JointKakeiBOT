@@ -656,7 +656,6 @@ export function Analysis() {
             );
           })
         )}
-        </div>
       </div>
     );
   };
