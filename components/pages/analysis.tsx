@@ -1,13 +1,14 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { ChevronRight, ChevronLeft, ChevronsLeft, ChevronsRight, TrendingUp, TrendingDown, Calendar as CalendarIcon } from "lucide-react";
+import { ChevronRight, ChevronLeft, ChevronsLeft, ChevronsRight, TrendingUp, TrendingDown, Calendar as CalendarIcon, Banknote } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useApp } from "@/contexts/app-context";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { ExpenseCard } from "@/components/widgets/expense-card";
 import { EditTransactionDialog, TransactionForEdit } from "@/components/edit-transaction-dialog";
 import { type TransactionItem } from "@/lib/gemini";
+import { IncomeDetail } from "@/components/pages/income-detail";
 
 interface Transaction {
   id: string;
@@ -38,7 +39,7 @@ interface YearlyDataItem {
   fullMonth: string;
 }
 
-type DrillLevel = 'overview' | 'subcategory' | 'detail';
+type DrillLevel = 'overview' | 'subcategory' | 'detail' | 'income';
 
 const CHART_COLORS = ['#8b5cf6', '#ec4899', '#06b6d4', '#10b981', '#f59e0b', '#ef4444', '#a855f7', '#f97316'];
 
@@ -50,6 +51,8 @@ export function Analysis() {
   const [categoryIcons, setCategoryIcons] = useState<Record<string, string>>({});
   const [subCategoryData, setSubCategoryData] = useState<Record<string, SubCategoryDataItem[]>>({});
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [monthIncome, setMonthIncome] = useState(0);
+  const [monthIncomeMemo, setMonthIncomeMemo] = useState('');
 
   // 月選択
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
@@ -214,6 +217,14 @@ export function Analysis() {
           .sort((a, b) => b.value - a.value);
       });
       setSubCategoryData(subCatData);
+
+      // 選択月の収入
+      const incomeInMonth = transactionsData
+        ?.filter(t => t.type === 'income' && t.date >= firstDayStr && t.date <= lastDayStr) || [];
+      const totalInc = incomeInMonth.reduce((s, t) => s + t.amount, 0);
+      setMonthIncome(totalInc);
+      const mainIncome = incomeInMonth.length > 0 ? (incomeInMonth[0].memo || incomeInMonth[0].store_name || incomeInMonth[0].category_sub) : '';
+      setMonthIncomeMemo(mainIncome);
 
     } catch (error) {
       console.error('データ取得エラー:', error);
@@ -391,6 +402,30 @@ export function Analysis() {
             })}
           </div>
         </div>
+      )}
+
+      {/* 今月の収入カード */}
+      {monthIncome > 0 && (
+        <button
+          onClick={() => setDrillLevel('income')}
+          className="w-full card-solid p-4 text-left hover:bg-white/[0.03] transition-colors"
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-green-500/15">
+                <Banknote className="h-5 w-5 text-green-400" />
+              </div>
+              <div>
+                <p className="text-xs text-white/50">今月の収入（手取り）</p>
+                <p className="text-lg font-bold text-green-400">+¥{monthIncome.toLocaleString()}</p>
+                {monthIncomeMemo && (
+                  <p className="text-xs text-white/40 truncate max-w-[180px]">{monthIncomeMemo}</p>
+                )}
+              </div>
+            </div>
+            <ChevronRight className="h-5 w-5 text-white/30" />
+          </div>
+        </button>
       )}
 
       {/* 年間支出推移 */}
@@ -676,6 +711,13 @@ export function Analysis() {
           {drillLevel === 'overview' && renderOverview()}
           {drillLevel === 'subcategory' && renderSubcategory()}
           {drillLevel === 'detail' && renderDetail()}
+          {drillLevel === 'income' && (
+            <IncomeDetail
+              onBack={() => setDrillLevel('overview')}
+              selectedYear={selectedYear}
+              selectedMonth={selectedMonth}
+            />
+          )}
         </>
       )}
 

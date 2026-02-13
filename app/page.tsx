@@ -63,6 +63,10 @@ function AppContent() {
     setCurrentPage("kakeibo");
   };
 
+  const handleNavigateToHistory = () => {
+    setCurrentPage("kakeibo");
+  };
+
   // スプラッシュ表示中
   if (showSplash) {
     return <SplashScreen fadeOut={splashFadeOut} />;
@@ -84,7 +88,7 @@ function AppContent() {
 
       {/* メインコンテンツ */}
       <main className="container mx-auto px-3 pt-0 pb-6 max-w-lg">
-        {currentPage === "dashboard" && <Dashboard onNavigateToAnalysis={handleNavigateToAnalysis} />}
+        {currentPage === "dashboard" && <Dashboard onNavigateToAnalysis={handleNavigateToAnalysis} onNavigateToHistory={handleNavigateToHistory} />}
         {currentPage === "kakeibo" && <Kakeibo />}
         {currentPage === "savings" && <Savings />}
         {currentPage === "chat" && <Chat />}

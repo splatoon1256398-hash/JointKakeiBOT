@@ -60,7 +60,7 @@ function ScopeBadge({ scope, label }: { scope: "personal" | "shared"; label?: st
 }
 
 export function SettingsModal() {
-  const { isSettingsOpen, setIsSettingsOpen, theme, selectedUser, displayName } = useApp();
+  const { isSettingsOpen, setIsSettingsOpen, theme, selectedUser, displayName, settingsTab, setSettingsTab } = useApp();
 
   const isJoint = selectedUser === "共同";
 
@@ -103,7 +103,7 @@ export function SettingsModal() {
           </div>
         </DialogHeader>
 
-        <Tabs defaultValue="fixed" className="w-full">
+        <Tabs value={settingsTab} onValueChange={setSettingsTab} className="w-full">
           <TabsList className="grid w-full grid-cols-7 bg-slate-800/50 h-auto p-1">
             <TabsTrigger value="fixed" className="flex flex-col gap-1 py-2 text-[10px]">
               <CreditCard className="h-4 w-4" />

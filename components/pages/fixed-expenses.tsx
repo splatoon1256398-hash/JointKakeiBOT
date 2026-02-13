@@ -312,12 +312,13 @@ export function FixedExpenses() {
                 </div>
                 <div>
                   <p className="text-sm font-semibold text-white">
-                    {expense.category_main} / {expense.category_sub}
+                    {expense.memo || expense.category_sub}
                   </p>
                   <div className="flex items-center gap-2 text-xs text-gray-400">
+                    <span>{expense.category_main} / {expense.category_sub}</span>
+                    <span>·</span>
                     <Calendar className="h-3 w-3" />
                     <span>毎月{expense.payment_day}日</span>
-                    {expense.memo && <span>・{expense.memo}</span>}
                   </div>
                 </div>
               </div>

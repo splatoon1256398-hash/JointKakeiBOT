@@ -26,6 +26,8 @@ interface AppContextType {
   setSelectedUser: (user: UserType) => void;
   isSettingsOpen: boolean;
   setIsSettingsOpen: (open: boolean) => void;
+  settingsTab: string;
+  setSettingsTab: (tab: string) => void;
   signOut: () => Promise<void>;
   theme: UserTheme;
   refreshTrigger: number;
@@ -101,6 +103,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [displayName, setDisplayName] = useState("");
   const [selectedUser, setSelectedUser] = useState<UserType>("__pending__");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState('fixed');
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [customThemeColor, setCustomThemeColor] = useState<string | null>(null);
   const [jointThemeColor, setJointThemeColor] = useState<string | null>(null);
@@ -278,6 +281,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       user, isAuthLoading, displayName,
       selectedUser, setSelectedUser,
       isSettingsOpen, setIsSettingsOpen,
+      settingsTab, setSettingsTab,
       signOut, theme, refreshTrigger, triggerRefresh,
       customThemeColor, setCustomThemeColor, saveCustomThemeColor,
       jointThemeColor, setJointThemeColor, saveJointThemeColor,

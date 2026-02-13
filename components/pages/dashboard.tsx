@@ -13,6 +13,7 @@ import {
   Banknote,
   ShoppingCart,
   HandCoins,
+  Settings,
 } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import { supabase } from "@/lib/supabase";
@@ -53,6 +54,7 @@ const CHART_COLORS = ['#8b5cf6', '#ec4899', '#06b6d4', '#10b981', '#f59e0b', '#e
 
 interface DashboardProps {
   onNavigateToAnalysis?: () => void;
+  onNavigateToHistory?: () => void;
 }
 
 interface WidgetSlot {
@@ -64,8 +66,8 @@ interface WidgetSlot {
   paydayShift?: "before" | "after";
 }
 
-export function Dashboard({ onNavigateToAnalysis }: DashboardProps) {
-  const { selectedUser, theme, refreshTrigger, user } = useApp();
+export function Dashboard({ onNavigateToAnalysis, onNavigateToHistory }: DashboardProps) {
+  const { selectedUser, theme, refreshTrigger, user, setIsSettingsOpen, setSettingsTab } = useApp();
   const [isLoading, setIsLoading] = useState(true);
   const [monthlySpent, setMonthlySpent] = useState(0);
   const [income, setIncome] = useState(0);
@@ -117,7 +119,7 @@ export function Dashboard({ onNavigateToAnalysis }: DashboardProps) {
 
       const { data: monthlyData } = await supabase
         .from('transactions')
-        .select('amount, category_main')
+        .select('amount, category_main, items')
         .eq('user_type', userType)
         .eq('type', 'expense')
         .gte('date', start)
@@ -143,9 +145,16 @@ export function Dashboard({ onNavigateToAnalysis }: DashboardProps) {
         setIncome(totalIncome);
       }
 
+      // items対応: 明細ベースでカテゴリ集計（分析ページと同じロジック）
       const categoryMap: Record<string, number> = {};
       monthlyData?.forEach(t => {
-        categoryMap[t.category_main] = (categoryMap[t.category_main] || 0) + t.amount;
+        if (t.items && Array.isArray(t.items) && t.items.length > 0) {
+          (t.items as Array<{ categoryMain: string; amount: number }>).forEach(item => {
+            categoryMap[item.categoryMain] = (categoryMap[item.categoryMain] || 0) + item.amount;
+          });
+        } else {
+          categoryMap[t.category_main] = (categoryMap[t.category_main] || 0) + t.amount;
+        }
       });
 
       const breakdown = Object.entries(categoryMap).map(([category, amount]) => ({
@@ -480,6 +489,12 @@ export function Dashboard({ onNavigateToAnalysis }: DashboardProps) {
           <h3 className="text-lg font-semibold text-white flex items-center gap-2 mb-4">
             <Wallet className="w-5 h-5" style={{ color: theme.secondary }} />
             カテゴリー予算
+            <button
+              onClick={() => { setSettingsTab('budget'); setIsSettingsOpen(true); }}
+              className="ml-auto p-1.5 rounded-lg hover:bg-white/10 text-white/40 hover:text-white transition-colors"
+            >
+              <Settings className="w-4 h-4" />
+            </button>
           </h3>
           {isLoading ? (
             <div className="space-y-3">
@@ -520,7 +535,10 @@ export function Dashboard({ onNavigateToAnalysis }: DashboardProps) {
               <TrendingDown className="w-5 h-5 text-red-400" />
               最近の支出
             </h3>
-            <button className="text-sm text-white/50 hover:text-white/80 flex items-center gap-1">
+            <button
+              onClick={onNavigateToHistory}
+              className="text-sm text-white/50 hover:text-white/80 flex items-center gap-1"
+            >
               すべて見る
               <ChevronRight className="w-4 h-4" />
             </button>

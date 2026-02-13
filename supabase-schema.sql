@@ -241,3 +241,19 @@ BEGIN
     COMMENT ON COLUMN transactions.items IS 'レシート解析時の明細配列（JSON）。各要素: {categoryMain, categorySub, storeName, amount, memo}';
   END IF;
 END $$;
+
+-- ==========================================
+-- マイグレーション: transactions テーブルに metadata カラムを追加
+-- 給与明細の総支給額（gross_amount）などを保存するためのJSONBカラム
+-- ==========================================
+
+DO $$ 
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'transactions' AND column_name = 'metadata'
+  ) THEN
+    ALTER TABLE transactions ADD COLUMN metadata JSONB;
+    COMMENT ON COLUMN transactions.metadata IS '追加情報（JSON）。給与: {gross_amount: 総支給額}';
+  END IF;
+END $$;
