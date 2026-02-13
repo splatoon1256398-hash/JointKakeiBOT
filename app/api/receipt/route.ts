@@ -67,22 +67,16 @@ export async function POST(request: NextRequest) {
 
     const prompt = `このレシート画像/PDFを詳細に解析して、以下のJSON形式で情報を抽出してください：
 
-【重要な解析ルール】
-1. レシート内の商品を、カテゴリーごとにグループ化してください
-2. 「値引き」や「割引」は独立した商品として扱わず、該当する商品の金額から差し引いてください
-3. 各商品に適切な大カテゴリーと小カテゴリーを割り当ててください
-4. 同じカテゴリーの商品は1つの項目にまとめてください
-5. **必ず以下のカテゴリーリストの中から選択してください（他のカテゴリーは使用禁止）**
+【最重要ルール: 合計金額（税込）の絶対視】
+- レシートに印字されている「合計金額（税込）」「お支払い金額」を totalAmount として最優先で取得せよ。これが家計簿の正解金額となる。
+- totalAmount は絶対に変えるな。レシートの支払総額そのものを使え。
 
-【税込み計算ルール（重要）】
-- レシートに表示されている価格が「税抜き」の場合、以下の税率で税込みに変換してください：
-  - 食品（飲食料品）→ 軽減税率 8%（税抜き価格 × 1.08）
-  - その他（日用品、衣料品、サービスなど）→ 標準税率 10%（税抜き価格 × 1.10）
-  - 外食・酒類 → 標準税率 10%
-- レシートに「(税込)」「内税」と記載がある場合、または「合計」欄の金額が税込みの場合はそのまま使用
-- 各itemの amount は**必ず税込み金額**で出力してください
-- totalAmount は**レシートの支払総額**（税込）と一致させてください
-- レシートに「お支払い金額」「合計」が表示されている場合、その金額を totalAmount として使用してください
+【品目の抽出ルール】
+1. 品目ごとの価格は、レシートに書かれている通りに抽出せよ（税抜きでも税込みでもそのまま）
+2. 品目合計と totalAmount が合わなくても、金額を捏造して調整してはいけない
+3. 各商品に適切な大カテゴリーと小カテゴリーを割り当ててください
+4. 「値引き」や「割引」は独立した商品として扱わず、該当する商品の金額から差し引いてください
+5. **必ず以下のカテゴリーリストの中から選択してください（他のカテゴリーは使用禁止）**
 
 【使用可能なカテゴリー一覧】
 ${categoryList}
@@ -101,15 +95,17 @@ ${categoryList}
       "categoryMain": "食費",
       "categorySub": "食料品",
       "storeName": "店名",
-      "amount": 1234,
-      "memo": "野菜、肉など（税込み）"
+      "amount": 254,
+      "memo": "卵"
     }
   ],
-  "totalAmount": 1234
+  "totalAmount": 9522
 }
 
-日付が読み取れない場合は、今日の日付（${new Date().toISOString().split("T")[0]}）を使用してください。
-必ずJSON形式のみで返答してください（他の文字は含めないでください）。`;
+- 各itemのmemoは個別商品名を書け（「野菜、肉など」のようにまとめるな）
+- 同じカテゴリーの商品でもまとめずに1品1itemで出力せよ
+- 日付が読み取れない場合は、今日の日付（${new Date().toISOString().split("T")[0]}）を使用してください
+- 必ずJSON形式のみで返答してください（他の文字は含めないでください）`;
 
     const result = await model.generateContent([prompt, imagePart]);
     const text = result.response.text();
@@ -126,6 +122,33 @@ ${categoryList}
 
     if (!receiptData.items || receiptData.items.length === 0) {
       throw new Error("項目が見つかりませんでした");
+    }
+
+    // ===== 按分ロジック: totalAmount を基準に各品目を税込概算に変換 =====
+    const totalAmount = receiptData.totalAmount || 0;
+    const itemsSum = receiptData.items.reduce(
+      (sum: number, item: { amount: number }) => sum + item.amount,
+      0
+    );
+
+    if (totalAmount > 0 && itemsSum > 0 && itemsSum !== totalAmount) {
+      // 品目合計 ≠ 合計金額 → プロポーショナル按分で税込概算に変換
+      const ratio = totalAmount / itemsSum;
+      let distributed = 0;
+      receiptData.items = receiptData.items.map(
+        (
+          item: { amount: number; [key: string]: unknown },
+          idx: number
+        ) => {
+          if (idx === receiptData.items.length - 1) {
+            // 最後の項目で端数調整（1円単位の誤差を吸収）
+            return { ...item, amount: totalAmount - distributed };
+          }
+          const adjusted = Math.round(item.amount * ratio);
+          distributed += adjusted;
+          return { ...item, amount: adjusted };
+        }
+      );
     }
 
     return NextResponse.json(receiptData);
