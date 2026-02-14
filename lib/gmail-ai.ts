@@ -66,7 +66,8 @@ export function shouldProcessEmail(
 export async function parseEmailWithAI(
   emailBody: string,
   subject: string,
-  categories?: CategoryDefinition[]
+  categories?: CategoryDefinition[],
+  receivedDate?: string
 ): Promise<ParsedTransaction[] | null> {
   try {
     const model = genAI.getGenerativeModel({
@@ -111,8 +112,16 @@ ${catLines.join("\n")}`;
 小分類は適切なものを推測してください。`;
     }
 
+    const today = new Date().toISOString().split('T')[0];
+    const dateToUse = receivedDate || today;
+
     const prompt = `以下のメールから決済・取引情報を抽出してください。
 決済メールでない場合は is_transaction: false, items: [] を返してください。
+
+【最重要: 日付の決定ルール】
+- このメールの受信日は「${dateToUse}」です。
+- 各itemのdateには、この受信日「${dateToUse}」を使用してください。
+- メール本文中に別の日付があっても、受信日を最優先で採用せよ。
 
 【重要: 複数商品対応】
 - 1通のメールに複数の商品がある場合（Amazon注文確認、まとめ買い等）、items配列に個別に登録してください。
@@ -140,7 +149,7 @@ ${emailBody.substring(0, 4000)}`;
     const validItems = parsed.items
       .filter((item) => item.amount > 0)
       .map((item) => ({
-        date: item.date || new Date().toISOString().split("T")[0],
+        date: item.date || dateToUse,
         amount: item.amount,
         store: item.store || "",
         category_main: item.category_main || "その他",

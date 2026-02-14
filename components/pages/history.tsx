@@ -11,6 +11,14 @@ import 'react-calendar/dist/Calendar.css';
 
 type UserType = "共同" | "れん" | "あかね";
 
+/** Date → YYYY-MM-DD (ローカルタイムゾーン準拠、UTC変換しない) */
+const toLocalDateStr = (d: Date) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
 interface Transaction {
   id: string;
   date: string;
@@ -95,7 +103,7 @@ export function History({ isCompact = false }: HistoryProps) {
   }, {} as Record<string, Transaction[]>);
 
   const getDayTotal = (date: Date) => {
-    const dateStr = date.toISOString().split('T')[0];
+    const dateStr = toLocalDateStr(date);
     const dayTransactions = groupedTransactions[dateStr] || [];
     const expenses = dayTransactions.filter(t => t.type !== 'income').reduce((sum, t) => sum + t.amount, 0);
     const incomes = dayTransactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
@@ -184,7 +192,7 @@ export function History({ isCompact = false }: HistoryProps) {
             {/* 選択日の支出カード一覧: mt-6 でカレンダーと余白確保 */}
             <div className="card-solid overflow-hidden">
               {(() => {
-                const dateStr = selectedDate.toISOString().split('T')[0];
+                const dateStr = toLocalDateStr(selectedDate);
                 const dayTransactions = groupedTransactions[dateStr] || [];
                 const dayExpense = dayTransactions.filter(t => t.type !== 'income').reduce((sum, t) => sum + t.amount, 0);
                 const dayIncome = dayTransactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);

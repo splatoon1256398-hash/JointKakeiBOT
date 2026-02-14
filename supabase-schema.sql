@@ -273,3 +273,78 @@ BEGIN
     COMMENT ON COLUMN transactions.target_month IS '予算対象月（収入がどの月の予算に充てられるか）。NULLの場合はdateと同月扱い';
   END IF;
 END $$;
+
+-- ==========================================
+-- マイグレーション: 共同モード RLS 修正
+-- user_type='共同' のデータは認証済みユーザー全員が読み書き可能にする
+-- ==========================================
+
+-- transactions: 既存ポリシーを削除して再作成
+DROP POLICY IF EXISTS "Users can view own transactions" ON transactions;
+DROP POLICY IF EXISTS "Users can insert own transactions" ON transactions;
+DROP POLICY IF EXISTS "Users can update own transactions" ON transactions;
+DROP POLICY IF EXISTS "Users can delete own transactions" ON transactions;
+
+CREATE POLICY "Users can view own or joint transactions" ON transactions
+  FOR SELECT USING (auth.uid() = user_id OR user_type = '共同');
+
+CREATE POLICY "Users can insert own transactions" ON transactions
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own or joint transactions" ON transactions
+  FOR UPDATE USING (auth.uid() = user_id OR user_type = '共同');
+
+CREATE POLICY "Users can delete own or joint transactions" ON transactions
+  FOR DELETE USING (auth.uid() = user_id OR user_type = '共同');
+
+-- saving_goals: 既存ポリシーを削除して再作成
+DROP POLICY IF EXISTS "Users can view own saving_goals" ON saving_goals;
+DROP POLICY IF EXISTS "Users can insert own saving_goals" ON saving_goals;
+DROP POLICY IF EXISTS "Users can update own saving_goals" ON saving_goals;
+DROP POLICY IF EXISTS "Users can delete own saving_goals" ON saving_goals;
+
+CREATE POLICY "Users can view own or joint saving_goals" ON saving_goals
+  FOR SELECT USING (auth.uid() = user_id OR user_type = '共同');
+
+CREATE POLICY "Users can insert own saving_goals" ON saving_goals
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own or joint saving_goals" ON saving_goals
+  FOR UPDATE USING (auth.uid() = user_id OR user_type = '共同');
+
+CREATE POLICY "Users can delete own or joint saving_goals" ON saving_goals
+  FOR DELETE USING (auth.uid() = user_id OR user_type = '共同');
+
+-- budgets: 既存ポリシーを削除して再作成
+DROP POLICY IF EXISTS "Users can view own budgets" ON budgets;
+DROP POLICY IF EXISTS "Users can insert own budgets" ON budgets;
+DROP POLICY IF EXISTS "Users can update own budgets" ON budgets;
+DROP POLICY IF EXISTS "Users can delete own budgets" ON budgets;
+
+CREATE POLICY "Users can view own or joint budgets" ON budgets
+  FOR SELECT USING (auth.uid() = user_id OR user_type = '共同');
+
+CREATE POLICY "Users can insert own budgets" ON budgets
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own or joint budgets" ON budgets
+  FOR UPDATE USING (auth.uid() = user_id OR user_type = '共同');
+
+CREATE POLICY "Users can delete own or joint budgets" ON budgets
+  FOR DELETE USING (auth.uid() = user_id OR user_type = '共同');
+
+-- ==========================================
+-- マイグレーション: user_settings に joint_theme_color カラムを追加
+-- 共同モードのテーマカラーを個人設定と分離して管理
+-- ==========================================
+
+DO $$ 
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'user_settings' AND column_name = 'joint_theme_color'
+  ) THEN
+    ALTER TABLE user_settings ADD COLUMN joint_theme_color TEXT;
+    COMMENT ON COLUMN user_settings.joint_theme_color IS '共同モード用テーマカラー（HEX）。個人テーマとは独立';
+  END IF;
+END $$;

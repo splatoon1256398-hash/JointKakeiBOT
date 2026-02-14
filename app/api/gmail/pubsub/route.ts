@@ -239,6 +239,21 @@ export async function POST(request: Request) {
           const sender = extractHeader(headers, "From");
           const emailBody = extractEmailBody(message);
 
+          // メールの受信日を取得（internalDate = Unixミリ秒）
+          let receivedDate: string | undefined;
+          if (message.internalDate) {
+            const d = new Date(parseInt(message.internalDate, 10));
+            receivedDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+          } else {
+            const dateHeader = extractHeader(headers, "Date");
+            if (dateHeader) {
+              const d = new Date(dateHeader);
+              if (!isNaN(d.getTime())) {
+                receivedDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+              }
+            }
+          }
+
           // フィルタ適用
           const { data: filters } = await supabaseAdmin
             .from("gmail_filters")
@@ -251,7 +266,7 @@ export async function POST(request: Request) {
           }
 
           // AI解析（複数商品対応）
-          const parsedItems = await parseEmailWithAI(emailBody, subject, categoryDefs);
+          const parsedItems = await parseEmailWithAI(emailBody, subject, categoryDefs, receivedDate);
           if (!parsedItems || parsedItems.length === 0) {
             console.log(`Not a transaction email: ${subject}`);
             continue;
