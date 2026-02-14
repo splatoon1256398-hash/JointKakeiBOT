@@ -54,6 +54,8 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
   const [isSaving, setIsSaving] = useState(false);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [isPdf, setIsPdf] = useState(false);
+  const [continuousScan, setContinuousScan] = useState(false);
+  const [scanCount, setScanCount] = useState(0);
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [items, setItems] = useState<ExpenseItem[]>([
     {
@@ -257,9 +259,27 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
           console.error("Push通知送信エラー:", pushError);
         }
       }
+
+      // 予算アラートチェック
+      try {
+        await checkBudgetAlerts(user?.id || '', selectedUser, items, totalAmount);
+      } catch (alertError) {
+        console.error("予算アラートチェックエラー:", alertError);
+      }
       
       // データを即座に反映
       triggerRefresh();
+      
+      // 連続スキャンモードの場合、フォームリセットしてカメラを再起動
+      if (continuousScan) {
+        setScanCount(prev => prev + 1);
+        resetForm();
+        // 少し待ってからカメラを起動
+        setTimeout(() => {
+          cameraInputRef.current?.click();
+        }, 500);
+        return;
+      }
       
       // フォームをリセット
       resetForm();
@@ -286,10 +306,81 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
     setIsPdf(false);
   };
 
+  // 予算アラートチェック
+  const checkBudgetAlerts = async (userId: string, userType: string, savedItems: typeof items, savedTotal: number) => {
+    try {
+      // 今月の範囲
+      const now = new Date();
+      const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+      const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      const monthEnd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(lastDay.getDate()).padStart(2, '0')}`;
+
+      // 予算取得
+      const { data: budgets } = await supabase
+        .from('budgets')
+        .select('category_main, monthly_budget')
+        .eq('user_type', userType);
+
+      if (!budgets || budgets.length === 0) return;
+
+      // 今月の支出取得
+      const { data: monthExpenses } = await supabase
+        .from('transactions')
+        .select('amount, category_main, items')
+        .eq('user_type', userType)
+        .eq('type', 'expense')
+        .gte('date', monthStart)
+        .lte('date', monthEnd);
+
+      // カテゴリ別支出集計
+      const spentMap: Record<string, number> = {};
+      monthExpenses?.forEach(t => {
+        if (t.items && Array.isArray(t.items) && t.items.length > 0) {
+          (t.items as Array<{ categoryMain: string; amount: number }>).forEach(item => {
+            spentMap[item.categoryMain] = (spentMap[item.categoryMain] || 0) + item.amount;
+          });
+        } else {
+          spentMap[t.category_main] = (spentMap[t.category_main] || 0) + t.amount;
+        }
+      });
+
+      // アラート対象のカテゴリを検出
+      const alerts: string[] = [];
+      for (const budget of budgets) {
+        const spent = spentMap[budget.category_main] || 0;
+        const pct = budget.monthly_budget > 0 ? (spent / budget.monthly_budget) * 100 : 0;
+        const remaining = budget.monthly_budget - spent;
+
+        if (pct >= 100) {
+          alerts.push(`⚠️ ${budget.category_main}の予算を超過しました（¥${(-remaining).toLocaleString()}オーバー）`);
+        } else if (pct >= 80) {
+          alerts.push(`⚠ ${budget.category_main}があと¥${remaining.toLocaleString()}で上限です`);
+        }
+      }
+
+      // アラートがあればPush通知
+      if (alerts.length > 0) {
+        await fetch('/api/push/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: '予算アラート',
+            body: alerts.join('\n'),
+            targetUserId: userId,
+          }),
+        });
+      }
+    } catch (err) {
+      console.error('予算アラートチェックエラー:', err);
+    }
+  };
+
   // ダイアログを閉じる際のクリーンアップ
   const handleOpenChange = (newOpen: boolean) => {
     if (!newOpen) {
       resetForm();
+      setContinuousScan(false);
+      setScanCount(0);
     }
     onOpenChange(newOpen);
   };
@@ -547,34 +638,73 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
               </div>
             </div>
 
-            {/* 送信ボタン */}
-            <div className="flex gap-2">
-              <Button 
-                type="submit" 
-                className="flex-1 h-10 text-sm font-semibold bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
-                disabled={isSaving}
+            {/* 連続スキャンモード + 送信ボタン */}
+            <div className="space-y-2">
+              {/* 連続スキャントグル */}
+              <button
+                type="button"
+                onClick={() => setContinuousScan(!continuousScan)}
+                className={`w-full flex items-center justify-between p-2.5 rounded-lg border transition-all text-xs ${
+                  continuousScan
+                    ? 'bg-purple-500/10 border-purple-500/30 text-purple-300'
+                    : 'bg-white/5 border-white/10 text-white/50'
+                }`}
               >
-                {isSaving ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                    保存中...
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="h-4 w-4 mr-2" />
-                    支出を追加
-                  </>
-                )}
-              </Button>
-              <Button 
-                type="button" 
-                variant="outline" 
-                onClick={() => handleOpenChange(false)}
-                className="h-10 text-sm"
-                disabled={isSaving}
-              >
-                キャンセル
-              </Button>
+                <span className="flex items-center gap-2">
+                  <Camera className="h-3.5 w-3.5" />
+                  連続スキャンモード
+                  {scanCount > 0 && (
+                    <span className="px-1.5 py-0.5 rounded-full bg-purple-500/20 text-purple-300 text-[10px] font-bold">
+                      {scanCount}枚完了
+                    </span>
+                  )}
+                </span>
+                <div className={`w-8 h-4 rounded-full transition-colors flex items-center ${
+                  continuousScan ? 'bg-purple-500 justify-end' : 'bg-white/20 justify-start'
+                }`}>
+                  <div className="w-3 h-3 rounded-full bg-white mx-0.5" />
+                </div>
+              </button>
+              {continuousScan && (
+                <p className="text-[10px] text-purple-300/60 px-1">
+                  保存後、自動的にカメラが起動して次のレシートをスキャンできます
+                </p>
+              )}
+
+              {/* ボタン行 */}
+              <div className="flex gap-2">
+                <Button 
+                  type="submit" 
+                  className="flex-1 h-10 text-sm font-semibold bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
+                  disabled={isSaving}
+                >
+                  {isSaving ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      保存中...
+                    </>
+                  ) : continuousScan ? (
+                    <>
+                      <Camera className="h-4 w-4 mr-2" />
+                      保存して次をスキャン
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="h-4 w-4 mr-2" />
+                      支出を追加
+                    </>
+                  )}
+                </Button>
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  onClick={() => handleOpenChange(false)}
+                  className="h-10 text-sm"
+                  disabled={isSaving}
+                >
+                  {continuousScan && scanCount > 0 ? '完了' : 'キャンセル'}
+                </Button>
+              </div>
             </div>
           </form>
         </div>

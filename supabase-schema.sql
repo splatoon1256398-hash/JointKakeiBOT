@@ -348,3 +348,20 @@ BEGIN
     COMMENT ON COLUMN user_settings.joint_theme_color IS '共同モード用テーマカラー（HEX）。個人テーマとは独立';
   END IF;
 END $$;
+
+-- ==========================================
+-- マイグレーション: transactions テーブルに income_month カラムを追加
+-- 統計・年収計算用の「本来の支給月」（例: 1月度給与）
+-- target_month が予算計算用、income_month が統計・年収集計用
+-- ==========================================
+
+DO $$ 
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'transactions' AND column_name = 'income_month'
+  ) THEN
+    ALTER TABLE transactions ADD COLUMN income_month DATE;
+    COMMENT ON COLUMN transactions.income_month IS '統計用の支給月（何月度の収入か）。年収・月別推移統計に使用。NULLの場合はdateと同月扱い';
+  END IF;
+END $$;

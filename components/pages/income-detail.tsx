@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, TrendingUp, Banknote, Briefcase } from "lucide-react";
+import { ChevronLeft, TrendingUp, Banknote, Award, ArrowUpRight, ArrowDownRight } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useApp } from "@/contexts/app-context";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
@@ -15,6 +15,8 @@ interface IncomeTransaction {
   amount: number;
   memo: string;
   metadata?: { gross_amount?: number } | null;
+  income_month?: string | null;
+  target_month?: string | null;
 }
 
 interface MonthlyIncomeData {
@@ -37,16 +39,17 @@ export function IncomeDetail({ onBack, selectedYear, selectedMonth }: Props) {
   const [monthTransactions, setMonthTransactions] = useState<IncomeTransaction[]>([]);
   const [monthNetIncome, setMonthNetIncome] = useState(0);
   const [monthGrossIncome, setMonthGrossIncome] = useState(0);
+  // 年間サマリー
+  const [yearNetTotal, setYearNetTotal] = useState(0);
+  const [yearGrossTotal, setYearGrossTotal] = useState(0);
+  const [yearMonthCount, setYearMonthCount] = useState(0);
 
   const fetchData = useCallback(async () => {
     setIsLoading(true);
     try {
-      // 過去12ヶ月分の収入データ
-      const prevYear = selectedYear - 1;
-      const mm = String(selectedMonth).padStart(2, "0");
-      const startStr = `${prevYear}-${mm}-01`;
-      const lastDay = new Date(selectedYear, selectedMonth, 0);
-      const endStr = `${selectedYear}-${mm}-${String(lastDay.getDate()).padStart(2, "0")}`;
+      // 選択年の全データを取得（前年も含めて余裕を持って取得）
+      const startStr = `${selectedYear - 1}-01-01`;
+      const endStr = `${selectedYear}-12-31`;
 
       let query = supabase
         .from("transactions")
@@ -56,25 +59,26 @@ export function IncomeDetail({ onBack, selectedYear, selectedMonth }: Props) {
         .lte("date", endStr)
         .order("date", { ascending: true });
 
-      // 共同の場合は全員の収入、個人の場合はその人の収入
       if (selectedUser !== "共同") {
         query = query.eq("user_type", selectedUser);
       }
 
       const { data } = await query;
-      const txs = data || [];
+      const txs = (data || []) as IncomeTransaction[];
 
-      // 年間推移 - target_month優先
+      // ===== income_month ベースで集計（統計用） =====
       const monthlyMap: Record<string, { net: number; gross: number }> = {};
       txs.forEach((t) => {
-        const m = t.target_month ? t.target_month.substring(0, 7) : t.date.substring(0, 7);
+        const m = t.income_month ? t.income_month.substring(0, 7) : t.date.substring(0, 7);
         if (!monthlyMap[m]) monthlyMap[m] = { net: 0, gross: 0 };
         monthlyMap[m].net += t.amount;
         const gross = t.metadata?.gross_amount || t.amount;
         monthlyMap[m].gross += gross;
       });
 
+      // 年間推移グラフデータ（選択年のみ）
       const yearly = Object.entries(monthlyMap)
+        .filter(([month]) => month.startsWith(String(selectedYear)))
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([month, d]) => ({
           month: month.substring(5) + "月",
@@ -84,10 +88,24 @@ export function IncomeDetail({ onBack, selectedYear, selectedMonth }: Props) {
         }));
       setYearlyData(yearly);
 
-      // 選択月のデータ - target_month優先
+      // 年間サマリー（選択年のみ）
+      let yNet = 0, yGross = 0, mCount = 0;
+      Object.entries(monthlyMap).forEach(([month, d]) => {
+        if (month.startsWith(String(selectedYear))) {
+          yNet += d.net;
+          yGross += d.gross;
+          if (d.net > 0) mCount++;
+        }
+      });
+      setYearNetTotal(yNet);
+      setYearGrossTotal(yGross);
+      setYearMonthCount(mCount);
+
+      // 選択月のデータ（income_month ベース）
+      const mm = String(selectedMonth).padStart(2, "0");
       const selectedMonthStr = `${selectedYear}-${mm}`;
       const monthTxs = txs.filter((t) => {
-        const effectiveMonth = t.target_month ? t.target_month.substring(0, 7) : t.date.substring(0, 7);
+        const effectiveMonth = t.income_month ? t.income_month.substring(0, 7) : t.date.substring(0, 7);
         return effectiveMonth === selectedMonthStr;
       });
       setMonthTransactions(monthTxs);
@@ -109,6 +127,8 @@ export function IncomeDetail({ onBack, selectedYear, selectedMonth }: Props) {
 
   const deductions = monthGrossIncome - monthNetIncome;
   const deductionRate = monthGrossIncome > 0 ? Math.round((deductions / monthGrossIncome) * 100) : 0;
+  const yearDeductions = yearGrossTotal - yearNetTotal;
+  const yearDeductionRate = yearGrossTotal > 0 ? Math.round((yearDeductions / yearGrossTotal) * 100) : 0;
 
   return (
     <div className="space-y-3">
@@ -121,11 +141,90 @@ export function IncomeDetail({ onBack, selectedYear, selectedMonth }: Props) {
         <span className="text-sm">分析に戻る</span>
       </button>
 
+      {/* ===== 年間収入サマリーカード ===== */}
+      {!isLoading && (
+        <div
+          className="rounded-2xl overflow-hidden"
+          style={{ background: `linear-gradient(135deg, ${theme.primary}dd, ${theme.primary}88)` }}
+        >
+          <div className="p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Award className="h-5 w-5 text-white/80" />
+                <h3 className="text-sm font-bold text-white/90">{selectedYear}年 収入サマリー</h3>
+              </div>
+              {yearMonthCount > 0 && (
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/15 text-white/70">
+                  {yearMonthCount}ヶ月分
+                </span>
+              )}
+            </div>
+
+            {/* メイン数値: 手取り合計 */}
+            <div className="mb-4">
+              <p className="text-xs text-white/50 mb-1">年間手取り（振込額）</p>
+              <p className="text-3xl font-extrabold text-white tracking-tight">
+                ¥{yearNetTotal.toLocaleString()}
+              </p>
+            </div>
+
+            {/* サブ数値: 額面 + 控除 */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="p-3 rounded-xl bg-white/10 backdrop-blur-sm">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <ArrowUpRight className="h-3.5 w-3.5 text-emerald-300" />
+                  <p className="text-[10px] text-white/60">総支給額（額面）</p>
+                </div>
+                <p className="text-lg font-bold text-white">
+                  ¥{yearGrossTotal.toLocaleString()}
+                </p>
+              </div>
+              <div className="p-3 rounded-xl bg-white/10 backdrop-blur-sm">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <ArrowDownRight className="h-3.5 w-3.5 text-orange-300" />
+                  <p className="text-[10px] text-white/60">年間控除合計</p>
+                </div>
+                <p className="text-lg font-bold text-orange-300">
+                  -¥{yearDeductions.toLocaleString()}
+                </p>
+                {yearDeductionRate > 0 && (
+                  <p className="text-[10px] text-white/40 mt-0.5">
+                    控除率 {yearDeductionRate}%
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* 年間控除バー */}
+            {yearDeductions > 0 && (
+              <div className="mt-3">
+                <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+                  <div className="h-full flex">
+                    <div
+                      className="h-full bg-emerald-400 rounded-l-full"
+                      style={{ width: `${100 - yearDeductionRate}%` }}
+                    />
+                    <div
+                      className="h-full bg-orange-400 rounded-r-full"
+                      style={{ width: `${yearDeductionRate}%` }}
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-between mt-1">
+                  <span className="text-[10px] text-white/40">手取り {100 - yearDeductionRate}%</span>
+                  <span className="text-[10px] text-orange-300/60">控除 {yearDeductionRate}%</span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* 今月の収入サマリー */}
       <div className="card-solid p-4">
         <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
           <Banknote className="h-4 w-4 text-green-400" />
-          {selectedMonth}月の収入
+          {selectedMonth}月度の収入
         </h3>
 
         {isLoading ? (
@@ -219,7 +318,7 @@ export function IncomeDetail({ onBack, selectedYear, selectedMonth }: Props) {
         <div className="card-solid p-4">
           <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
             <TrendingUp className="h-4 w-4 text-green-400" />
-            年間収入推移
+            {selectedYear}年 月別収入推移
           </h3>
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={yearlyData}>
@@ -239,7 +338,7 @@ export function IncomeDetail({ onBack, selectedYear, selectedMonth }: Props) {
               <Bar dataKey="控除額" stackId="income" fill="#f97316" radius={[8, 8, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
-          <p className="text-[10px] text-white/30 text-center mt-1">※ 控除額のデータがある月のみ積み上げ表示</p>
+          <p className="text-[10px] text-white/30 text-center mt-1">※ 支給月(income_month)ベースで集計</p>
         </div>
       )}
     </div>

@@ -18,6 +18,73 @@ interface GmailWebhookPayload {
   memo?: string;
 }
 
+async function checkBudgetAlert(
+  userId: string,
+  userType: string,
+  categoryMain: string,
+  appUrl: string
+): Promise<void> {
+  try {
+    const now = new Date();
+    const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    const monthEnd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(lastDay.getDate()).padStart(2, "0")}`;
+
+    const { data: budgets } = await supabaseAdmin
+      .from("budgets")
+      .select("category_main, monthly_budget")
+      .eq("user_type", userType)
+      .eq("category_main", categoryMain);
+
+    if (!budgets || budgets.length === 0) return;
+
+    const { data: monthExpenses } = await supabaseAdmin
+      .from("transactions")
+      .select("amount, category_main, items")
+      .eq("user_type", userType)
+      .eq("type", "expense")
+      .gte("date", monthStart)
+      .lte("date", monthEnd);
+
+    const spentMap: Record<string, number> = {};
+    monthExpenses?.forEach((t) => {
+      if (t.items && Array.isArray(t.items) && (t.items as Array<{ categoryMain: string; amount: number }>).length > 0) {
+        (t.items as Array<{ categoryMain: string; amount: number }>).forEach((item) => {
+          spentMap[item.categoryMain] = (spentMap[item.categoryMain] || 0) + item.amount;
+        });
+      } else {
+        spentMap[t.category_main] = (spentMap[t.category_main] || 0) + t.amount;
+      }
+    });
+
+    const budget = budgets[0];
+    const spent = spentMap[budget.category_main] || 0;
+    const pct = budget.monthly_budget > 0 ? (spent / budget.monthly_budget) * 100 : 0;
+    const remaining = budget.monthly_budget - spent;
+
+    let alertBody = "";
+    if (pct >= 100) {
+      alertBody = `⚠️ ${budget.category_main}の予算を超過（¥${(-remaining).toLocaleString()}オーバー）`;
+    } else if (pct >= 80) {
+      alertBody = `⚠ ${budget.category_main}があと¥${remaining.toLocaleString()}で上限`;
+    }
+
+    if (alertBody) {
+      await fetch(`${appUrl}/api/push/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: "予算アラート",
+          body: alertBody,
+          targetUserId: userId,
+        }),
+      });
+    }
+  } catch (err) {
+    console.error("Budget alert check error:", err);
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body: GmailWebhookPayload = await request.json();
@@ -109,6 +176,14 @@ export async function POST(request: NextRequest) {
         console.error("Partner push notification error:", pushError);
       }
     }
+
+    // 予算アラートチェック
+    await checkBudgetAlert(
+      settings.user_id,
+      body.user_type,
+      body.category_main,
+      new URL(request.url).origin
+    );
 
     return NextResponse.json({
       success: true,

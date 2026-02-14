@@ -162,6 +162,81 @@ async function addLabelToMessage(
   );
 }
 
+/**
+ * 予算アラートチェック: 支出追加後にカテゴリ予算の80%/100%超過を検出しPush通知
+ */
+async function checkBudgetAlert(
+  userId: string,
+  userType: string,
+  parsedItems: { category_main: string; amount: number }[],
+  appUrl: string
+): Promise<void> {
+  try {
+    const now = new Date();
+    const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    const monthEnd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(lastDay.getDate()).padStart(2, "0")}`;
+
+    const { data: budgets } = await supabaseAdmin
+      .from("budgets")
+      .select("category_main, monthly_budget")
+      .eq("user_type", userType);
+
+    if (!budgets || budgets.length === 0) return;
+
+    // 今追加した支出のカテゴリのみチェック
+    const affectedCategories = new Set(parsedItems.map((i) => i.category_main));
+    const relevantBudgets = budgets.filter((b) => affectedCategories.has(b.category_main));
+    if (relevantBudgets.length === 0) return;
+
+    const { data: monthExpenses } = await supabaseAdmin
+      .from("transactions")
+      .select("amount, category_main, items")
+      .eq("user_type", userType)
+      .eq("type", "expense")
+      .gte("date", monthStart)
+      .lte("date", monthEnd);
+
+    const spentMap: Record<string, number> = {};
+    monthExpenses?.forEach((t) => {
+      if (t.items && Array.isArray(t.items) && t.items.length > 0) {
+        (t.items as Array<{ categoryMain: string; amount: number }>).forEach((item) => {
+          spentMap[item.categoryMain] = (spentMap[item.categoryMain] || 0) + item.amount;
+        });
+      } else {
+        spentMap[t.category_main] = (spentMap[t.category_main] || 0) + t.amount;
+      }
+    });
+
+    const alerts: string[] = [];
+    for (const budget of relevantBudgets) {
+      const spent = spentMap[budget.category_main] || 0;
+      const pct = budget.monthly_budget > 0 ? (spent / budget.monthly_budget) * 100 : 0;
+      const remaining = budget.monthly_budget - spent;
+
+      if (pct >= 100) {
+        alerts.push(`⚠️ ${budget.category_main}の予算を超過（¥${(-remaining).toLocaleString()}オーバー）`);
+      } else if (pct >= 80) {
+        alerts.push(`⚠ ${budget.category_main}があと¥${remaining.toLocaleString()}で上限`);
+      }
+    }
+
+    if (alerts.length > 0) {
+      await fetch(`${appUrl}/api/push/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: "予算アラート",
+          body: alerts.join("\n"),
+          targetUserId: userId,
+        }),
+      });
+    }
+  } catch (err) {
+    console.error("Budget alert check error:", err);
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -320,6 +395,9 @@ export async function POST(request: Request) {
                   targetUserId: userSettings.user_id,
                 }),
               });
+
+              // 予算アラートチェック
+              await checkBudgetAlert(userSettings.user_id, userType, parsedItems, appUrl);
             } catch (pushError) {
               console.error("Push notification error:", pushError);
             }
