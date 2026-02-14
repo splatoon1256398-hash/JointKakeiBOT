@@ -63,13 +63,21 @@ export function History({ isCompact = false }: HistoryProps) {
   const fetchTransactions = async (userType: UserType) => {
     setIsLoading(true);
     try {
-      const { data } = await supabase
+      let query = supabase
         .from('transactions')
-        .select('*')
-        .eq('user_type', userType)
+        .select('*');
+
+      // 共同以外の場合: 自分のデータ + 共同データを取得
+      if (userType === '共同') {
+        query = query.eq('user_type', '共同');
+      } else {
+        query = query.in('user_type', [userType, '共同']);
+      }
+
+      const { data } = await query
         .order('date', { ascending: false })
         .order('created_at', { ascending: false })
-        .limit(50);
+        .limit(100);
 
       setTransactions(data || []);
     } catch (error) {
@@ -113,18 +121,26 @@ export function History({ isCompact = false }: HistoryProps) {
   const tileContent = ({ date, view }: { date: Date; view: string }) => {
     if (view === 'month') {
       const { expenses, incomes } = getDayTotal(date);
-      const total = expenses + incomes;
-      if (total > 0) {
-        const displayAmount = expenses > 0
-          ? (expenses >= 10000 ? `${(expenses / 10000).toFixed(expenses % 10000 === 0 ? 0 : 1)}万` : `¥${expenses.toLocaleString()}`)
-          : (incomes >= 10000 ? `+${(incomes / 10000).toFixed(incomes % 10000 === 0 ? 0 : 1)}万` : `+¥${incomes.toLocaleString()}`);
+      if (expenses > 0 || incomes > 0) {
+        const expenseText = expenses > 0
+          ? (expenses >= 10000 ? `-${(expenses / 10000).toFixed(expenses % 10000 === 0 ? 0 : 1)}万` : `-¥${expenses.toLocaleString()}`)
+          : null;
+        const incomeText = incomes > 0
+          ? (incomes >= 10000 ? `+${(incomes / 10000).toFixed(incomes % 10000 === 0 ? 0 : 1)}万` : `+¥${incomes.toLocaleString()}`)
+          : null;
         
         return (
-          <div className="w-full text-center mt-0.5">
-            <p className="text-[10px] font-bold leading-tight px-0.5 py-0.5 rounded"
-              style={{ color: expenses > 0 ? theme.primary : '#10b981', background: expenses > 0 ? `${theme.primary}15` : '#10b98115' }}>
-              {displayAmount}
-            </p>
+          <div className="w-full text-center mt-0.5 space-y-0.5">
+            {expenseText && (
+              <p className="text-[10px] font-bold leading-tight px-0.5 rounded text-red-500 bg-red-500/10">
+                {expenseText}
+              </p>
+            )}
+            {incomeText && (
+              <p className="text-[10px] font-bold leading-tight px-0.5 rounded text-emerald-500 bg-emerald-500/10">
+                {incomeText}
+              </p>
+            )}
           </div>
         );
       }

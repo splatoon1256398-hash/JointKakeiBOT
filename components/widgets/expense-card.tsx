@@ -44,12 +44,13 @@ export function ExpenseCard({
   const hasItems = items && Array.isArray(items) && items.length > 1;
 
   // レシート（items複数）の場合は店名メインで品目数表示
+  // 通常カード: 店名 > メモ > カテゴリ
   const mainText = hasItems
     ? storeName || items![0]?.storeName || categoryMain
-    : memo || storeName || categorySub;
+    : storeName || memo || categorySub;
   const subStore = hasItems
     ? null
-    : memo && storeName ? storeName : null;
+    : storeName && memo ? memo : null;
 
   return (
     <div className="rounded-xl card-solid-inner hover:bg-white/[0.07] transition-colors">
