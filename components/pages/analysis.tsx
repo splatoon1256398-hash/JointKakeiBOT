@@ -136,18 +136,10 @@ export function Analysis() {
       const prevMonth = ((selectedMonth - 12 - 1 + 12) % 12) + 1;
       const twelveMonthsAgoStr = `${prevYear}-${String(prevMonth).padStart(2, '0')}-01`;
 
-      let txQuery = supabase
+      const { data: transactionsData } = await supabase
         .from('transactions')
-        .select('*');
-
-      // 共同以外の場合: 自分のデータ + 共同データを取得
-      if (selectedUser === '共同') {
-        txQuery = txQuery.eq('user_type', '共同');
-      } else {
-        txQuery = txQuery.in('user_type', [selectedUser, '共同']);
-      }
-
-      const { data: transactionsData } = await txQuery
+        .select('*')
+        .eq('user_type', selectedUser)
         .gte('date', twelveMonthsAgoStr)
         .lte('date', lastDayStr)
         .order('date', { ascending: true });

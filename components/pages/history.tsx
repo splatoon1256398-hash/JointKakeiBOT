@@ -63,18 +63,10 @@ export function History({ isCompact = false }: HistoryProps) {
   const fetchTransactions = async (userType: UserType) => {
     setIsLoading(true);
     try {
-      let query = supabase
+      const { data } = await supabase
         .from('transactions')
-        .select('*');
-
-      // 共同以外の場合: 自分のデータ + 共同データを取得
-      if (userType === '共同') {
-        query = query.eq('user_type', '共同');
-      } else {
-        query = query.in('user_type', [userType, '共同']);
-      }
-
-      const { data } = await query
+        .select('*')
+        .eq('user_type', userType)
         .order('date', { ascending: false })
         .order('created_at', { ascending: false })
         .limit(100);

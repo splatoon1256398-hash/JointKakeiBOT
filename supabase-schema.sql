@@ -365,3 +365,17 @@ BEGIN
     COMMENT ON COLUMN transactions.income_month IS '統計用の支給月（何月度の収入か）。年収・月別推移統計に使用。NULLの場合はdateと同月扱い';
   END IF;
 END $$;
+
+-- マイグレーション: fixed_expenses テーブルに start_date, end_date カラムを追加
+-- 適用期間を管理し、期間外の固定費は自動登録をスキップする
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'fixed_expenses' AND column_name = 'start_date'
+  ) THEN
+    ALTER TABLE fixed_expenses ADD COLUMN start_date DATE;
+    ALTER TABLE fixed_expenses ADD COLUMN end_date DATE;
+    COMMENT ON COLUMN fixed_expenses.start_date IS '固定費の適用開始日。NULLの場合は制限なし';
+    COMMENT ON COLUMN fixed_expenses.end_date IS '固定費の適用終了日。NULLの場合は無期限';
+  END IF;
+END $$;

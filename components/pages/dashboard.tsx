@@ -137,21 +137,12 @@ export function Dashboard({ onNavigateToAnalysis, onNavigateToHistory }: Dashboa
         .select('amount, date, target_month')
         .eq('type', 'income');
 
-      if (userType === '共同') {
-        const { data: incomeData } = await incomeQuery.in('user_type', ['れん', 'あかね']);
-        const filtered = incomeData?.filter(t => {
-          const effectiveMonth = t.target_month ? t.target_month.substring(0, 7) : t.date.substring(0, 7);
-          return effectiveMonth === currentMonth;
-        }) || [];
-        setIncome(filtered.reduce((sum, t) => sum + t.amount, 0));
-      } else {
-        const { data: incomeData } = await incomeQuery.eq('user_type', userType);
-        const filtered = incomeData?.filter(t => {
-          const effectiveMonth = t.target_month ? t.target_month.substring(0, 7) : t.date.substring(0, 7);
-          return effectiveMonth === currentMonth;
-        }) || [];
-        setIncome(filtered.reduce((sum, t) => sum + t.amount, 0));
-      }
+      const { data: incomeData } = await incomeQuery.eq('user_type', userType);
+      const filtered = incomeData?.filter(t => {
+        const effectiveMonth = t.target_month ? t.target_month.substring(0, 7) : t.date.substring(0, 7);
+        return effectiveMonth === currentMonth;
+      }) || [];
+      setIncome(filtered.reduce((sum, t) => sum + t.amount, 0));
 
       // items対応: 明細ベースでカテゴリ集計（分析ページと同じロジック）
       const categoryMap: Record<string, number> = {};

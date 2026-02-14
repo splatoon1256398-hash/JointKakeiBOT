@@ -9,6 +9,8 @@ interface FixedExpense {
   amount: number;
   payment_day: number;
   memo: string | null;
+  start_date: string | null;
+  end_date: string | null;
 }
 
 /**
@@ -72,6 +74,17 @@ export async function processFixedExpenses(userId: string): Promise<{
 
     // 各固定費を処理
     for (const expense of fixedExpenses as FixedExpense[]) {
+      // 適用期間チェック: start_date/end_date の範囲外ならスキップ
+      const todayStr = `${currentYear}-${String(currentMonth).padStart(2, "0")}-${String(currentDay).padStart(2, "0")}`;
+      if (expense.start_date && todayStr < expense.start_date) {
+        result.skipped++;
+        continue;
+      }
+      if (expense.end_date && todayStr > expense.end_date) {
+        result.skipped++;
+        continue;
+      }
+
       // 引き落とし日がまだ来ていない場合はスキップ
       if (expense.payment_day > currentDay) {
         result.skipped++;

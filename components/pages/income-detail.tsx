@@ -82,11 +82,7 @@ export function IncomeDetail({ onBack, selectedYear, selectedMonth }: Props) {
         .lte("date", endStr)
         .order("date", { ascending: true });
 
-      if (selectedUser === "共同") {
-        query = query.eq("user_type", "共同");
-      } else {
-        query = query.in("user_type", [selectedUser, "共同"]);
-      }
+      query = query.eq("user_type", selectedUser);
 
       const { data } = await query;
       const txs = (data || []) as IncomeTransaction[];

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Plus, Trash2, Calendar, Loader2, CreditCard } from "lucide-react";
+import { Plus, Trash2, Calendar, Loader2, CreditCard, Pencil, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,7 +14,6 @@ import {
 } from "@/components/ui/select";
 import { supabase } from "@/lib/supabase";
 import { useApp } from "@/contexts/app-context";
-// DBからカテゴリを取得するので lib/constants は不要
 
 interface FixedExpense {
   id: string;
@@ -26,6 +25,8 @@ interface FixedExpense {
   payment_day: number;
   memo: string | null;
   is_active: boolean;
+  start_date: string | null;
+  end_date: string | null;
   created_at: string;
 }
 
@@ -35,36 +36,53 @@ export function FixedExpenses() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [dbCategories, setDbCategories] = useState<{ main: string; icon: string; subs: string[] }[]>([]);
 
   // DBからカテゴリ取得
   useEffect(() => {
     supabase
-      .from('categories')
-      .select('main_category, icon, subcategories')
-      .order('sort_order')
+      .from("categories")
+      .select("main_category, icon, subcategories")
+      .order("sort_order")
       .then(({ data }) => {
         if (data) {
-          setDbCategories(data.map(d => ({
-            main: d.main_category,
-            icon: d.icon || '📦',
-            subs: d.subcategories || ['その他'],
-          })));
+          setDbCategories(
+            data.map((d) => ({
+              main: d.main_category,
+              icon: d.icon || "📦",
+              subs: d.subcategories || ["その他"],
+            }))
+          );
         }
       });
   }, []);
 
   const getSubcategoriesFromDB = (mainCat: string): string[] => {
-    const found = dbCategories.find(c => c.main === mainCat);
+    const found = dbCategories.find((c) => c.main === mainCat);
     return found?.subs || ["その他"];
   };
 
-  // 新規固定費フォーム
+  // フォーム状態
   const [categoryMain, setCategoryMain] = useState("");
   const [categorySub, setCategorySub] = useState("");
   const [amount, setAmount] = useState("");
   const [paymentDay, setPaymentDay] = useState("");
   const [memo, setMemo] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+
+  const resetForm = () => {
+    setCategoryMain("");
+    setCategorySub("");
+    setAmount("");
+    setPaymentDay("");
+    setMemo("");
+    setStartDate("");
+    setEndDate("");
+    setEditingId(null);
+    setShowForm(false);
+  };
 
   // 固定費の取得
   const fetchExpenses = async () => {
@@ -91,13 +109,26 @@ export function FixedExpenses() {
     fetchExpenses();
   }, [user, selectedUser]);
 
-  // 固定費の追加
-  const handleAdd = async () => {
+  // 編集開始
+  const handleEdit = (expense: FixedExpense) => {
+    setEditingId(expense.id);
+    setCategoryMain(expense.category_main);
+    setCategorySub(expense.category_sub);
+    setAmount(String(expense.amount));
+    setPaymentDay(String(expense.payment_day));
+    setMemo(expense.memo || "");
+    setStartDate(expense.start_date || "");
+    setEndDate(expense.end_date || "");
+    setShowForm(true);
+  };
+
+  // 固定費の追加 or 更新
+  const handleSave = async () => {
     if (!user || !categoryMain || !categorySub || !amount || !paymentDay) return;
 
     setSaving(true);
     try {
-      const { error } = await supabase.from("fixed_expenses").insert({
+      const payload = {
         user_id: user.id,
         user_type: selectedUser,
         category_main: categoryMain,
@@ -105,21 +136,28 @@ export function FixedExpenses() {
         amount: parseInt(amount),
         payment_day: parseInt(paymentDay),
         memo: memo || null,
+        start_date: startDate || null,
+        end_date: endDate || null,
         is_active: true,
-      });
+      };
 
-      if (error) throw error;
+      if (editingId) {
+        // 更新
+        const { error } = await supabase
+          .from("fixed_expenses")
+          .update(payload)
+          .eq("id", editingId);
+        if (error) throw error;
+      } else {
+        // 新規追加
+        const { error } = await supabase.from("fixed_expenses").insert(payload);
+        if (error) throw error;
+      }
 
-      // フォームリセット
-      setCategoryMain("");
-      setCategorySub("");
-      setAmount("");
-      setPaymentDay("");
-      setMemo("");
-      setShowForm(false);
+      resetForm();
       fetchExpenses();
     } catch (error) {
-      console.error("固定費追加エラー:", error);
+      console.error("固定費保存エラー:", error);
     } finally {
       setSaving(false);
     }
@@ -142,11 +180,26 @@ export function FixedExpenses() {
     }
   };
 
-  // 小カテゴリーの選択肢を取得
   const subCategories = categoryMain ? getSubcategoriesFromDB(categoryMain) : [];
-
-  // 月間合計を計算
   const monthlyTotal = expenses.reduce((sum, exp) => sum + exp.amount, 0);
+
+  // 期間表示ヘルパー
+  const formatPeriod = (start: string | null, end: string | null) => {
+    if (!start && !end) return null;
+    const s = start ? start.replace(/-/g, "/") : "";
+    const e = end ? end.replace(/-/g, "/") : "無期限";
+    if (start && !end) return `${s}〜`;
+    if (!start && end) return `〜${e}`;
+    return `${s}〜${e}`;
+  };
+
+  // 有効かどうか判定
+  const isActiveNow = (exp: FixedExpense) => {
+    const today = new Date().toISOString().split("T")[0];
+    if (exp.start_date && today < exp.start_date) return false;
+    if (exp.end_date && today > exp.end_date) return false;
+    return true;
+  };
 
   return (
     <div className="space-y-4">
@@ -162,7 +215,10 @@ export function FixedExpenses() {
           </p>
         </div>
         <Button
-          onClick={() => setShowForm(!showForm)}
+          onClick={() => {
+            resetForm();
+            setShowForm(!showForm);
+          }}
           size="sm"
           className="text-white"
           style={{ background: theme.primary }}
@@ -173,9 +229,12 @@ export function FixedExpenses() {
       </div>
 
       {/* 月間合計 */}
-      <div 
+      <div
         className="rounded-xl p-3"
-        style={{ background: `${theme.primary}15`, border: `1px solid ${theme.primary}40` }}
+        style={{
+          background: `${theme.primary}15`,
+          border: `1px solid ${theme.primary}40`,
+        }}
       >
         <p className="text-xs text-gray-400">毎月の固定費合計</p>
         <p className="text-2xl font-bold text-white">
@@ -183,14 +242,29 @@ export function FixedExpenses() {
         </p>
       </div>
 
-      {/* 新規追加フォーム */}
+      {/* 追加/編集フォーム */}
       {showForm && (
         <div className="rounded-xl p-4 bg-slate-800/50 border border-slate-700 space-y-3">
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-sm font-semibold text-white">
+              {editingId ? "固定費を編集" : "固定費を追加"}
+            </p>
+            <button onClick={resetForm} className="text-white/40 hover:text-white">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             {/* 大カテゴリー */}
             <div>
               <Label className="text-xs text-gray-400">大カテゴリー</Label>
-              <Select value={categoryMain} onValueChange={(v) => { setCategoryMain(v); setCategorySub(""); }}>
+              <Select
+                value={categoryMain}
+                onValueChange={(v) => {
+                  setCategoryMain(v);
+                  setCategorySub("");
+                }}
+              >
                 <SelectTrigger className="bg-slate-700 border-slate-600 text-white h-9">
                   <SelectValue placeholder="選択" />
                 </SelectTrigger>
@@ -207,7 +281,11 @@ export function FixedExpenses() {
             {/* 小カテゴリー */}
             <div>
               <Label className="text-xs text-gray-400">小カテゴリー</Label>
-              <Select value={categorySub} onValueChange={setCategorySub} disabled={!categoryMain}>
+              <Select
+                value={categorySub}
+                onValueChange={setCategorySub}
+                disabled={!categoryMain}
+              >
                 <SelectTrigger className="bg-slate-700 border-slate-600 text-white h-9">
                   <SelectValue placeholder="選択" />
                 </SelectTrigger>
@@ -264,22 +342,63 @@ export function FixedExpenses() {
             />
           </div>
 
+          {/* 適用期間 */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs text-gray-400">開始日（任意）</Label>
+              <Input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="bg-slate-700 border-slate-600 text-white h-9"
+              />
+            </div>
+            <div>
+              <Label className="text-xs text-gray-400">終了日（無期限可）</Label>
+              <div className="relative">
+                <Input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="bg-slate-700 border-slate-600 text-white h-9 pr-8"
+                />
+                {endDate && (
+                  <button
+                    onClick={() => setEndDate("")}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-white/40 hover:text-white"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+              {!endDate && (
+                <p className="text-[10px] text-gray-500 mt-0.5">未設定 = 無期限</p>
+              )}
+            </div>
+          </div>
+
           {/* ボタン */}
           <div className="flex gap-2 pt-2">
             <Button
               variant="ghost"
-              onClick={() => setShowForm(false)}
+              onClick={resetForm}
               className="flex-1 text-gray-400 hover:text-white"
             >
               キャンセル
             </Button>
             <Button
-              onClick={handleAdd}
+              onClick={handleSave}
               disabled={saving || !categoryMain || !categorySub || !amount || !paymentDay}
               className="flex-1 text-white"
               style={{ background: theme.primary }}
             >
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "追加"}
+              {saving ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : editingId ? (
+                "更新"
+              ) : (
+                "追加"
+              )}
             </Button>
           </div>
         </div>
@@ -298,45 +417,75 @@ export function FixedExpenses() {
         </div>
       ) : (
         <div className="space-y-2">
-          {expenses.map((expense) => (
-            <div
-              key={expense.id}
-              className="flex items-center justify-between p-3 rounded-xl bg-slate-800/50 border border-slate-700"
-            >
-              <div className="flex items-center gap-3">
-                <div 
-                  className="w-10 h-10 rounded-lg flex items-center justify-center text-lg"
-                  style={{ background: `${theme.primary}20` }}
-                >
-                  {dbCategories.find(c => c.main === expense.category_main)?.icon || '📦'}
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-white">
-                    {expense.memo || expense.category_sub}
-                  </p>
-                  <div className="flex items-center gap-2 text-xs text-gray-400">
-                    <span>{expense.category_main} / {expense.category_sub}</span>
-                    <span>·</span>
-                    <Calendar className="h-3 w-3" />
-                    <span>毎月{expense.payment_day}日</span>
+          {expenses.map((expense) => {
+            const active = isActiveNow(expense);
+            const period = formatPeriod(expense.start_date, expense.end_date);
+
+            return (
+              <div
+                key={expense.id}
+                className={`p-3 rounded-xl bg-slate-800/50 border border-slate-700 ${
+                  !active ? "opacity-50" : ""
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                    <div
+                      className="w-10 h-10 rounded-lg flex items-center justify-center text-lg flex-shrink-0"
+                      style={{ background: `${theme.primary}20` }}
+                    >
+                      {dbCategories.find((c) => c.main === expense.category_main)
+                        ?.icon || "📦"}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-white truncate">
+                        {expense.memo || expense.category_sub}
+                      </p>
+                      <div className="flex items-center gap-1.5 text-xs text-gray-400 flex-wrap">
+                        <span className="truncate">
+                          {expense.category_main} / {expense.category_sub}
+                        </span>
+                        <span>·</span>
+                        <span className="flex items-center gap-0.5">
+                          <Calendar className="h-3 w-3" />
+                          毎月{expense.payment_day}日
+                        </span>
+                      </div>
+                      {period && (
+                        <p className="text-[10px] text-gray-500 mt-0.5">
+                          📅 {period}
+                          {!active && (
+                            <span className="ml-1 text-orange-400">（期間外）</span>
+                          )}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 flex-shrink-0 ml-2">
+                    <p className="text-base font-bold text-white mr-1">
+                      ¥{expense.amount.toLocaleString()}
+                    </p>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleEdit(expense)}
+                      className="h-8 w-8 p-0 text-gray-400 hover:text-blue-400"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleDelete(expense.id)}
+                      className="h-8 w-8 p-0 text-gray-400 hover:text-red-400"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </div>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <p className="text-base font-bold text-white">
-                  ¥{expense.amount.toLocaleString()}
-                </p>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleDelete(expense.id)}
-                  className="h-8 w-8 p-0 text-gray-400 hover:text-red-400"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
