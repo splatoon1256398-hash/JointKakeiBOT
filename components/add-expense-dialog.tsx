@@ -70,6 +70,30 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
+  // 画像をcanvasでリサイズ・JPEG圧縮（最大幅1280px, 品質0.85）
+  const compressImage = (dataUrl: string, maxWidth = 1280, quality = 0.85): Promise<string> => {
+    return new Promise((resolve) => {
+      const img = new window.Image();
+      img.onload = () => {
+        let w = img.width;
+        let h = img.height;
+        if (w > maxWidth) {
+          h = Math.round(h * (maxWidth / w));
+          w = maxWidth;
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d')!;
+        ctx.drawImage(img, 0, 0, w, h);
+        const compressed = canvas.toDataURL('image/jpeg', quality);
+        resolve(compressed);
+      };
+      img.onerror = () => resolve(dataUrl); // 失敗時はそのまま返す
+      img.src = dataUrl;
+    });
+  };
+
   // ネイティブカメラを起動（iOS/Android対応）
   const handleCameraCapture = () => {
     cameraInputRef.current?.click();
@@ -80,11 +104,13 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onload = (event) => {
-        const imageData = event.target?.result as string;
+      reader.onload = async (event) => {
+        const rawData = event.target?.result as string;
+        // 画像の場合はリサイズ・圧縮してから送信
+        const imageData = file.type.startsWith('image/') ? await compressImage(rawData) : rawData;
         setCapturedImage(imageData);
         setIsPdf(false);
-        analyzeImage(imageData, file.type);
+        analyzeImage(imageData, 'image/jpeg');
       };
       reader.readAsDataURL(file);
       // inputをリセットして同じファイルも再選択可能に
@@ -97,39 +123,64 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onload = (event) => {
-        const fileData = event.target?.result as string;
+      reader.onload = async (event) => {
+        const rawData = event.target?.result as string;
         const isFilePdf = file.type === 'application/pdf';
+        // PDFはそのまま、画像はリサイズ・圧縮
+        const fileData = !isFilePdf && file.type.startsWith('image/') ? await compressImage(rawData) : rawData;
         setCapturedImage(fileData);
         setIsPdf(isFilePdf);
-        analyzeImage(fileData, file.type);
+        analyzeImage(fileData, isFilePdf ? 'application/pdf' : 'image/jpeg');
       };
       reader.readAsDataURL(file);
       e.target.value = '';
     }
   };
 
-  // サーバーサイドAPIでレシート解析
+  // サーバーサイドAPIでレシート解析（413自動リトライ付き）
   const analyzeImage = async (imageData: string, mimeType: string) => {
     setIsAnalyzing(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
 
-      const response = await fetch('/api/receipt', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          imageBase64: imageData,
-          mimeType: mimeType || 'image/jpeg',
-        }),
-      });
+      const doFetch = async (data: string, mime: string) => {
+        return fetch('/api/receipt', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify({ imageBase64: data, mimeType: mime }),
+        });
+      };
 
-      const result: ReceiptAnalysisResult = await response.json();
-      
+      let response = await doFetch(imageData, mimeType);
+
+      // 413 Payload Too Large → さらに圧縮して再送
+      if (response.status === 413) {
+        console.warn('413: 画像が大きすぎるため再圧縮して再送...');
+        const smaller = await compressImage(imageData, 800, 0.6);
+        response = await doFetch(smaller, 'image/jpeg');
+      }
+
+      // レスポンスボディを安全にパース
+      const text = await response.text();
+      let result: ReceiptAnalysisResult;
+      try {
+        result = JSON.parse(text);
+      } catch {
+        console.error('レスポンスがJSONではありません:', text.substring(0, 200));
+        alert('サーバーエラーが発生しました。もう一度お試しください。');
+        return;
+      }
+
+      if (!response.ok) {
+        console.error('API error:', response.status, result);
+        alert(`解析エラー (${response.status}): もう一度お試しください。`);
+        return;
+      }
+
       // 解析結果をフォームに反映（部分的な結果でも受け入れる）
       if (result.date) setDate(result.date);
       if (result.items && result.items.length > 0) {
