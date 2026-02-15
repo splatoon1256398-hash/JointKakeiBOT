@@ -52,46 +52,69 @@ export function AddIncomeDialog({ open, onOpenChange, selectedUser }: AddIncomeD
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
+  // Supabase Storageに画像をアップロード
+  const uploadToStorage = async (file: File): Promise<{ path: string; mimeType: string }> => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) throw new Error('認証が必要です');
+
+    const userId = session.user.id;
+    const ext = file.name.split('.').pop() || 'jpg';
+    const fileName = `${userId}/${Date.now()}.${ext}`;
+
+    const { error } = await supabase.storage
+      .from('receipt-images')
+      .upload(fileName, file, { cacheControl: '300', upsert: false });
+
+    if (error) throw new Error(`アップロード失敗: ${error.message}`);
+    return { path: fileName, mimeType: file.type || 'image/jpeg' };
+  };
+
   // ネイティブカメラを起動
   const handleCameraCapture = () => {
     cameraInputRef.current?.click();
   };
 
   // カメラ撮影結果の処理
-  const handleCameraChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCameraChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const imageData = event.target?.result as string;
-        setCapturedImage(imageData);
-        setIsPdf(false);
-        analyzeIncome(imageData, file.type);
-      };
-      reader.readAsDataURL(file);
-      e.target.value = '';
+    if (!file) return;
+    e.target.value = '';
+
+    setCapturedImage(URL.createObjectURL(file));
+    setIsPdf(false);
+
+    try {
+      const { path, mimeType } = await uploadToStorage(file);
+      await analyzeIncome(path, mimeType);
+    } catch (err) {
+      console.error('カメラ処理エラー:', err);
+      alert('画像の処理に失敗しました。');
+      setIsAnalyzing(false);
     }
   };
 
   // ファイルから画像/PDFを読み込み
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const fileData = event.target?.result as string;
-        const isFilePdf = file.type === 'application/pdf';
-        setCapturedImage(fileData);
-        setIsPdf(isFilePdf);
-        analyzeIncome(fileData, file.type);
-      };
-      reader.readAsDataURL(file);
-      e.target.value = '';
+    if (!file) return;
+    e.target.value = '';
+
+    const isFilePdf = file.type === 'application/pdf';
+    setCapturedImage(URL.createObjectURL(file));
+    setIsPdf(isFilePdf);
+
+    try {
+      const { path, mimeType } = await uploadToStorage(file);
+      await analyzeIncome(path, mimeType);
+    } catch (err) {
+      console.error('ファイル処理エラー:', err);
+      alert('ファイルの処理に失敗しました。');
+      setIsAnalyzing(false);
     }
   };
 
-  // 給与明細AI解析
-  const analyzeIncome = async (imageData: string, mimeType: string) => {
+  // 給与明細AI解析（Storageパスのみ送信）
+  const analyzeIncome = async (storagePath: string, mimeType: string) => {
     setIsAnalyzing(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -103,13 +126,18 @@ export function AddIncomeDialog({ open, onOpenChange, selectedUser }: AddIncomeD
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          imageBase64: imageData,
-          mimeType: mimeType || 'image/jpeg',
-        }),
+        body: JSON.stringify({ storagePath, mimeType }),
       });
 
-      const result = await response.json();
+      const text = await response.text();
+      let result;
+      try {
+        result = JSON.parse(text);
+      } catch {
+        console.error('レスポンスがJSONではありません:', response.status, text.substring(0, 200));
+        alert('サーバーエラーが発生しました。');
+        return;
+      }
 
       // 解析結果をフォームに反映
       if (result.date) setDate(result.date);

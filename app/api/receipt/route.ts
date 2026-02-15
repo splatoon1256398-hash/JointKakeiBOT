@@ -28,14 +28,42 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { imageBase64, mimeType } = await request.json();
+    const { storagePath, mimeType } = await request.json();
 
-    if (!imageBase64) {
+    if (!storagePath) {
       return NextResponse.json(
-        { error: "画像データが必要です" },
+        { error: "画像パスが必要です" },
         { status: 400 }
       );
     }
+
+    // Supabase Storageから画像をダウンロード
+    const { data: fileData, error: downloadError } = await supabaseAdmin.storage
+      .from("receipt-images")
+      .download(storagePath);
+
+    if (downloadError || !fileData) {
+      console.error("Storage download error:", downloadError);
+      return NextResponse.json(
+        { error: "画像の取得に失敗しました" },
+        { status: 500 }
+      );
+    }
+
+    // Blobをbase64に変換（Gemini APIに渡すため）
+    const arrayBuffer = await fileData.arrayBuffer();
+    const base64Data = Buffer.from(arrayBuffer).toString("base64");
+
+    console.log(`Storage画像取得: ${storagePath} (${(arrayBuffer.byteLength / 1024 / 1024).toFixed(2)}MB)`);
+
+    // 処理後にStorageから削除（非同期・エラーでも継続）
+    supabaseAdmin.storage
+      .from("receipt-images")
+      .remove([storagePath])
+      .then(({ error: delErr }) => {
+        if (delErr) console.warn("Storage削除エラー:", delErr);
+        else console.log("Storage画像削除完了:", storagePath);
+      });
 
     // DBからカテゴリーリストを取得
     const { data: catData } = await supabaseAdmin
@@ -52,11 +80,6 @@ export async function POST(request: NextRequest) {
         .join("\n") || "- その他: その他";
 
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
-
-    // Base64データの整形
-    const base64Data = imageBase64.includes(",")
-      ? imageBase64.split(",")[1]
-      : imageBase64;
 
     const imagePart = {
       inlineData: {

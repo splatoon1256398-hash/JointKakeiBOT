@@ -70,58 +70,32 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
-  // 画像をcanvasでリサイズ・JPEG圧縮（Vercel 4.5MB制限を確実に下回る）
-  // 長辺を基準にリサイズし、段階的に品質を落として目標サイズ以下を保証
-  const compressImage = (dataUrl: string): Promise<string> => {
-    const MAX_BASE64_LENGTH = 3_200_000; // ~3.2MB（JSON overhead考慮で4.5MB制限の安全圏）
-    return new Promise((resolve) => {
-      const img = new window.Image();
-      img.onload = () => {
-        // 段階的に圧縮を強化する設定リスト
-        const steps = [
-          { maxDim: 1600, quality: 0.75 },
-          { maxDim: 1280, quality: 0.65 },
-          { maxDim: 1024, quality: 0.55 },
-          { maxDim: 800,  quality: 0.45 },
-          { maxDim: 640,  quality: 0.35 },
-        ];
+  // Supabase Storageに画像をアップロードし、パスを返す
+  // → Vercelの4.5MB制限を完全回避（APIにはパスのみ送信）
+  const uploadToStorage = async (file: File): Promise<{ path: string; mimeType: string }> => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) throw new Error('認証が必要です');
 
-        for (const { maxDim, quality } of steps) {
-          let w = img.width;
-          let h = img.height;
-          // 長辺を基準にリサイズ（縦長・横長どちらにも対応）
-          const longer = Math.max(w, h);
-          if (longer > maxDim) {
-            const ratio = maxDim / longer;
-            w = Math.round(w * ratio);
-            h = Math.round(h * ratio);
-          }
-          const canvas = document.createElement('canvas');
-          canvas.width = w;
-          canvas.height = h;
-          const ctx = canvas.getContext('2d')!;
-          ctx.drawImage(img, 0, 0, w, h);
-          const compressed = canvas.toDataURL('image/jpeg', quality);
-          if (compressed.length <= MAX_BASE64_LENGTH) {
-            console.log(`圧縮完了: ${maxDim}px/q${quality} → ${(compressed.length / 1024).toFixed(0)}KB`);
-            resolve(compressed);
-            return;
-          }
-        }
-        // 全ステップでも超過 → 最小設定で強制出力
-        const canvas = document.createElement('canvas');
-        const ratio = 480 / Math.max(img.width, img.height);
-        canvas.width = Math.round(img.width * ratio);
-        canvas.height = Math.round(img.height * ratio);
-        const ctx = canvas.getContext('2d')!;
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        const last = canvas.toDataURL('image/jpeg', 0.25);
-        console.log(`最大圧縮: 480px/q0.25 → ${(last.length / 1024).toFixed(0)}KB`);
-        resolve(last);
-      };
-      img.onerror = () => resolve(dataUrl); // 失敗時はそのまま返す
-      img.src = dataUrl;
-    });
+    const userId = session.user.id;
+    const ext = file.name.split('.').pop() || 'jpg';
+    const fileName = `${userId}/${Date.now()}.${ext}`;
+
+    console.log(`Storageアップロード開始: ${(file.size / 1024 / 1024).toFixed(2)}MB`);
+
+    const { error } = await supabase.storage
+      .from('receipt-images')
+      .upload(fileName, file, {
+        cacheControl: '300',
+        upsert: false,
+      });
+
+    if (error) {
+      console.error('Storageアップロードエラー:', error);
+      throw new Error(`アップロード失敗: ${error.message}`);
+    }
+
+    console.log(`Storageアップロード完了: ${fileName}`);
+    return { path: fileName, mimeType: file.type || 'image/jpeg' };
   };
 
   // ネイティブカメラを起動（iOS/Android対応）
@@ -130,60 +104,53 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
   };
 
   // カメラ撮影結果の処理
-  const handleCameraChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCameraChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = async (event) => {
-        const rawData = event.target?.result as string;
-        // 常に圧縮（サイズ保証付き）
-        const imageData = await compressImage(rawData);
-        setCapturedImage(imageData);
-        setIsPdf(false);
-        analyzeImage(imageData, 'image/jpeg');
-      };
-      reader.readAsDataURL(file);
-      // inputをリセットして同じファイルも再選択可能に
-      e.target.value = '';
+    if (!file) return;
+    e.target.value = '';
+
+    // プレビュー用にData URLを設定（表示のみ）
+    const previewUrl = URL.createObjectURL(file);
+    setCapturedImage(previewUrl);
+    setIsPdf(false);
+
+    try {
+      const { path, mimeType } = await uploadToStorage(file);
+      await analyzeImage(path, mimeType);
+    } catch (err) {
+      console.error('カメラ処理エラー:', err);
+      alert('画像の処理に失敗しました。もう一度お試しください。');
+      setIsAnalyzing(false);
     }
   };
 
   // ファイルから画像/PDFを読み込み
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = async (event) => {
-        const rawData = event.target?.result as string;
-        const isFilePdf = file.type === 'application/pdf';
-        if (isFilePdf) {
-          // PDFはそのまま送信
-          setCapturedImage(rawData);
-          setIsPdf(true);
-          analyzeImage(rawData, 'application/pdf');
-        } else {
-          // 画像は常に圧縮（サイズ保証付き）
-          const compressed = await compressImage(rawData);
-          setCapturedImage(compressed);
-          setIsPdf(false);
-          analyzeImage(compressed, 'image/jpeg');
-        }
-      };
-      reader.readAsDataURL(file);
-      e.target.value = '';
+    if (!file) return;
+    e.target.value = '';
+
+    const isFilePdf = file.type === 'application/pdf';
+    const previewUrl = URL.createObjectURL(file);
+    setCapturedImage(previewUrl);
+    setIsPdf(isFilePdf);
+
+    try {
+      const { path, mimeType } = await uploadToStorage(file);
+      await analyzeImage(path, mimeType);
+    } catch (err) {
+      console.error('ファイル処理エラー:', err);
+      alert('ファイルの処理に失敗しました。もう一度お試しください。');
+      setIsAnalyzing(false);
     }
   };
 
-  // サーバーサイドAPIでレシート解析
-  const analyzeImage = async (imageData: string, mimeType: string) => {
+  // サーバーサイドAPIでレシート解析（Storageパスのみ送信 → 413エラー原理的に不可能）
+  const analyzeImage = async (storagePath: string, mimeType: string) => {
     setIsAnalyzing(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
-
-      // 送信前にペイロードサイズをログ出力
-      const payload = JSON.stringify({ imageBase64: imageData, mimeType });
-      console.log(`送信ペイロード: ${(payload.length / 1024 / 1024).toFixed(2)}MB`);
 
       const response = await fetch('/api/receipt', {
         method: 'POST',
@@ -191,7 +158,7 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
         },
-        body: payload,
+        body: JSON.stringify({ storagePath, mimeType }),
       });
 
       // レスポンスボディを安全にパース
@@ -200,14 +167,8 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
       try {
         result = JSON.parse(text);
       } catch {
-        // 413等でHTMLが返ってきた場合
-        if (response.status === 413) {
-          console.error('413: ペイロードサイズ超過（圧縮後も）', payload.length);
-          alert('画像が大きすぎます。別の写真で再度お試しください。');
-        } else {
-          console.error('レスポンスがJSONではありません:', response.status, text.substring(0, 200));
-          alert('サーバーエラーが発生しました。もう一度お試しください。');
-        }
+        console.error('レスポンスがJSONではありません:', response.status, text.substring(0, 200));
+        alert('サーバーエラーが発生しました。もう一度お試しください。');
         return;
       }
 

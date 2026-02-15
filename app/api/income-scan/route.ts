@@ -25,17 +25,34 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "認証に失敗しました" }, { status: 401 });
     }
 
-    const { imageBase64, mimeType } = await request.json();
+    const { storagePath, mimeType } = await request.json();
 
-    if (!imageBase64) {
-      return NextResponse.json({ error: "画像データが必要です" }, { status: 400 });
+    if (!storagePath) {
+      return NextResponse.json({ error: "画像パスが必要です" }, { status: 400 });
     }
 
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
+    // Supabase Storageから画像をダウンロード
+    const { data: fileData, error: downloadError } = await supabaseAdmin.storage
+      .from("receipt-images")
+      .download(storagePath);
 
-    const base64Data = imageBase64.includes(",")
-      ? imageBase64.split(",")[1]
-      : imageBase64;
+    if (downloadError || !fileData) {
+      console.error("Storage download error:", downloadError);
+      return NextResponse.json({ error: "画像の取得に失敗しました" }, { status: 500 });
+    }
+
+    const arrayBuffer = await fileData.arrayBuffer();
+    const base64Data = Buffer.from(arrayBuffer).toString("base64");
+
+    // 処理後にStorageから削除
+    supabaseAdmin.storage
+      .from("receipt-images")
+      .remove([storagePath])
+      .then(({ error: delErr }) => {
+        if (delErr) console.warn("Storage削除エラー:", delErr);
+      });
+
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
 
     const imagePart = {
       inlineData: {
