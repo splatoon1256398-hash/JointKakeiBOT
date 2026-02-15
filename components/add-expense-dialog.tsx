@@ -130,18 +130,20 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
 
       const result: ReceiptAnalysisResult = await response.json();
       
-      // 解析結果をフォームに反映
-      setDate(result.date);
-      setItems(result.items.map(item => ({
-        categoryMain: item.categoryMain,
-        categorySub: item.categorySub,
-        storeName: item.storeName,
-        amount: item.amount,
-        memo: item.memo,
-      })));
+      // 解析結果をフォームに反映（部分的な結果でも受け入れる）
+      if (result.date) setDate(result.date);
+      if (result.items && result.items.length > 0) {
+        setItems(result.items.map(item => ({
+          categoryMain: item.categoryMain || "その他",
+          categorySub: item.categorySub || "その他",
+          storeName: item.storeName || "",
+          amount: item.amount || 0,
+          memo: item.memo || "",
+        })));
+      }
     } catch (error) {
       console.error("レシート解析エラー:", error);
-      alert("レシートの解析に失敗しました");
+      alert("レシートの解析に失敗しました。手動で入力してください。");
     } finally {
       setIsAnalyzing(false);
     }
