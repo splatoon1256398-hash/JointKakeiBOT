@@ -70,6 +70,18 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
+  // ファイル拡張子からMIMEタイプを推定（HEIC等ブラウザが認識しない形式対応）
+  const detectMimeType = (file: File): string => {
+    if (file.type && file.type !== 'application/octet-stream') return file.type;
+    const ext = file.name.split('.').pop()?.toLowerCase();
+    const mimeMap: Record<string, string> = {
+      jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
+      webp: 'image/webp', heic: 'image/heic', heif: 'image/heif',
+      pdf: 'application/pdf',
+    };
+    return mimeMap[ext || ''] || 'image/jpeg';
+  };
+
   // Supabase Storageに画像をアップロードし、パスを返す
   // → Vercelの4.5MB制限を完全回避（APIにはパスのみ送信）
   const uploadToStorage = async (file: File): Promise<{ path: string; mimeType: string }> => {
@@ -77,16 +89,18 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
     if (!session?.user) throw new Error('認証が必要です');
 
     const userId = session.user.id;
-    const ext = file.name.split('.').pop() || 'jpg';
+    const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
     const fileName = `${userId}/${Date.now()}.${ext}`;
+    const contentType = detectMimeType(file);
 
-    console.log(`Storageアップロード開始: ${(file.size / 1024 / 1024).toFixed(2)}MB`);
+    console.log(`Storageアップロード開始: ${(file.size / 1024 / 1024).toFixed(2)}MB (${contentType})`);
 
     const { error } = await supabase.storage
       .from('receipt-images')
       .upload(fileName, file, {
         cacheControl: '300',
         upsert: false,
+        contentType,
       });
 
     if (error) {
@@ -95,7 +109,7 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
     }
 
     console.log(`Storageアップロード完了: ${fileName}`);
-    return { path: fileName, mimeType: file.type || 'image/jpeg' };
+    return { path: fileName, mimeType: contentType };
   };
 
   // ネイティブカメラを起動（iOS/Android対応）

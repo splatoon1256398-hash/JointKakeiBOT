@@ -52,21 +52,34 @@ export function AddIncomeDialog({ open, onOpenChange, selectedUser }: AddIncomeD
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
+  // ファイル拡張子からMIMEタイプを推定
+  const detectMimeType = (file: File): string => {
+    if (file.type && file.type !== 'application/octet-stream') return file.type;
+    const ext = file.name.split('.').pop()?.toLowerCase();
+    const mimeMap: Record<string, string> = {
+      jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
+      webp: 'image/webp', heic: 'image/heic', heif: 'image/heif',
+      pdf: 'application/pdf',
+    };
+    return mimeMap[ext || ''] || 'image/jpeg';
+  };
+
   // Supabase Storageに画像をアップロード
   const uploadToStorage = async (file: File): Promise<{ path: string; mimeType: string }> => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.user) throw new Error('認証が必要です');
 
     const userId = session.user.id;
-    const ext = file.name.split('.').pop() || 'jpg';
+    const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
     const fileName = `${userId}/${Date.now()}.${ext}`;
+    const contentType = detectMimeType(file);
 
     const { error } = await supabase.storage
       .from('receipt-images')
-      .upload(fileName, file, { cacheControl: '300', upsert: false });
+      .upload(fileName, file, { cacheControl: '300', upsert: false, contentType });
 
     if (error) throw new Error(`アップロード失敗: ${error.message}`);
-    return { path: fileName, mimeType: file.type || 'image/jpeg' };
+    return { path: fileName, mimeType: contentType };
   };
 
   // ネイティブカメラを起動
