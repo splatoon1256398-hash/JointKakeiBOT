@@ -70,24 +70,54 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
-  // 画像をcanvasでリサイズ・JPEG圧縮（最大幅1280px, 品質0.85）
-  const compressImage = (dataUrl: string, maxWidth = 1280, quality = 0.85): Promise<string> => {
+  // 画像をcanvasでリサイズ・JPEG圧縮（Vercel 4.5MB制限を確実に下回る）
+  // 長辺を基準にリサイズし、段階的に品質を落として目標サイズ以下を保証
+  const compressImage = (dataUrl: string): Promise<string> => {
+    const MAX_BASE64_LENGTH = 3_200_000; // ~3.2MB（JSON overhead考慮で4.5MB制限の安全圏）
     return new Promise((resolve) => {
       const img = new window.Image();
       img.onload = () => {
-        let w = img.width;
-        let h = img.height;
-        if (w > maxWidth) {
-          h = Math.round(h * (maxWidth / w));
-          w = maxWidth;
+        // 段階的に圧縮を強化する設定リスト
+        const steps = [
+          { maxDim: 1600, quality: 0.75 },
+          { maxDim: 1280, quality: 0.65 },
+          { maxDim: 1024, quality: 0.55 },
+          { maxDim: 800,  quality: 0.45 },
+          { maxDim: 640,  quality: 0.35 },
+        ];
+
+        for (const { maxDim, quality } of steps) {
+          let w = img.width;
+          let h = img.height;
+          // 長辺を基準にリサイズ（縦長・横長どちらにも対応）
+          const longer = Math.max(w, h);
+          if (longer > maxDim) {
+            const ratio = maxDim / longer;
+            w = Math.round(w * ratio);
+            h = Math.round(h * ratio);
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d')!;
+          ctx.drawImage(img, 0, 0, w, h);
+          const compressed = canvas.toDataURL('image/jpeg', quality);
+          if (compressed.length <= MAX_BASE64_LENGTH) {
+            console.log(`圧縮完了: ${maxDim}px/q${quality} → ${(compressed.length / 1024).toFixed(0)}KB`);
+            resolve(compressed);
+            return;
+          }
         }
+        // 全ステップでも超過 → 最小設定で強制出力
         const canvas = document.createElement('canvas');
-        canvas.width = w;
-        canvas.height = h;
+        const ratio = 480 / Math.max(img.width, img.height);
+        canvas.width = Math.round(img.width * ratio);
+        canvas.height = Math.round(img.height * ratio);
         const ctx = canvas.getContext('2d')!;
-        ctx.drawImage(img, 0, 0, w, h);
-        const compressed = canvas.toDataURL('image/jpeg', quality);
-        resolve(compressed);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const last = canvas.toDataURL('image/jpeg', 0.25);
+        console.log(`最大圧縮: 480px/q0.25 → ${(last.length / 1024).toFixed(0)}KB`);
+        resolve(last);
       };
       img.onerror = () => resolve(dataUrl); // 失敗時はそのまま返す
       img.src = dataUrl;
@@ -106,8 +136,8 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
       const reader = new FileReader();
       reader.onload = async (event) => {
         const rawData = event.target?.result as string;
-        // 画像の場合はリサイズ・圧縮してから送信
-        const imageData = file.type.startsWith('image/') ? await compressImage(rawData) : rawData;
+        // 常に圧縮（サイズ保証付き）
+        const imageData = await compressImage(rawData);
         setCapturedImage(imageData);
         setIsPdf(false);
         analyzeImage(imageData, 'image/jpeg');
@@ -126,43 +156,43 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
       reader.onload = async (event) => {
         const rawData = event.target?.result as string;
         const isFilePdf = file.type === 'application/pdf';
-        // PDFはそのまま、画像はリサイズ・圧縮
-        const fileData = !isFilePdf && file.type.startsWith('image/') ? await compressImage(rawData) : rawData;
-        setCapturedImage(fileData);
-        setIsPdf(isFilePdf);
-        analyzeImage(fileData, isFilePdf ? 'application/pdf' : 'image/jpeg');
+        if (isFilePdf) {
+          // PDFはそのまま送信
+          setCapturedImage(rawData);
+          setIsPdf(true);
+          analyzeImage(rawData, 'application/pdf');
+        } else {
+          // 画像は常に圧縮（サイズ保証付き）
+          const compressed = await compressImage(rawData);
+          setCapturedImage(compressed);
+          setIsPdf(false);
+          analyzeImage(compressed, 'image/jpeg');
+        }
       };
       reader.readAsDataURL(file);
       e.target.value = '';
     }
   };
 
-  // サーバーサイドAPIでレシート解析（413自動リトライ付き）
+  // サーバーサイドAPIでレシート解析
   const analyzeImage = async (imageData: string, mimeType: string) => {
     setIsAnalyzing(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
 
-      const doFetch = async (data: string, mime: string) => {
-        return fetch('/api/receipt', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
-          },
-          body: JSON.stringify({ imageBase64: data, mimeType: mime }),
-        });
-      };
+      // 送信前にペイロードサイズをログ出力
+      const payload = JSON.stringify({ imageBase64: imageData, mimeType });
+      console.log(`送信ペイロード: ${(payload.length / 1024 / 1024).toFixed(2)}MB`);
 
-      let response = await doFetch(imageData, mimeType);
-
-      // 413 Payload Too Large → さらに圧縮して再送
-      if (response.status === 413) {
-        console.warn('413: 画像が大きすぎるため再圧縮して再送...');
-        const smaller = await compressImage(imageData, 800, 0.6);
-        response = await doFetch(smaller, 'image/jpeg');
-      }
+      const response = await fetch('/api/receipt', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: payload,
+      });
 
       // レスポンスボディを安全にパース
       const text = await response.text();
@@ -170,8 +200,14 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
       try {
         result = JSON.parse(text);
       } catch {
-        console.error('レスポンスがJSONではありません:', text.substring(0, 200));
-        alert('サーバーエラーが発生しました。もう一度お試しください。');
+        // 413等でHTMLが返ってきた場合
+        if (response.status === 413) {
+          console.error('413: ペイロードサイズ超過（圧縮後も）', payload.length);
+          alert('画像が大きすぎます。別の写真で再度お試しください。');
+        } else {
+          console.error('レスポンスがJSONではありません:', response.status, text.substring(0, 200));
+          alert('サーバーエラーが発生しました。もう一度お試しください。');
+        }
         return;
       }
 
