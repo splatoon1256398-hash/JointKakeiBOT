@@ -21,6 +21,16 @@ interface SavingGoal {
   sort_order?: number;
 }
 
+interface SavingLog {
+  id: string;
+  goal_id: string;
+  type: 'deposit' | 'withdraw';
+  amount: number;
+  memo: string | null;
+  date: string;
+  created_at: string;
+}
+
 export function Savings() {
   const { selectedUser, theme, user } = useApp();
   const [goals, setGoals] = useState<SavingGoal[]>([]);
@@ -32,6 +42,9 @@ export function Savings() {
   const [withdrawGoal, setWithdrawGoal] = useState<SavingGoal | null>(null);
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [withdrawMemo, setWithdrawMemo] = useState("");
+  const [expandedGoalId, setExpandedGoalId] = useState<string | null>(null);
+  const [logs, setLogs] = useState<Record<string, SavingLog[]>>({});
+  const [logsLoading, setLogsLoading] = useState<string | null>(null);
   const [newGoal, setNewGoal] = useState({
     goal_name: "",
     target_amount: "",
@@ -71,8 +84,44 @@ export function Savings() {
   useEffect(() => {
     if (refreshTrigger > 0) {
       fetchGoals();
+      // 展開中の履歴も再読み込み
+      if (expandedGoalId) {
+        fetchLogs(expandedGoalId);
+      }
     }
   }, [refreshTrigger]);
+
+  // 貯金履歴の取得
+  const fetchLogs = async (goalId: string) => {
+    setLogsLoading(goalId);
+    try {
+      const { data } = await supabase
+        .from('saving_logs')
+        .select('*')
+        .eq('goal_id', goalId)
+        .order('date', { ascending: false })
+        .order('created_at', { ascending: false })
+        .limit(50);
+      
+      setLogs(prev => ({ ...prev, [goalId]: data || [] }));
+    } catch (error) {
+      console.error('履歴取得エラー:', error);
+    } finally {
+      setLogsLoading(null);
+    }
+  };
+
+  // カードタップで履歴をアコーディオン展開/閉じ
+  const toggleGoalExpand = async (goalId: string) => {
+    if (expandedGoalId === goalId) {
+      setExpandedGoalId(null);
+      return;
+    }
+    setExpandedGoalId(goalId);
+    if (!logs[goalId]) {
+      await fetchLogs(goalId);
+    }
+  };
 
   const addGoal = async () => {
     if (!newGoal.goal_name || !newGoal.target_amount) {
@@ -189,6 +238,17 @@ export function Savings() {
 
       if (updateError) throw updateError;
 
+      // saving_logsに取り崩し履歴を記録
+      await supabase.from('saving_logs').insert({
+        goal_id: withdrawGoal.id,
+        user_id: user.id,
+        user_type: selectedUser,
+        type: 'withdraw',
+        amount: amount,
+        memo: withdrawMemo || null,
+        date: new Date().toISOString().split('T')[0],
+      });
+
       // transactionsに「貯金からの取り崩し」として履歴を残す
       const { error: insertError } = await supabase
         .from('transactions')
@@ -207,6 +267,10 @@ export function Savings() {
       if (insertError) throw insertError;
 
       await fetchGoals();
+      // 展開中なら履歴も再取得
+      if (expandedGoalId === withdrawGoal.id) {
+        await fetchLogs(withdrawGoal.id);
+      }
       setIsWithdrawDialogOpen(false);
       setWithdrawGoal(null);
     } catch (error) {
@@ -303,7 +367,11 @@ export function Savings() {
 
             return (
               <div key={goal.id} className="card-solid overflow-hidden">
-                <div className="p-6">
+                {/* タップ可能なメイン部分 */}
+                <div 
+                  className="p-6 cursor-pointer active:bg-white/5 transition-colors"
+                  onClick={() => toggleGoalExpand(goal.id)}
+                >
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex items-center gap-3">
                       <span className="text-4xl">{goal.icon}</span>
@@ -314,7 +382,7 @@ export function Savings() {
                         </p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-0.5">
+                    <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
                       <button
                         onClick={() => moveGoal(index, 'up')}
                         disabled={index === 0}
@@ -407,7 +475,61 @@ export function Savings() {
                       毎月 ¥{monthlyRequired.toLocaleString()} 貯めれば達成できます
                     </p>
                   )}
+
+                  {/* 展開インジケーター */}
+                  <div className="flex justify-center mt-3">
+                    <div className={`transition-transform duration-200 ${expandedGoalId === goal.id ? 'rotate-180' : ''}`}>
+                      <ChevronDown className="h-4 w-4 text-gray-500" />
+                    </div>
+                  </div>
                 </div>
+
+                {/* アコーディオン: 貯金履歴 */}
+                {expandedGoalId === goal.id && (
+                  <div className="border-t border-white/10 bg-white/[0.02]">
+                    <div className="px-6 py-4">
+                      <h4 className="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">
+                        <Calendar className="h-3.5 w-3.5" style={{ color: theme.primary }} />
+                        入出金履歴
+                      </h4>
+                      {logsLoading === goal.id ? (
+                        <div className="py-6 text-center text-gray-500 text-sm">読み込み中...</div>
+                      ) : !logs[goal.id] || logs[goal.id].length === 0 ? (
+                        <div className="py-6 text-center text-gray-500 text-sm">まだ履歴がありません</div>
+                      ) : (
+                        <div className="space-y-2">
+                          {logs[goal.id].map((log) => (
+                            <div
+                              key={log.id}
+                              className="flex items-center justify-between p-3 rounded-xl card-solid-inner"
+                            >
+                              <div className="flex items-center gap-3">
+                                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
+                                  log.type === 'deposit' 
+                                    ? 'bg-emerald-500/20 text-emerald-400'
+                                    : 'bg-orange-500/20 text-orange-400'
+                                }`}>
+                                  {log.type === 'deposit' ? '入' : '出'}
+                                </div>
+                                <div>
+                                  <p className="text-sm text-white">
+                                    {log.memo || (log.type === 'deposit' ? '入金' : '取り崩し')}
+                                  </p>
+                                  <p className="text-xs text-gray-500">{log.date}</p>
+                                </div>
+                              </div>
+                              <span className={`text-sm font-bold ${
+                                log.type === 'deposit' ? 'text-emerald-400' : 'text-orange-400'
+                              }`}>
+                                {log.type === 'deposit' ? '+' : '-'}¥{log.amount.toLocaleString()}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })}
@@ -473,7 +595,10 @@ export function Savings() {
 
       {/* 目標編集ダイアログ */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="bg-slate-900/95 backdrop-blur-xl border-slate-700">
+        <DialogContent 
+          className="bg-slate-900/95 backdrop-blur-xl border-slate-700"
+          onOpenAutoFocus={(e) => e.preventDefault()}
+        >
           <DialogHeader>
             <DialogTitle className="text-white flex items-center gap-2">
               <Pencil className="h-4 w-4" style={{ color: theme.primary }} />

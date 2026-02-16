@@ -231,12 +231,34 @@ ${categoryList}
       receiptData.items = rawItems;
     }
 
-    // 最終ガード: amountが負数にならないように
+    // 最終ガード: amountが負数にならないように + categorySubのバリデーション
+    const catMap: Record<string, string[]> = {};
+    catData?.forEach((cat) => {
+      catMap[cat.main_category] = cat.subcategories || [];
+    });
+
     receiptData.items = (receiptData.items || []).map(
-      (item: { amount: number; [key: string]: unknown }) => ({
-        ...item,
-        amount: Math.max(item.amount || 0, 0),
-      })
+      (item: { amount: number; categoryMain?: string; categorySub?: string; [key: string]: unknown }) => {
+        const main = item.categoryMain || "その他";
+        let sub = item.categorySub;
+        // categorySubがnull/undefined/空、またはDB上に存在しない場合 → デフォルト（1番目）に強制
+        const validSubs = catMap[main] || catMap["その他"] || ["その他"];
+        if (!sub || !validSubs.includes(sub)) {
+          sub = validSubs[0] || "その他";
+        }
+        // categoryMainもDB上に存在しない場合 → 「その他」に強制
+        const validMain = catMap[main] ? main : "その他";
+        const validSubForMain = catMap[validMain] || ["その他"];
+        if (!validSubForMain.includes(sub)) {
+          sub = validSubForMain[0] || "その他";
+        }
+        return {
+          ...item,
+          categoryMain: validMain,
+          categorySub: sub,
+          amount: Math.max(item.amount || 0, 0),
+        };
+      }
     );
 
     return NextResponse.json(receiptData);

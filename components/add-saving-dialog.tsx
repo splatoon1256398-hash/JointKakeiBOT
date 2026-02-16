@@ -85,6 +85,20 @@ export function AddSavingDialog({ open, onOpenChange }: AddSavingDialogProps) {
         return;
       }
 
+      // saving_logsに履歴を記録
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await supabase.from('saving_logs').insert({
+          goal_id: selectedGoalId,
+          user_id: user.id,
+          user_type: selectedUser,
+          type: 'deposit',
+          amount: Number(amount),
+          memo: memo || null,
+          date: new Date().toISOString().split('T')[0],
+        });
+      }
+
       alert(`${selectedGoal.goal_name}に¥${Number(amount).toLocaleString()}を入金しました！`);
       
       // データを即座に反映
