@@ -9,6 +9,30 @@ const supabaseAdmin = createClient(
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
+async function withRetry<T>(fn: () => Promise<T>, maxRetries = 2): Promise<T> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error: unknown) {
+      const isRetryable = error instanceof Error && (
+        error.message?.includes('503') ||
+        error.message?.includes('429') ||
+        error.message?.includes('RESOURCE_EXHAUSTED') ||
+        error.message?.includes('UNAVAILABLE') ||
+        error.message?.includes('DEADLINE_EXCEEDED')
+      );
+      if (attempt < maxRetries && isRetryable) {
+        const delay = Math.pow(2, attempt) * 1000;
+        console.log(`Gemini retry ${attempt + 1}/${maxRetries} after ${delay}ms`);
+        await new Promise(r => setTimeout(r, delay));
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new Error('Unreachable');
+}
+
 export async function POST(request: NextRequest) {
   try {
     // 認証チェック
@@ -79,7 +103,7 @@ export async function POST(request: NextRequest) {
         )
         .join("\n") || "- その他: その他";
 
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
     const imagePart = {
       inlineData: {
@@ -138,7 +162,7 @@ ${categoryList}
 - 日付が読み取れない場合は、今日の日付（${new Date().toISOString().split("T")[0]}）を使用してください
 - 必ずJSON形式のみで返答してください（他の文字は含めないでください）`;
 
-    const result = await model.generateContent([prompt, imagePart]);
+    const result = await withRetry(() => model.generateContent([prompt, imagePart]));
     const text = result.response.text();
 
     console.log("Receipt API Gemini Response:", text);

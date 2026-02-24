@@ -9,6 +9,33 @@ const supabaseAdmin = createClient(
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
+/**
+ * リトライ付きGemini呼び出し（最大2回リトライ）
+ */
+async function withRetry<T>(fn: () => Promise<T>, maxRetries = 2): Promise<T> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error: unknown) {
+      const isRetryable = error instanceof Error && (
+        error.message?.includes('503') ||
+        error.message?.includes('429') ||
+        error.message?.includes('RESOURCE_EXHAUSTED') ||
+        error.message?.includes('UNAVAILABLE') ||
+        error.message?.includes('DEADLINE_EXCEEDED')
+      );
+      if (attempt < maxRetries && isRetryable) {
+        const delay = Math.pow(2, attempt) * 1000;
+        console.log(`Gemini retry ${attempt + 1}/${maxRetries} after ${delay}ms`);
+        await new Promise(r => setTimeout(r, delay));
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new Error('Unreachable');
+}
+
 interface ChatHistoryItem {
   role: "user" | "assistant";
   content: string;
@@ -237,7 +264,7 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
 
     // ===== Gemini モデル（Function Calling） =====
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash-lite",
+      model: "gemini-2.5-flash",
       tools: [
         {
           functionDeclarations: [
@@ -421,7 +448,7 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
     }
 
     const chat = model.startChat({ history: chatHistory });
-    const result = await chat.sendMessage(message);
+    const result = await withRetry(() => chat.sendMessage(message));
     const response = result.response;
 
     let reply = "";
@@ -443,6 +470,17 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
         if (args.user_type === "自分" || args.user_type === "個人") {
           args.user_type = displayName || selectedUser;
         }
+        // カテゴリをDBで検証
+        let catMain = (args.category_main as string) || "その他";
+        let catSub = (args.category_sub as string) || "その他";
+        const catMap: Record<string, string[]> = {};
+        categories?.forEach((c: CategoryRow) => {
+          catMap[c.main_category] = c.subcategories || [];
+        });
+        if (!catMap[catMain]) catMain = "その他";
+        const validSubs = catMap[catMain] || ["その他"];
+        if (!validSubs.includes(catSub)) catSub = validSubs[0] || "その他";
+
         const { data: inserted, error } = await supabaseAdmin
           .from("transactions")
           .insert({
@@ -452,8 +490,8 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
             date:
               (args.date as string) ||
               new Date().toISOString().split("T")[0],
-            category_main: args.category_main as string,
-            category_sub: args.category_sub as string,
+            category_main: catMain,
+            category_sub: catSub,
             store_name: (args.store_name as string) || "",
             amount: args.amount as number,
             memo: (args.memo as string) || "",
@@ -561,6 +599,18 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
               message: "入金に失敗しました",
             };
           } else {
+            // saving_logsに記録
+            await supabaseAdmin.from("saving_logs").insert({
+              goal_id: goals.id,
+              user_id: user.id,
+              user_type: selectedUser,
+              type: "deposit",
+              amount: args.amount as number,
+              memo: `AIチャットから入金`,
+              date: new Date().toISOString().split("T")[0],
+            }).then(({ error: logErr }) => {
+              if (logErr) console.warn("saving_logs insert error:", logErr);
+            });
             const remaining =
               (goals.target_amount as number) - newAmount;
             shouldRefresh = true;
@@ -667,11 +717,11 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
       } // end for loop
 
       // すべての関数結果をまとめてAIに返して最終応答を生成
-      const finalResult = await chat.sendMessage(
+      const finalResult = await withRetry(() => chat.sendMessage(
         executedFunctionCalls.map(fc => ({
           functionResponse: { name: fc.name, response: fc.result as object },
         }))
-      );
+      ));
       reply = finalResult.response.text();
     } else {
       reply = response.text();

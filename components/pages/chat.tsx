@@ -18,18 +18,24 @@ interface Message {
 
 export function Chat() {
   const { selectedUser, user, theme, displayName, triggerRefresh } = useApp();
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: "1",
-      role: "assistant",
-      content: `こんにちは！${selectedUser}の家計簿AIアシスタントです。\n\n「スタバで700円使った」のように話しかけると支出を記録できます。「今月の残り予算は？」と聞くと分析結果をお答えします。\n\n※このチャット履歴は画面を離れるとリセットされます。`,
-      timestamp: new Date(),
-    }
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const lastRecordedIdRef = useRef<string | null>(null);
+
+  // selectedUserが変わったらチャットをリセット
+  useEffect(() => {
+    setMessages([
+      {
+        id: "1",
+        role: "assistant",
+        content: `こんにちは！${selectedUser}の家計簿AIアシスタントです。\n\n「スタバで700円使った」のように話しかけると支出を記録できます。「今月の残り予算は？」と聞くと分析結果をお答えします。\n\n※このチャット履歴は画面を離れるとリセットされます。`,
+        timestamp: new Date(),
+      }
+    ]);
+    lastRecordedIdRef.current = null;
+  }, [selectedUser]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -187,7 +193,7 @@ export function Chat() {
             <Input
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              onKeyPress={(e) => e.key === "Enter" && handleSend()}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing) handleSend(); }}
               placeholder="メッセージを入力..."
               className="flex-1 bg-slate-700/50 border-slate-600 text-white placeholder:text-gray-400"
               disabled={isLoading}

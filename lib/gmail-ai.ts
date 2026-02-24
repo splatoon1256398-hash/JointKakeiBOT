@@ -3,6 +3,30 @@ import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
 // サーバーサイド専用（APIルートからのみ使用）
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
+async function withRetry<T>(fn: () => Promise<T>, maxRetries = 2): Promise<T> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error: unknown) {
+      const isRetryable = error instanceof Error && (
+        error.message?.includes('503') ||
+        error.message?.includes('429') ||
+        error.message?.includes('RESOURCE_EXHAUSTED') ||
+        error.message?.includes('UNAVAILABLE') ||
+        error.message?.includes('DEADLINE_EXCEEDED')
+      );
+      if (attempt < maxRetries && isRetryable) {
+        const delay = Math.pow(2, attempt) * 1000;
+        console.log(`Gmail AI retry ${attempt + 1}/${maxRetries} after ${delay}ms`);
+        await new Promise(r => setTimeout(r, delay));
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new Error('Unreachable');
+}
+
 export interface ParsedTransaction {
   date: string;
   amount: number;
@@ -137,7 +161,7 @@ ${categoryInstruction}
 メール本文:
 ${emailBody.substring(0, 4000)}`;
 
-    const result = await model.generateContent(prompt);
+    const result = await withRetry(() => model.generateContent(prompt));
     const text = result.response.text();
     const parsed: ParsedEmailResult = JSON.parse(text);
 
@@ -145,17 +169,28 @@ ${emailBody.substring(0, 4000)}`;
       return null;
     }
 
-    // 各itemをバリデーション
+    // 各itemをバリデーション + カテゴリDB検証
+    const catMap: Record<string, string[]> = {};
+    categories?.forEach(c => { catMap[c.main_category] = c.subcategories || []; });
+
     const validItems = parsed.items
       .filter((item) => item.amount > 0)
-      .map((item) => ({
-        date: item.date || dateToUse,
-        amount: item.amount,
-        store: item.store || "",
-        category_main: item.category_main || "その他",
-        category_sub: item.category_sub || "その他",
-        memo: item.memo || "",
-      }));
+      .map((item) => {
+        let catMain = item.category_main || "その他";
+        let catSub = item.category_sub || "その他";
+        // DBに存在しないcatMain→その他
+        if (categories && categories.length > 0 && !catMap[catMain]) catMain = "その他";
+        const validSubs = catMap[catMain] || ["その他"];
+        if (!validSubs.includes(catSub)) catSub = validSubs[0] || "その他";
+        return {
+          date: item.date || dateToUse,
+          amount: item.amount,
+          store: item.store || "",
+          category_main: catMain,
+          category_sub: catSub,
+          memo: item.memo || "",
+        };
+      });
 
     return validItems.length > 0 ? validItems : null;
   } catch (error) {
