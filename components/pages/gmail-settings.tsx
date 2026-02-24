@@ -226,9 +226,17 @@ export function GmailSettings() {
             Gmailの閲覧権限を許可してください
           </p>
           {isGoogleLinked ? (
-            <div className="flex items-center gap-2 text-green-400 text-xs">
-              <Check className="h-4 w-4" />
-              <span className="font-semibold">連携済み</span>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-green-400 text-xs">
+                <Check className="h-4 w-4" />
+                <span className="font-semibold">連携済み</span>
+              </div>
+              <button
+                onClick={startGoogleOAuth}
+                className="text-[10px] text-gray-400 underline hover:text-white transition-colors"
+              >
+                再連携
+              </button>
             </div>
           ) : (
             <button

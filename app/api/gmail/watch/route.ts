@@ -23,6 +23,9 @@ async function getAccessToken(refreshToken: string): Promise<string | null> {
   });
 
   const data = await res.json();
+  if (data.error) {
+    console.error("Google token refresh error:", data.error, data.error_description);
+  }
   return data.access_token || null;
 }
 
@@ -47,7 +50,10 @@ export async function POST(request: Request) {
 
     const accessToken = await getAccessToken(settings.google_refresh_token);
     if (!accessToken) {
-      return NextResponse.json({ error: "アクセストークンの取得に失敗しました" }, { status: 500 });
+      return NextResponse.json(
+        { error: "アクセストークンの取得に失敗しました。Gmail連携を一度解除して再連携してください。" },
+        { status: 500 }
+      );
     }
 
     // Gmail API watch() を呼び出し
