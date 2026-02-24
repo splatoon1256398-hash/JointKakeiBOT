@@ -202,7 +202,7 @@ export function FixedExpenses() {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 max-w-full overflow-x-hidden">
       {/* ヘッダー */}
       <div className="flex items-center justify-between">
         <div>
@@ -244,7 +244,7 @@ export function FixedExpenses() {
 
       {/* 追加/編集フォーム */}
       {showForm && (
-        <div className="rounded-xl p-4 bg-slate-800/50 border border-slate-700 space-y-3">
+        <div className="rounded-xl p-4 bg-slate-800/50 border border-slate-700 space-y-3 max-w-full overflow-hidden">
           <div className="flex items-center justify-between mb-1">
             <p className="text-sm font-semibold text-white">
               {editingId ? "固定費を編集" : "固定費を追加"}

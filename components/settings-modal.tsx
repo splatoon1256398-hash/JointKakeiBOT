@@ -66,7 +66,7 @@ export function SettingsModal() {
 
   return (
     <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-slate-900/95 backdrop-blur-xl border-slate-700">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto overflow-x-hidden bg-slate-900/95 backdrop-blur-xl border-slate-700" style={{ overscrollBehavior: 'contain', touchAction: 'pan-y' }}>
         <DialogHeader>
           <div className="flex items-center justify-between">
             <div className="space-y-1">
@@ -103,37 +103,39 @@ export function SettingsModal() {
           </div>
         </DialogHeader>
 
-        <Tabs value={settingsTab} onValueChange={setSettingsTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-7 bg-slate-800/50 h-auto p-1">
-            <TabsTrigger value="fixed" className="flex flex-col gap-1 py-2 text-[10px]">
-              <CreditCard className="h-4 w-4" />
-              固定費
-            </TabsTrigger>
-            <TabsTrigger value="budget" className="flex flex-col gap-1 py-2 text-[10px]">
-              <Wallet className="h-4 w-4" />
-              予算
-            </TabsTrigger>
-            <TabsTrigger value="categories" className="flex flex-col gap-1 py-2 text-[10px]">
-              <Tag className="h-4 w-4" />
-              カテゴリ
-            </TabsTrigger>
-            <TabsTrigger value="home" className="flex flex-col gap-1 py-2 text-[10px]">
-              <LayoutGrid className="h-4 w-4" />
-              ホーム
-            </TabsTrigger>
-            <TabsTrigger value="gmail" className="flex flex-col gap-1 py-2 text-[10px]">
-              <Mail className="h-4 w-4" />
-              Gmail
-            </TabsTrigger>
-            <TabsTrigger value="push" className="flex flex-col gap-1 py-2 text-[10px]">
-              <Bell className="h-4 w-4" />
-              通知
-            </TabsTrigger>
-            <TabsTrigger value="other" className="flex flex-col gap-1 py-2 text-[10px]">
-              <SettingsIcon className="h-4 w-4" />
-              その他
-            </TabsTrigger>
-          </TabsList>
+        <Tabs value={settingsTab} onValueChange={setSettingsTab} className="w-full min-w-0">
+          <div className="overflow-x-auto -mx-1 px-1 scrollbar-hide">
+            <TabsList className="inline-flex w-max min-w-full bg-slate-800/50 h-auto p-1 gap-0.5">
+              <TabsTrigger value="fixed" className="flex flex-col gap-1 py-2 px-2 text-[10px] min-w-0 flex-shrink-0">
+                <CreditCard className="h-4 w-4" />
+                固定費
+              </TabsTrigger>
+              <TabsTrigger value="budget" className="flex flex-col gap-1 py-2 px-2 text-[10px] min-w-0 flex-shrink-0">
+                <Wallet className="h-4 w-4" />
+                予算
+              </TabsTrigger>
+              <TabsTrigger value="categories" className="flex flex-col gap-1 py-2 px-2 text-[10px] min-w-0 flex-shrink-0">
+                <Tag className="h-4 w-4" />
+                カテゴリ
+              </TabsTrigger>
+              <TabsTrigger value="home" className="flex flex-col gap-1 py-2 px-2 text-[10px] min-w-0 flex-shrink-0">
+                <LayoutGrid className="h-4 w-4" />
+                ホーム
+              </TabsTrigger>
+              <TabsTrigger value="gmail" className="flex flex-col gap-1 py-2 px-2 text-[10px] min-w-0 flex-shrink-0">
+                <Mail className="h-4 w-4" />
+                Gmail
+              </TabsTrigger>
+              <TabsTrigger value="push" className="flex flex-col gap-1 py-2 px-2 text-[10px] min-w-0 flex-shrink-0">
+                <Bell className="h-4 w-4" />
+                通知
+              </TabsTrigger>
+              <TabsTrigger value="other" className="flex flex-col gap-1 py-2 px-2 text-[10px] min-w-0 flex-shrink-0">
+                <SettingsIcon className="h-4 w-4" />
+                その他
+              </TabsTrigger>
+            </TabsList>
+          </div>
 
           {/* 各タブコンテンツ - min-h で高さ固定 */}
           <TabsContent value="fixed" className="mt-4 min-h-[520px]">

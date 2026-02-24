@@ -296,3 +296,18 @@
     color: #ef4444 !important;
   }
 }
+
+/* タブスクロールバー非表示 */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* ダイアログ表示中のbodyスクロールロック */
+body[data-scroll-locked] {
+  touch-action: none !important;
+  overflow: hidden !important;
+}
