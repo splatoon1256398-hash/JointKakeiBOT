@@ -12,6 +12,7 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 interface ChatHistoryItem {
   role: "user" | "assistant";
   content: string;
+  functionCalls?: Array<{ name: string; args: Record<string, unknown>; result: { success: boolean; message: string } }>;
 }
 
 interface ChatRequest {
@@ -177,6 +178,19 @@ ${prevComparison}
 【利用可能なカテゴリー】
 ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.join(", ")}`).join("\n") || "- その他: その他"}
 
+【🔴 最重要ルール: 毎メッセージ独立処理】
+- ユーザーの各メッセージは完全に独立した記録リクエストである
+- 過去に「記録しました」と返答済みでも、新しいメッセージに金額があれば必ず recordExpense を呼べ
+- 「牛丼 1580円」→記録 → 「水 239円」→ また別の recordExpense を呼べ
+- 絶対に「既に記録済み」と判断するな。新メッセージ = 新しい記録
+
+【区分(user_type)の決定ルール】
+- 現在の選択区分: 「${selectedUser}」
+- ユーザーが区分を指定しなければ、必ず「${selectedUser}」をuser_typeに設定せよ
+- 「自分の」「個人」と明言された場合のみ → user_type="${displayName}"
+- 「共同の」「共同で」と明言された場合のみ → user_type="共同"
+- 迷ったら聞き返さず「${selectedUser}」を使え
+
 【コア機能1: 爆速入力】
 - 支出記録: 金額が分かれば即座にrecordExpenseを呼ぶ。聞き返すな。
   - 「ドミノピザ チーズピザ 4500円」→ store_name="ドミノピザ", memo="チーズピザ", amount=4500
@@ -184,8 +198,6 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
   - 「コンビニでお茶 150円」→ store_name="コンビニ", memo="お茶", amount=150
   - 「豚肉 500円」→ store_name="", memo="豚肉", amount=500（店名不明→空文字）
   - 店名＝ブランド名・店舗名。メモ＝購入した商品・詳細。店名だけの場合はmemo=""
-  - 「自分」「個人」→ user_type="${displayName}"、「共同」→ user_type="共同"
-  - user_typeが不明な場合のみ聞き返す
 
 【🚨 絶対厳守: 捏造禁止】
 - ユーザーが明示していない情報を推測・捏造してはならない
@@ -383,21 +395,30 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
     });
 
     // ===== チャット履歴構築 =====
-    const chatHistory = [
-      { role: "user" as const, parts: [{ text: systemPrompt }] },
-      {
-        role: "model" as const,
-        parts: [
-          {
-            text: "はい、承知しました。家計簿アシスタントとして対応します。",
-          },
-        ],
-      },
-      ...history.map((m) => ({
-        role: (m.role === "user" ? "user" : "model") as "user" | "model",
-        parts: [{ text: m.content }],
-      })),
+    // Function Calling 履歴を正確に再構築（連続送信対応）
+    const chatHistory: Array<{ role: "user" | "model"; parts: any[] }> = [
+      { role: "user", parts: [{ text: systemPrompt }] },
+      { role: "model", parts: [{ text: "はい、承知しました。家計簿アシスタントとして対応します。" }] },
     ];
+
+    for (const m of history) {
+      if (m.role === "user") {
+        chatHistory.push({ role: "user", parts: [{ text: m.content }] });
+      } else {
+        // function call があった場合、Gemini に正確なコンテキストを提供
+        if (m.functionCalls && m.functionCalls.length > 0) {
+          chatHistory.push({
+            role: "model",
+            parts: m.functionCalls.map(fc => ({ functionCall: { name: fc.name, args: fc.args } })),
+          });
+          chatHistory.push({
+            role: "user",
+            parts: m.functionCalls.map(fc => ({ functionResponse: { name: fc.name, response: fc.result } })),
+          });
+        }
+        chatHistory.push({ role: "model", parts: [{ text: m.content }] });
+      }
+    }
 
     const chat = model.startChat({ history: chatHistory });
     const result = await chat.sendMessage(message);
@@ -406,11 +427,12 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
     let reply = "";
     let newLastRecordedId = lastRecordedId;
     let shouldRefresh = false;
+    const executedFunctionCalls: Array<{ name: string; args: Record<string, unknown>; result: { success: boolean; message: string } }> = [];
 
-    // ===== Function Calling 処理 =====
+    // ===== Function Calling 処理（複数対応） =====
     const functionCalls = response.functionCalls();
     if (functionCalls && functionCalls.length > 0) {
-      const functionCall = functionCalls[0];
+      for (const functionCall of functionCalls) {
       let functionResult: { success: boolean; message: string } = {
         success: false,
         message: "不明なエラー",
@@ -637,15 +659,19 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
         }
       }
 
-      // 関数実行結果をAIに返して最終応答を生成
-      const finalResult = await chat.sendMessage([
-        {
-          functionResponse: {
-            name: functionCall.name,
-            response: functionResult as object,
-          },
-        },
-      ]);
+      executedFunctionCalls.push({
+        name: functionCall.name,
+        args: { ...(functionCall.args as Record<string, unknown>) },
+        result: functionResult,
+      });
+      } // end for loop
+
+      // すべての関数結果をまとめてAIに返して最終応答を生成
+      const finalResult = await chat.sendMessage(
+        executedFunctionCalls.map(fc => ({
+          functionResponse: { name: fc.name, response: fc.result as object },
+        }))
+      );
       reply = finalResult.response.text();
     } else {
       reply = response.text();
@@ -655,6 +681,7 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
       reply,
       lastRecordedId: newLastRecordedId,
       shouldRefresh,
+      ...(executedFunctionCalls.length > 0 && { functionCalls: executedFunctionCalls }),
     });
   } catch (error) {
     console.error("Chat API error:", error);

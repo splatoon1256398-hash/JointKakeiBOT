@@ -13,6 +13,7 @@ interface Message {
   role: "user" | "assistant";
   content: string;
   timestamp: Date;
+  functionCalls?: Array<{ name: string; args: Record<string, unknown>; result: { success: boolean; message: string } }>;
 }
 
 export function Chat() {
@@ -52,6 +53,7 @@ export function Chat() {
     const historyForApi = messages.slice(1).map(m => ({
       role: m.role,
       content: m.content,
+      ...(m.functionCalls && m.functionCalls.length > 0 && { functionCalls: m.functionCalls }),
     }));
 
     setMessages(prev => [...prev, userMessage]);
@@ -107,6 +109,7 @@ export function Chat() {
         role: "assistant",
         content: data.reply,
         timestamp: new Date(),
+        ...(data.functionCalls && { functionCalls: data.functionCalls }),
       };
       setMessages(prev => [...prev, assistantMessage]);
     } catch (error) {
