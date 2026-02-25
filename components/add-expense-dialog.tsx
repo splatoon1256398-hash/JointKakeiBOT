@@ -317,6 +317,7 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
               title: "共同支出が登録されました",
               body: `¥${totalAmount.toLocaleString()} (${memoText})`,
               excludeUserId: user?.id,
+              notificationType: "joint_expense_alert",
             }),
           });
         } catch (pushError) {
@@ -375,17 +376,24 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
     try {
       // 今月の範囲
       const now = new Date();
-      const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+      const alertMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      const monthStart = `${alertMonth}-01`;
       const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-      const monthEnd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(lastDay.getDate()).padStart(2, '0')}`;
+      const monthEnd = `${alertMonth}-${String(lastDay.getDate()).padStart(2, '0')}`;
 
-      // 予算取得
+      // 今追加した支出のカテゴリのみチェック
+      const affectedCategories = new Set(savedItems.map(i => i.categoryMain));
+
+      // 予算取得（対象カテゴリのみ）
       const { data: budgets } = await supabase
         .from('budgets')
         .select('category_main, monthly_budget')
         .eq('user_type', userType);
 
       if (!budgets || budgets.length === 0) return;
+
+      const relevantBudgets = budgets.filter(b => affectedCategories.has(b.category_main));
+      if (relevantBudgets.length === 0) return;
 
       // 今月の支出取得
       const { data: monthExpenses } = await supabase
@@ -408,17 +416,33 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
         }
       });
 
+      // 既存のアラートログを取得（重複防止）
+      const { data: existingLogs } = await supabase
+        .from('budget_alert_logs')
+        .select('category_main, alert_type')
+        .eq('user_id', userId)
+        .eq('user_type', userType)
+        .eq('alert_month', alertMonth);
+
+      const sentSet = new Set(
+        (existingLogs || []).map(l => `${l.category_main}:${l.alert_type}`)
+      );
+
       // アラート対象のカテゴリを検出
       const alerts: string[] = [];
-      for (const budget of budgets) {
+      const newLogs: { user_id: string; user_type: string; category_main: string; alert_type: string; alert_month: string }[] = [];
+
+      for (const budget of relevantBudgets) {
         const spent = spentMap[budget.category_main] || 0;
         const pct = budget.monthly_budget > 0 ? (spent / budget.monthly_budget) * 100 : 0;
         const remaining = budget.monthly_budget - spent;
 
-        if (pct >= 100) {
+        if (pct >= 100 && !sentSet.has(`${budget.category_main}:100`)) {
           alerts.push(`⚠️ ${budget.category_main}の予算を超過しました（¥${(-remaining).toLocaleString()}オーバー）`);
-        } else if (pct >= 80) {
+          newLogs.push({ user_id: userId, user_type: userType, category_main: budget.category_main, alert_type: '100', alert_month: alertMonth });
+        } else if (pct >= 80 && pct < 100 && !sentSet.has(`${budget.category_main}:80`)) {
           alerts.push(`⚠ ${budget.category_main}があと¥${remaining.toLocaleString()}で上限です`);
+          newLogs.push({ user_id: userId, user_type: userType, category_main: budget.category_main, alert_type: '80', alert_month: alertMonth });
         }
       }
 
@@ -431,8 +455,14 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
             title: '予算アラート',
             body: alerts.join('\n'),
             targetUserId: userId,
+            notificationType: 'budget_alert',
           }),
         });
+
+        // 送信ログを記録
+        if (newLogs.length > 0) {
+          await supabase.from('budget_alert_logs').insert(newLogs);
+        }
       }
     } catch (err) {
       console.error('予算アラートチェックエラー:', err);

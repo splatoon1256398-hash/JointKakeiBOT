@@ -366,6 +366,36 @@ BEGIN
   END IF;
 END $$;
 
+-- マイグレーション: user_settings に notification_preferences カラムを追加
+-- ユーザーごとの通知種別ON/OFF設定
+DO $$ 
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'user_settings' AND column_name = 'notification_preferences'
+  ) THEN
+    ALTER TABLE user_settings ADD COLUMN notification_preferences JSONB DEFAULT '{"budget_alert": true, "joint_expense_alert": true}'::jsonb;
+    COMMENT ON COLUMN user_settings.notification_preferences IS '通知種別のON/OFF設定。budget_alert: 予算アラート, joint_expense_alert: 共同支出通知';
+  END IF;
+END $$;
+
+-- マイグレーション: budget_alert_logs テーブルを作成
+-- 月×カテゴリ単位で予算アラートの重複送信を防止
+CREATE TABLE IF NOT EXISTS budget_alert_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_type TEXT NOT NULL,
+  category_main TEXT NOT NULL,
+  alert_type TEXT NOT NULL, -- '80' or '100'
+  alert_month TEXT NOT NULL, -- 'YYYY-MM' format
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(user_id, user_type, category_main, alert_type, alert_month)
+);
+
+ALTER TABLE budget_alert_logs ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can manage own alert logs" ON budget_alert_logs
+  FOR ALL USING (auth.uid() = user_id);
+
 -- マイグレーション: fixed_expenses テーブルに start_date, end_date カラムを追加
 -- 適用期間を管理し、期間外の固定費は自動登録をスキップする
 DO $$ BEGIN

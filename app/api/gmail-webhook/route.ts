@@ -26,9 +26,10 @@ async function checkBudgetAlert(
 ): Promise<void> {
   try {
     const now = new Date();
-    const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+    const alertMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const monthStart = `${alertMonth}-01`;
     const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-    const monthEnd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(lastDay.getDate()).padStart(2, "0")}`;
+    const monthEnd = `${alertMonth}-${String(lastDay.getDate()).padStart(2, "0")}`;
 
     const { data: budgets } = await supabaseAdmin
       .from("budgets")
@@ -63,13 +64,29 @@ async function checkBudgetAlert(
     const remaining = budget.monthly_budget - spent;
 
     let alertBody = "";
+    let alertType = "";
     if (pct >= 100) {
       alertBody = `⚠️ ${budget.category_main}の予算を超過（¥${(-remaining).toLocaleString()}オーバー）`;
+      alertType = "100";
     } else if (pct >= 80) {
       alertBody = `⚠ ${budget.category_main}があと¥${remaining.toLocaleString()}で上限`;
+      alertType = "80";
     }
 
-    if (alertBody) {
+    if (alertBody && alertType) {
+      // 月×カテゴリ×タイプで重複チェック
+      const { data: existingLog } = await supabaseAdmin
+        .from("budget_alert_logs")
+        .select("id")
+        .eq("user_id", userId)
+        .eq("user_type", userType)
+        .eq("category_main", budget.category_main)
+        .eq("alert_type", alertType)
+        .eq("alert_month", alertMonth)
+        .maybeSingle();
+
+      if (existingLog) return; // 既に通知済み
+
       await fetch(`${appUrl}/api/push/send`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -77,7 +94,17 @@ async function checkBudgetAlert(
           title: "予算アラート",
           body: alertBody,
           targetUserId: userId,
+          notificationType: "budget_alert",
         }),
+      });
+
+      // 送信ログを記録
+      await supabaseAdmin.from("budget_alert_logs").insert({
+        user_id: userId,
+        user_type: userType,
+        category_main: budget.category_main,
+        alert_type: alertType,
+        alert_month: alertMonth,
       });
     }
   } catch (err) {
@@ -170,6 +197,7 @@ export async function POST(request: NextRequest) {
             title: "共同支出が登録されました",
             body: `¥${body.amount.toLocaleString()} (${body.memo || body.store})`,
             excludeUserId: settings.user_id,
+            notificationType: "joint_expense_alert",
           }),
         });
       } catch (pushError) {

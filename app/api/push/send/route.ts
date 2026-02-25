@@ -16,7 +16,7 @@ webpush.setVapidDetails(
 
 export async function POST(request: NextRequest) {
   try {
-    const { title, body, excludeUserId, targetUserId } = await request.json();
+    const { title, body, excludeUserId, targetUserId, notificationType } = await request.json();
 
     if (!title || !body) {
       return NextResponse.json(
@@ -47,11 +47,37 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, sent: 0 });
     }
 
+    // 通知種別に応じて、ユーザーの通知設定をチェック
+    let filteredSubscriptions = subscriptions;
+    if (notificationType) {
+      const userIds = [...new Set(subscriptions.map((s) => s.user_id))];
+      const { data: settingsRows } = await supabaseAdmin
+        .from("user_settings")
+        .select("user_id, notification_preferences")
+        .in("user_id", userIds);
+
+      const prefsMap: Record<string, Record<string, boolean>> = {};
+      settingsRows?.forEach((row) => {
+        prefsMap[row.user_id] = row.notification_preferences || {};
+      });
+
+      filteredSubscriptions = subscriptions.filter((sub) => {
+        const userPrefs = prefsMap[sub.user_id];
+        // デフォルトはtrue（設定がない場合は通知する）
+        if (!userPrefs) return true;
+        return userPrefs[notificationType] !== false;
+      });
+
+      if (filteredSubscriptions.length === 0) {
+        return NextResponse.json({ success: true, sent: 0, skipped: "notification_preferences" });
+      }
+    }
+
     const payload = JSON.stringify({ title, body, url: "/" });
 
     // 全購読者に送信
     const results = await Promise.allSettled(
-      subscriptions.map(async (sub) => {
+      filteredSubscriptions.map(async (sub) => {
         try {
           await webpush.sendNotification(
             {

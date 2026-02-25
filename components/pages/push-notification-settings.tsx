@@ -1,20 +1,84 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Bell, BellOff, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { Bell, BellOff, Loader2, CheckCircle2, AlertCircle, DollarSign, Users } from "lucide-react";
 import { useApp } from "@/contexts/app-context";
+import { supabase } from "@/lib/supabase";
 import { subscribeToPush, unsubscribeFromPush, registerServiceWorker } from "@/lib/push";
 
 type PushState = "loading" | "unsupported" | "denied" | "prompt" | "subscribed" | "unsubscribed";
+
+interface NotificationPreferences {
+  budget_alert: boolean;
+  joint_expense_alert: boolean;
+}
+
+const DEFAULT_PREFS: NotificationPreferences = {
+  budget_alert: true,
+  joint_expense_alert: true,
+};
 
 export function PushNotificationSettings() {
   const { user, theme } = useApp();
   const [pushState, setPushState] = useState<PushState>("loading");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [prefs, setPrefs] = useState<NotificationPreferences>(DEFAULT_PREFS);
+  const [isSavingPrefs, setIsSavingPrefs] = useState(false);
 
   useEffect(() => {
     checkPushState();
   }, []);
+
+  // 通知設定を読み込み
+  const loadPrefs = useCallback(async () => {
+    if (!user) return;
+    try {
+      const { data } = await supabase
+        .from("user_settings")
+        .select("notification_preferences")
+        .eq("user_id", user.id)
+        .single();
+
+      if (data?.notification_preferences) {
+        setPrefs({ ...DEFAULT_PREFS, ...data.notification_preferences });
+      }
+    } catch {
+      // デフォルトのまま
+    }
+  }, [user]);
+
+  useEffect(() => {
+    loadPrefs();
+  }, [loadPrefs]);
+
+  // 通知設定を保存
+  const savePrefs = async (newPrefs: NotificationPreferences) => {
+    if (!user) return;
+    setPrefs(newPrefs);
+    setIsSavingPrefs(true);
+    try {
+      const { data: existing } = await supabase
+        .from("user_settings")
+        .select("user_id")
+        .eq("user_id", user.id)
+        .single();
+
+      if (existing) {
+        await supabase
+          .from("user_settings")
+          .update({ notification_preferences: newPrefs })
+          .eq("user_id", user.id);
+      } else {
+        await supabase
+          .from("user_settings")
+          .insert({ user_id: user.id, notification_preferences: newPrefs });
+      }
+    } catch (err) {
+      console.error("通知設定保存エラー:", err);
+    } finally {
+      setIsSavingPrefs(false);
+    }
+  };
 
   const checkPushState = async () => {
     // ブラウザ対応チェック
@@ -181,6 +245,69 @@ export function PushNotificationSettings() {
           </div>
         )}
       </div>
+
+      {/* 通知種別設定 */}
+      {pushState === "subscribed" && (
+        <div className="space-y-3">
+          <h4 className="text-sm font-semibold text-white">通知の種類</h4>
+
+          {/* 共同支出通知 */}
+          <div
+            className="flex items-center justify-between rounded-xl p-3"
+            style={{ background: `${theme.primary}10`, border: `1px solid ${theme.primary}30` }}
+          >
+            <div className="flex items-center gap-3">
+              <Users className="h-4 w-4 text-blue-400 flex-shrink-0" />
+              <div>
+                <p className="text-sm font-medium text-white">共同支出通知</p>
+                <p className="text-xs text-gray-400">パートナーが共同支出を登録したとき</p>
+              </div>
+            </div>
+            <button
+              onClick={() => savePrefs({ ...prefs, joint_expense_alert: !prefs.joint_expense_alert })}
+              disabled={isSavingPrefs}
+              className={`relative w-11 h-6 rounded-full transition-colors ${
+                prefs.joint_expense_alert ? "" : "bg-gray-600"
+              }`}
+              style={prefs.joint_expense_alert ? { backgroundColor: theme.primary } : {}}
+            >
+              <span
+                className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${
+                  prefs.joint_expense_alert ? "translate-x-5" : ""
+                }`}
+              />
+            </button>
+          </div>
+
+          {/* 予算アラート */}
+          <div
+            className="flex items-center justify-between rounded-xl p-3"
+            style={{ background: `${theme.primary}10`, border: `1px solid ${theme.primary}30` }}
+          >
+            <div className="flex items-center gap-3">
+              <DollarSign className="h-4 w-4 text-amber-400 flex-shrink-0" />
+              <div>
+                <p className="text-sm font-medium text-white">予算アラート</p>
+                <p className="text-xs text-gray-400">予算の80%/100%超過時</p>
+              </div>
+            </div>
+            <button
+              onClick={() => savePrefs({ ...prefs, budget_alert: !prefs.budget_alert })}
+              disabled={isSavingPrefs}
+              className={`relative w-11 h-6 rounded-full transition-colors ${
+                prefs.budget_alert ? "" : "bg-gray-600"
+              }`}
+              style={prefs.budget_alert ? { backgroundColor: theme.primary } : {}}
+            >
+              <span
+                className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${
+                  prefs.budget_alert ? "translate-x-5" : ""
+                }`}
+              />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 説明 */}
       <div className="rounded-xl p-4 bg-amber-900/20 border border-amber-600/30">

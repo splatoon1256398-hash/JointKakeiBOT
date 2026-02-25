@@ -173,9 +173,10 @@ async function checkBudgetAlert(
 ): Promise<void> {
   try {
     const now = new Date();
-    const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+    const alertMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const monthStart = `${alertMonth}-01`;
     const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-    const monthEnd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(lastDay.getDate()).padStart(2, "0")}`;
+    const monthEnd = `${alertMonth}-${String(lastDay.getDate()).padStart(2, "0")}`;
 
     const { data: budgets } = await supabaseAdmin
       .from("budgets")
@@ -208,16 +209,32 @@ async function checkBudgetAlert(
       }
     });
 
+    // 既存のアラートログを取得
+    const { data: existingLogs } = await supabaseAdmin
+      .from("budget_alert_logs")
+      .select("category_main, alert_type")
+      .eq("user_id", userId)
+      .eq("user_type", userType)
+      .eq("alert_month", alertMonth);
+
+    const sentSet = new Set(
+      (existingLogs || []).map((l) => `${l.category_main}:${l.alert_type}`)
+    );
+
     const alerts: string[] = [];
+    const newLogs: { user_id: string; user_type: string; category_main: string; alert_type: string; alert_month: string }[] = [];
+
     for (const budget of relevantBudgets) {
       const spent = spentMap[budget.category_main] || 0;
       const pct = budget.monthly_budget > 0 ? (spent / budget.monthly_budget) * 100 : 0;
       const remaining = budget.monthly_budget - spent;
 
-      if (pct >= 100) {
+      if (pct >= 100 && !sentSet.has(`${budget.category_main}:100`)) {
         alerts.push(`⚠️ ${budget.category_main}の予算を超過（¥${(-remaining).toLocaleString()}オーバー）`);
-      } else if (pct >= 80) {
+        newLogs.push({ user_id: userId, user_type: userType, category_main: budget.category_main, alert_type: "100", alert_month: alertMonth });
+      } else if (pct >= 80 && pct < 100 && !sentSet.has(`${budget.category_main}:80`)) {
         alerts.push(`⚠ ${budget.category_main}があと¥${remaining.toLocaleString()}で上限`);
+        newLogs.push({ user_id: userId, user_type: userType, category_main: budget.category_main, alert_type: "80", alert_month: alertMonth });
       }
     }
 
@@ -229,8 +246,14 @@ async function checkBudgetAlert(
           title: "予算アラート",
           body: alerts.join("\n"),
           targetUserId: userId,
+          notificationType: "budget_alert",
         }),
       });
+
+      // 送信ログを記録
+      if (newLogs.length > 0) {
+        await supabaseAdmin.from("budget_alert_logs").insert(newLogs);
+      }
     }
   } catch (err) {
     console.error("Budget alert check error:", err);

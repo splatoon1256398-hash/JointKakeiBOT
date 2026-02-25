@@ -254,7 +254,7 @@ export function AddIncomeDialog({ open, onOpenChange, selectedUser }: AddIncomeD
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-lg bg-slate-900/95 backdrop-blur-xl border-slate-700">
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto overflow-x-hidden bg-slate-900/95 backdrop-blur-xl border-slate-700" style={{ overscrollBehavior: 'contain' }}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-white text-base">
             <TrendingUp className="h-4 w-4 text-green-400" />
