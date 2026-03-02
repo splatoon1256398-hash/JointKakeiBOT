@@ -23,6 +23,7 @@ export function Chat() {
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const lastRecordedIdRef = useRef<string | null>(null);
+  const sendingRef = useRef(false);
 
   // selectedUserが変わったらチャットをリセット
   useEffect(() => {
@@ -46,7 +47,8 @@ export function Chat() {
   }, [messages]);
 
   const handleSend = async () => {
-    if (!input.trim() || isLoading) return;
+    if (!input.trim() || isLoading || sendingRef.current) return;
+    sendingRef.current = true;
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -126,6 +128,7 @@ export function Chat() {
       setMessages(prev => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
+      sendingRef.current = false;
     }
   };
 

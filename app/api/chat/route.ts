@@ -260,7 +260,18 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
 【返信スタイル】
 - 簡潔で的確な日本語。冗長な説明は不要
 - 絵文字は最小限（✅❌📊💰等の機能的なもののみ）
-- 登録・修正完了時は必ずサマリーを表示`;
+- ❗マークダウンのテーブル(表)は絶対に使うな。スマホで崩れる
+- 登録・修正完了時は以下の箇条書き形式で返せ：
+
+✅ 記録完了
+・区分：〇〇
+・内容：〇〇
+・金額：¥XXX
+・カテゴリ： 〇〇 / 〇〇
+
+他にも記録するものがあれば教えてね！
+
+- 複数件登録時は各件を箇条書きで並べる。絶対にテーブルを使わないこと`;
 
     // ===== Gemini モデル（Function Calling） =====
     // gemini-3-flash-preview + SDK v0.24: 最新モデル
@@ -433,18 +444,12 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
       if (m.role === "user") {
         chatHistory.push({ role: "user", parts: [{ text: m.content }] });
       } else {
-        // function call があった場合、Gemini に正確なコンテキストを提供
-        if (m.functionCalls && m.functionCalls.length > 0) {
-          chatHistory.push({
-            role: "model",
-            parts: m.functionCalls.map(fc => ({ functionCall: { name: fc.name, args: fc.args } })),
-          });
-          chatHistory.push({
-            role: "user",
-            parts: m.functionCalls.map(fc => ({ functionResponse: { name: fc.name, response: fc.result } })),
-          });
+        // アシスタントのテキスト応答のみを履歴に含める
+        // functionCall/functionResponse の再構築はSDKバージョン間の互換性問題があるためスキップ
+        // テキスト応答に記録結果が含まれているのでコンテキストは十分
+        if (m.content && m.content.trim()) {
+          chatHistory.push({ role: "model", parts: [{ text: m.content }] });
         }
-        chatHistory.push({ role: "model", parts: [{ text: m.content }] });
       }
     }
 
