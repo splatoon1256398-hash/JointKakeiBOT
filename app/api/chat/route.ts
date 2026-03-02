@@ -479,8 +479,20 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
     }
 
     const chat = model.startChat({ history: chatHistory });
-    const result = await withRetry(() => chat.sendMessage(message));
-    const response = result.response;
+
+    let response;
+    try {
+      const result = await withRetry(() => chat.sendMessage(message));
+      response = result.response;
+    } catch (geminiError) {
+      const errDetail = geminiError instanceof Error ? geminiError.message : String(geminiError);
+      console.error("[Chat] Gemini sendMessage failed:", errDetail);
+      return NextResponse.json({
+        reply: `AI接続エラーが発生しました。(${errDetail.substring(0, 100)})\nしばらく待ってからもう一度お試しください。`,
+        lastRecordedId,
+        shouldRefresh: false,
+      });
+    }
 
     // デバッグ: レスポンスの構造をログ
     try {
@@ -494,7 +506,13 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
     const executedFunctionCalls: Array<{ name: string; args: Record<string, unknown>; result: { success: boolean; message: string } }> = [];
 
     // ===== Function Calling 処理（複数対応） =====
-    const functionCalls = response.functionCalls();
+    let functionCalls;
+    try {
+      functionCalls = response.functionCalls();
+    } catch (fcError) {
+      console.warn("[Chat] functionCalls() threw:", (fcError as Error)?.message);
+      functionCalls = null;
+    }
     if (functionCalls && functionCalls.length > 0) {
       for (const functionCall of functionCalls) {
       let functionResult: { success: boolean; message: string } = {
@@ -790,9 +808,11 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
       ...(executedFunctionCalls.length > 0 && { functionCalls: executedFunctionCalls }),
     });
   } catch (error) {
-    console.error("Chat API error:", error);
+    const errMsg = error instanceof Error ? error.message : String(error);
+    const errStack = error instanceof Error ? error.stack?.substring(0, 500) : '';
+    console.error("Chat API error:", errMsg, "\nStack:", errStack);
     return NextResponse.json(
-      { error: "エラーが発生しました。もう一度お試しください。" },
+      { error: `エラーが発生しました: ${errMsg.substring(0, 200)}` },
       { status: 500 }
     );
   }

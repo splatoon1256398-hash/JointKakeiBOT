@@ -90,14 +90,10 @@ export function Chat() {
         }),
       });
 
-      if (!response.ok) {
-        throw new Error(`API error: ${response.status}`);
-      }
-
       const data = await response.json();
 
-      if (data.error) {
-        throw new Error(data.error);
+      if (!response.ok || data.error) {
+        throw new Error(data.error || `API error: ${response.status}`);
       }
 
       // 最後に記録したIDを更新
@@ -120,10 +116,11 @@ export function Chat() {
       setMessages(prev => [...prev, assistantMessage]);
     } catch (error) {
       console.error("AI応答エラー:", error);
+      const errText = error instanceof Error ? error.message : "不明なエラー";
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: "assistant",
-        content: "申し訳ございません。エラーが発生しました。もう一度お試しください。",
+        content: `エラーが発生しました: ${errText}`,
         timestamp: new Date(),
       };
       setMessages(prev => [...prev, errorMessage]);
