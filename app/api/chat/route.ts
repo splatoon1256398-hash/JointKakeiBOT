@@ -10,36 +10,6 @@ const supabaseAdmin = createClient(
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
 /**
- * Gemini レスポンスからテキストを安全に抽出する
- * gemini-2.5-flash は思考(thought)パートを含むため .text() が失敗する場合がある
- */
-function safeExtractText(response: any): string {
-  // Method 1: 標準の .text()
-  try {
-    const text = response.text();
-    if (text && text.trim()) return text;
-  } catch (e) {
-    console.log("response.text() threw, trying manual extraction:", (e as Error)?.message?.substring(0, 100));
-  }
-
-  // Method 2: candidates から手動でテキストパートを抽出
-  try {
-    const candidates = response.candidates;
-    if (candidates && candidates.length > 0) {
-      const parts = candidates[0].content?.parts || [];
-      const textParts = parts
-        .filter((p: any) => typeof p.text === "string")
-        .map((p: any) => p.text);
-      if (textParts.length > 0) return textParts.join("");
-    }
-  } catch (e) {
-    console.log("Manual text extraction also failed:", (e as Error)?.message?.substring(0, 100));
-  }
-
-  return "";
-}
-
-/**
  * リトライ付きGemini呼び出し（最大2回リトライ）
  */
 async function withRetry<T>(fn: () => Promise<T>, maxRetries = 2): Promise<T> {
@@ -293,9 +263,9 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
 - 登録・修正完了時は必ずサマリーを表示`;
 
     // ===== Gemini モデル（Function Calling） =====
-    // gemini-2.0-flash: Function Callingに最適化。思考モデル(2.5)はSDK v0.21と非互換
+    // gemini-3-flash-preview + SDK v0.24: 最新モデル
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.0-flash",
+      model: "gemini-3-flash-preview",
       tools: [
         {
           functionDeclarations: [
@@ -494,11 +464,8 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
       });
     }
 
-    // デバッグ: レスポンスの構造をログ
-    try {
-      const parts = response.candidates?.[0]?.content?.parts || [];
-      console.log(`[Chat] Response parts: ${parts.length}, types: [${parts.map((p: any) => Object.keys(p).join("+")).join(", ")}]`);
-    } catch {}
+    // デバッグログ
+    console.log(`[Chat] Response received. finishReason: ${response.candidates?.[0]?.finishReason}`);
 
     let reply = "";
     let newLastRecordedId = lastRecordedId;
@@ -506,13 +473,8 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
     const executedFunctionCalls: Array<{ name: string; args: Record<string, unknown>; result: { success: boolean; message: string } }> = [];
 
     // ===== Function Calling 処理（複数対応） =====
-    let functionCalls;
-    try {
-      functionCalls = response.functionCalls();
-    } catch (fcError) {
-      console.warn("[Chat] functionCalls() threw:", (fcError as Error)?.message);
-      functionCalls = null;
-    }
+    // SDK v0.24 は思考モデルの functionCalls() を正しくパースする
+    const functionCalls = response.functionCalls();
     if (functionCalls && functionCalls.length > 0) {
       for (const functionCall of functionCalls) {
       let functionResult: { success: boolean; message: string } = {
@@ -779,7 +741,7 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
             functionResponse: { name: fc.name, response: fc.result as object },
           }))
         ));
-        reply = safeExtractText(finalResult.response);
+        reply = finalResult.response.text();
       } catch (textErr) {
         console.warn("Final sendMessage failed:", (textErr as Error)?.message?.substring(0, 200));
         reply = "";
@@ -791,13 +753,18 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
         reply = summaries.join("\n");
       }
     } else {
-      reply = safeExtractText(response);
+      try {
+        reply = response.text();
+      } catch (textErr) {
+        console.warn("[Chat] response.text() failed:", (textErr as Error)?.message);
+        reply = "";
+      }
     }
 
     // 最終ガード: 空返信を防止
     if (!reply.trim()) {
-      console.warn("Empty reply detected. functionCalls:", executedFunctionCalls.length, 
-        "text extraction failed for response with candidates:", JSON.stringify(response.candidates?.map((c: any) => c.content?.parts?.map((p: any) => Object.keys(p)))?.flat()));
+      console.warn("Empty reply detected. functionCalls:", executedFunctionCalls.length,
+        "finishReason:", response.candidates?.[0]?.finishReason);
       reply = "すみません、応答の生成に失敗しました。もう一度お試しください。";
     }
 

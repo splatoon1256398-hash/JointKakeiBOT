@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
         if (delErr) console.warn("Storage削除エラー:", delErr);
       });
 
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
 
     const imagePart = {
       inlineData: {
