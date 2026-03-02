@@ -293,8 +293,9 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
 - 登録・修正完了時は必ずサマリーを表示`;
 
     // ===== Gemini モデル（Function Calling） =====
+    // gemini-2.0-flash: Function Callingに最適化。思考モデル(2.5)はSDK v0.21と非互換
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash",
+      model: "gemini-2.0-flash",
       tools: [
         {
           functionDeclarations: [
