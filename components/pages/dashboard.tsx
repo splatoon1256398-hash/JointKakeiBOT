@@ -34,6 +34,7 @@ interface Transaction {
   memo: string;
   user_type?: string;
   items?: { categoryMain: string; categorySub: string; storeName: string; amount: number; memo: string }[] | null;
+  source?: string;
 }
 
 interface CategoryBudget {
@@ -580,6 +581,7 @@ export function Dashboard({ onNavigateToAnalysis, onNavigateToHistory }: Dashboa
                           categoryIcon={categoryIcons[t.category_main] || '📦'}
                           amount={t.amount}
                           items={t.items}
+                          source={t.source}
                           onEdit={() => {
                             setEditingTransaction({
                               id: t.id,

@@ -20,6 +20,7 @@ interface Transaction {
   memo: string;
   type: string;
   items?: TransactionItem[] | null;
+  source?: string;
 }
 
 interface CategoryDataItem {
@@ -525,6 +526,7 @@ export function Analysis() {
       amount: number;
       memo: string;
       parentId?: string;  // レシート由来の場合、親トランザクションID
+      source?: string;    // 登録元（gmail_pubsub / gmail_webhook / manual）
     }
 
     const detailItems: DetailItem[] = [];
@@ -543,6 +545,7 @@ export function Analysis() {
             amount: item.amount,
             memo: item.memo,
             parentId: t.id,
+            source: t.source,
           });
         });
       } else if (t.category_sub === selectedSubCategory) {
@@ -554,6 +557,7 @@ export function Analysis() {
           store_name: t.store_name,
           amount: t.amount,
           memo: t.memo,
+          source: t.source,
         });
       }
     });
@@ -626,6 +630,7 @@ export function Analysis() {
                               categorySub={si.category_sub}
                               categoryIcon={categoryIcons[si.category_main] || '📦'}
                               amount={si.amount}
+                              source={si.source}
                             />
                           ))}
                         </div>
@@ -642,6 +647,7 @@ export function Analysis() {
                         categorySub={item.category_sub}
                         categoryIcon={categoryIcons[item.category_main] || '📦'}
                         amount={item.amount}
+                        source={item.source}
                       />
                     );
                   }
@@ -657,6 +663,7 @@ export function Analysis() {
                       categorySub={item.category_sub}
                       categoryIcon={categoryIcons[item.category_main] || '📦'}
                       amount={item.amount}
+                      source={item.source}
                       onEdit={() => {
                         setEditingTransaction({
                           id: item.id,

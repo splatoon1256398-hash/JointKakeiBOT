@@ -520,6 +520,7 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
                   title: "共同支出が登録されました",
                   body: `${displayName}が共同支出を登録: ${(args.store_name as string) || (args.category_main as string)} ¥${Number(args.amount).toLocaleString()}`,
                   excludeUserId: user.id,
+                  notificationType: "joint_expense_alert",
                 }),
               });
             } catch (pushErr) {
@@ -717,14 +718,34 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
       } // end for loop
 
       // すべての関数結果をまとめてAIに返して最終応答を生成
-      const finalResult = await withRetry(() => chat.sendMessage(
-        executedFunctionCalls.map(fc => ({
-          functionResponse: { name: fc.name, response: fc.result as object },
-        }))
-      ));
-      reply = finalResult.response.text();
+      try {
+        const finalResult = await withRetry(() => chat.sendMessage(
+          executedFunctionCalls.map(fc => ({
+            functionResponse: { name: fc.name, response: fc.result as object },
+          }))
+        ));
+        reply = finalResult.response.text() || "";
+      } catch (textErr) {
+        console.warn("Final response text extraction failed:", textErr);
+        reply = "";
+      }
+
+      // AIがテキストを返さなかった場合、関数実行結果からデフォルトメッセージを構築
+      if (!reply.trim()) {
+        const summaries = executedFunctionCalls.map(fc => fc.result.message);
+        reply = summaries.join("\n");
+      }
     } else {
-      reply = response.text();
+      try {
+        reply = response.text() || "";
+      } catch {
+        reply = "";
+      }
+    }
+
+    // 最終ガード: 空返信を防止
+    if (!reply.trim()) {
+      reply = "処理が完了しましたが、応答の生成に失敗しました。もう一度お試しください。";
     }
 
     return NextResponse.json({

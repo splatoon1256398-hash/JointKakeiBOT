@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Pencil, ChevronDown } from "lucide-react";
+import { Pencil, ChevronDown, Mail } from "lucide-react";
 
 export interface ExpenseCardProps {
   id?: string;
@@ -16,6 +16,7 @@ export interface ExpenseCardProps {
   onEdit?: () => void;
   type?: "expense" | "income";
   items?: { categoryMain: string; categorySub: string; storeName: string; amount: number; memo: string }[] | null;
+  source?: string | null;
 }
 
 // カテゴリアイコンマップ
@@ -38,10 +39,12 @@ export function ExpenseCard({
   onEdit,
   type = "expense",
   items,
+  source,
 }: ExpenseCardProps) {
   const [expanded, setExpanded] = useState(false);
   const isIncome = type === "income";
   const hasItems = items && Array.isArray(items) && items.length > 1;
+  const isGmail = source && source.startsWith("gmail");
 
   // レシート（items複数）の場合は店名メインで品目数表示
   // 通常カード: 店名 > メモ > カテゴリ
@@ -84,6 +87,12 @@ export function ExpenseCard({
             ) : (
               <span className="inline-flex items-center bg-white/10 rounded-full px-2 py-0.5 text-[10px] text-white/60">
                 {categorySub}
+              </span>
+            )}
+            {isGmail && (
+              <span className="inline-flex items-center gap-0.5 bg-red-500/15 rounded-full px-1.5 py-0.5 text-[10px] text-red-300 border border-red-500/20">
+                <Mail className="w-2.5 h-2.5" />
+                Gmail
               </span>
             )}
           </div>

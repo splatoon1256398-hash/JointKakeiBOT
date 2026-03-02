@@ -159,6 +159,7 @@ export async function POST(request: NextRequest) {
         store_name: body.store,
         memo: body.memo || `Gmail自動登録: ${body.store}`,
         date: body.date,
+        source: "gmail_webhook",
       })
       .select()
       .single();

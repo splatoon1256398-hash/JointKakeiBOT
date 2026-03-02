@@ -65,15 +65,20 @@ function extractHeader(headers: any[], name: string): string {
 }
 
 /**
- * DB重複排除: messageId が既に処理済みかチェック
+ * DB重複排除: messageId を原子的にロックして重複処理を防止
+ * return true = 新規（処理OK）、false = 既に処理済み（スキップ）
  */
-async function isMessageAlreadyProcessed(messageId: string): Promise<boolean> {
-  const { data } = await supabaseAdmin
-    .from("transactions")
-    .select("id")
-    .eq("source", `gmail_pubsub:${messageId}`)
-    .limit(1);
-  return (data && data.length > 0) || false;
+async function tryLockMessage(userId: string, messageId: string): Promise<boolean> {
+  // gmail_processed_messages に UNIQUE(user_id, message_id) 制約あり
+  // insert が成功すれば未処理、失敗すれば既に処理済み
+  const { error } = await supabaseAdmin
+    .from("gmail_processed_messages")
+    .insert({ user_id: userId, message_id: messageId });
+  if (error) {
+    // unique violation = 既に処理済み
+    return false;
+  }
+  return true;
 }
 
 /**
@@ -318,9 +323,9 @@ export async function POST(request: Request) {
         for (const msg of messagesData.messages) {
           const messageId: string = msg.id;
 
-          // DB重複排除
-          if (await isMessageAlreadyProcessed(messageId)) {
-            console.log(`Already processed (DB) messageId: ${messageId}`);
+          // DB重複排除（原子的ロック）
+          if (!(await tryLockMessage(userSettings.user_id, messageId))) {
+            console.log(`Already processed (DB lock) messageId: ${messageId}`);
             continue;
           }
 

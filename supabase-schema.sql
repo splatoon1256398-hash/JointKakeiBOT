@@ -409,3 +409,30 @@ DO $$ BEGIN
     COMMENT ON COLUMN fixed_expenses.end_date IS '固定費の適用終了日。NULLの場合は無期限';
   END IF;
 END $$;
+
+-- マイグレーション: transactions テーブルに source カラムを追加
+-- 登録元の識別（manual / gmail_webhook / gmail_pubsub:xxx）
+DO $$ 
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'transactions' AND column_name = 'source'
+  ) THEN
+    ALTER TABLE transactions ADD COLUMN source TEXT DEFAULT 'manual';
+    COMMENT ON COLUMN transactions.source IS '登録元: manual / gmail_webhook / gmail_pubsub:{messageId} / chat';
+  END IF;
+END $$;
+
+-- マイグレーション: Gmail Pub/Sub 重複処理防止テーブル
+-- UNIQUE 制約で原子的なロックを実現
+CREATE TABLE IF NOT EXISTS gmail_processed_messages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  message_id TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(user_id, message_id)
+);
+
+ALTER TABLE gmail_processed_messages ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can manage own processed messages" ON gmail_processed_messages
+  FOR ALL USING (auth.uid() = user_id);

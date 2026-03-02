@@ -30,6 +30,7 @@ interface Transaction {
   type: string;
   items?: { categoryMain: string; categorySub: string; storeName: string; amount: number; memo: string }[] | null;
   metadata?: { gross_amount?: number } | null;
+  source?: string;
 }
 
 interface HistoryProps {
@@ -243,6 +244,7 @@ export function History({ isCompact = false }: HistoryProps) {
                           amount={t.amount}
                           type={t.type as "expense" | "income"}
                           items={t.items}
+                          source={t.source}
                           onEdit={() => {
                             setEditingTransaction({
                               id: t.id,
@@ -315,6 +317,7 @@ export function History({ isCompact = false }: HistoryProps) {
                             amount={t.amount}
                             type={t.type as "expense" | "income"}
                             items={t.items}
+                            source={t.source}
                             onEdit={() => {
                               setEditingTransaction({
                                 id: t.id,
