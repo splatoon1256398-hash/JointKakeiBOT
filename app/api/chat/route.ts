@@ -10,6 +10,36 @@ const supabaseAdmin = createClient(
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
 /**
+ * Gemini レスポンスからテキストを安全に抽出する
+ * gemini-2.5-flash は思考(thought)パートを含むため .text() が失敗する場合がある
+ */
+function safeExtractText(response: any): string {
+  // Method 1: 標準の .text()
+  try {
+    const text = response.text();
+    if (text && text.trim()) return text;
+  } catch (e) {
+    console.log("response.text() threw, trying manual extraction:", (e as Error)?.message?.substring(0, 100));
+  }
+
+  // Method 2: candidates から手動でテキストパートを抽出
+  try {
+    const candidates = response.candidates;
+    if (candidates && candidates.length > 0) {
+      const parts = candidates[0].content?.parts || [];
+      const textParts = parts
+        .filter((p: any) => typeof p.text === "string")
+        .map((p: any) => p.text);
+      if (textParts.length > 0) return textParts.join("");
+    }
+  } catch (e) {
+    console.log("Manual text extraction also failed:", (e as Error)?.message?.substring(0, 100));
+  }
+
+  return "";
+}
+
+/**
  * リトライ付きGemini呼び出し（最大2回リトライ）
  */
 async function withRetry<T>(fn: () => Promise<T>, maxRetries = 2): Promise<T> {
@@ -451,6 +481,12 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
     const result = await withRetry(() => chat.sendMessage(message));
     const response = result.response;
 
+    // デバッグ: レスポンスの構造をログ
+    try {
+      const parts = response.candidates?.[0]?.content?.parts || [];
+      console.log(`[Chat] Response parts: ${parts.length}, types: [${parts.map((p: any) => Object.keys(p).join("+")).join(", ")}]`);
+    } catch {}
+
     let reply = "";
     let newLastRecordedId = lastRecordedId;
     let shouldRefresh = false;
@@ -724,9 +760,9 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
             functionResponse: { name: fc.name, response: fc.result as object },
           }))
         ));
-        reply = finalResult.response.text() || "";
+        reply = safeExtractText(finalResult.response);
       } catch (textErr) {
-        console.warn("Final response text extraction failed:", textErr);
+        console.warn("Final sendMessage failed:", (textErr as Error)?.message?.substring(0, 200));
         reply = "";
       }
 
@@ -736,16 +772,14 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
         reply = summaries.join("\n");
       }
     } else {
-      try {
-        reply = response.text() || "";
-      } catch {
-        reply = "";
-      }
+      reply = safeExtractText(response);
     }
 
     // 最終ガード: 空返信を防止
     if (!reply.trim()) {
-      reply = "処理が完了しましたが、応答の生成に失敗しました。もう一度お試しください。";
+      console.warn("Empty reply detected. functionCalls:", executedFunctionCalls.length, 
+        "text extraction failed for response with candidates:", JSON.stringify(response.candidates?.map((c: any) => c.content?.parts?.map((p: any) => Object.keys(p)))?.flat()));
+      reply = "すみません、応答の生成に失敗しました。もう一度お試しください。";
     }
 
     return NextResponse.json({
