@@ -50,10 +50,20 @@ interface ChatRequest {
   lastRecordedId: string | null;
 }
 
+function getJSTDateString(): string {
+  const now = new Date();
+  // UTC+9
+  const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  return `${jst.getUTCFullYear()}-${String(jst.getUTCMonth() + 1).padStart(2, "0")}-${String(jst.getUTCDate()).padStart(2, "0")}`;
+}
+
 function getMonthRange() {
   const now = new Date();
-  const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
-  const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  const year = jst.getUTCFullYear();
+  const month = jst.getUTCMonth();
+  const firstDay = new Date(Date.UTC(year, month, 1));
+  const lastDay = new Date(Date.UTC(year, month + 1, 0));
   return {
     start: firstDay.toISOString().split("T")[0],
     end: lastDay.toISOString().split("T")[0],
@@ -85,9 +95,11 @@ export async function POST(request: NextRequest) {
 
     // ===== コンテキスト取得 =====
     const { start, end } = getMonthRange();
+    const todayJST = getJSTDateString();
     const now = new Date();
-    const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const prevMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
+    const jstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+    const prevMonth = new Date(Date.UTC(jstNow.getUTCFullYear(), jstNow.getUTCMonth() - 1, 1));
+    const prevMonthEnd = new Date(Date.UTC(jstNow.getUTCFullYear(), jstNow.getUTCMonth(), 0));
     const prevStart = `${prevMonth.getFullYear()}-${String(prevMonth.getMonth() + 1).padStart(2, "0")}-01`;
     const prevEnd = `${prevMonthEnd.getFullYear()}-${String(prevMonthEnd.getMonth() + 1).padStart(2, "0")}-${String(prevMonthEnd.getDate()).padStart(2, "0")}`;
 
@@ -191,6 +203,7 @@ export async function POST(request: NextRequest) {
     const systemPrompt = `あなたは「${selectedUser}」の家計簿パーソナル執事AIである。
 無意味な挨拶や冗長な説明は省き、ユーザーの資産管理を支える「正確なツール」として振る舞え。
 現在のユーザー名: ${displayName}
+現在の日本時間(JST): ${todayJST}
 
 【現在の状況】
 - 今月の支出合計: ¥${totalExpense.toLocaleString()}
@@ -210,6 +223,8 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
 - 過去に「記録しました」と返答済みでも、新しいメッセージに金額があれば必ず recordExpense を呼べ
 - 「牛丼 1580円」→記録 → 「水 239円」→ また別の recordExpense を呼べ
 - 絶対に「既に記録済み」と判断するな。新メッセージ = 新しい記録
+- ❗recordExpense関数を呼ばずに「記録しました」というテキストだけ返すのは絶対禁止
+- recordExpense関数を実際に呼び出さない限り、DBには何も記録されない。テキストで記録完了と言うだけでは不十分
 
 【区分(user_type)の決定ルール】
 - 現在の選択区分: 「${selectedUser}」
@@ -510,8 +525,7 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
             user_type: (args.user_type as string) || selectedUser,
             type: "expense",
             date:
-              (args.date as string) ||
-              new Date().toISOString().split("T")[0],
+              (args.date as string) || todayJST,
             category_main: catMain,
             category_sub: catSub,
             store_name: (args.store_name as string) || "",
@@ -764,6 +778,12 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
         console.warn("[Chat] response.text() failed:", (textErr as Error)?.message);
         reply = "";
       }
+    }
+
+    // ガード: AIがrecordExpenseを呼ばずに「記録完了」テキストだけ返した場合を検出
+    if (executedFunctionCalls.length === 0 && /記録完了|記録しました/.test(reply)) {
+      console.warn("[Chat] Model returned '記録完了' text without calling recordExpense. Forcing retry hint.");
+      reply = "⚠️ 記録処理が正しく実行されませんでした。もう一度送信してください。";
     }
 
     // 最終ガード: 空返信を防止

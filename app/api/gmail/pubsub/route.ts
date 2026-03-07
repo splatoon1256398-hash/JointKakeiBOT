@@ -391,7 +391,7 @@ export async function POST(request: Request) {
                 category_sub: item.category_sub,
                 store_name: item.store,
                 amount: item.amount,
-                memo: item.memo || `${item.store} - ${subject.substring(0, 50)}`,
+                memo: item.memo || item.store || "",
                 source: `gmail_pubsub:${messageId}`,
               });
 

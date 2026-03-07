@@ -2,9 +2,10 @@
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { X } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
+import { useApp } from "@/contexts/app-context";
 
 interface Transaction {
   id: string;
@@ -36,32 +37,46 @@ export function CategoryDetailDialog({
   subCategoryData,
   transactions,
 }: CategoryDetailDialogProps) {
+  const { theme } = useApp();
   const total = subCategoryData.reduce((sum, item) => sum + item.value, 0);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto bg-slate-900/95 backdrop-blur-xl border-slate-700">
-        <DialogHeader>
-          <div className="flex items-center justify-between">
-            <DialogTitle className="flex items-center gap-2 text-white">
-              <span className="text-2xl">{categoryIcon}</span>
-              {categoryName} の詳細
-            </DialogTitle>
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto bg-slate-900/95 backdrop-blur-xl border-slate-700 p-0">
+        {/* ヘッダー: グラデーション背景 */}
+        <div 
+          className="relative p-5 pb-4 rounded-t-lg"
+          style={{ background: `linear-gradient(135deg, ${theme.primary}22, ${theme.secondary}22)` }}
+        >
+          <div className="flex items-center gap-3">
             <Button
               onClick={() => onOpenChange(false)}
               variant="ghost"
               size="sm"
-              className="h-8 w-8 p-0 text-gray-400 hover:text-white"
+              className="h-9 w-9 p-0 rounded-full border transition-all hover:scale-105 active:scale-95"
+              style={{ 
+                borderColor: theme.primary,
+                color: theme.primary,
+                backgroundColor: `${theme.primary}15`,
+              }}
             >
-              <X className="h-4 w-4" />
+              <ArrowLeft className="h-4 w-4" />
             </Button>
+            <DialogHeader className="flex-1 space-y-0">
+              <DialogTitle className="flex items-center gap-2 text-white text-lg">
+                <span className="text-2xl">{categoryIcon}</span>
+                {categoryName}
+              </DialogTitle>
+              <p className="text-sm font-semibold" style={{ color: theme.primary }}>
+                合計: ¥{total.toLocaleString()}
+              </p>
+            </DialogHeader>
           </div>
-          <p className="text-sm text-gray-400">合計: ¥{total.toLocaleString()}</p>
-        </DialogHeader>
+        </div>
 
-        <div className="space-y-4">
+        <div className="space-y-4 p-5 pt-2">
           {/* 小カテゴリー円グラフ */}
-          <div className="bg-slate-800/50 rounded-xl p-4">
+          <div className="rounded-xl p-4" style={{ background: `${theme.primary}08`, border: `1px solid ${theme.primary}20` }}>
             <h4 className="text-sm font-semibold text-white mb-3">内訳</h4>
             <div className="flex items-center gap-4">
               {/* 左側：凡例 */}
@@ -109,7 +124,7 @@ export function CategoryDetailDialog({
           </div>
 
           {/* 明細リスト */}
-          <div className="bg-slate-800/50 rounded-xl p-4">
+          <div className="rounded-xl p-4" style={{ background: `${theme.primary}08`, border: `1px solid ${theme.primary}20` }}>
             <h4 className="text-sm font-semibold text-white mb-3">明細一覧</h4>
             <div className="space-y-2 max-h-96 overflow-y-auto">
               {transactions.length === 0 ? (
@@ -118,12 +133,12 @@ export function CategoryDetailDialog({
                 transactions.map((t) => (
                   <div
                     key={t.id}
-                    className="flex items-center justify-between p-3 rounded-lg bg-slate-900/50 hover:bg-slate-900/70 transition-colors"
+                    className="flex items-center justify-between p-3 rounded-lg bg-slate-900/60 hover:bg-slate-900/80 transition-all"
                   >
                     <div className="flex-1 min-w-0">
                       <p className="text-sm text-white truncate">{t.store_name || t.memo || t.category_sub}</p>
                       <div className="flex items-center gap-2 mt-1">
-                        <Badge variant="outline" className="text-xs">
+                        <Badge variant="outline" className="text-xs" style={{ borderColor: `${theme.primary}50`, color: theme.primary }}>
                           {t.category_sub}
                         </Badge>
                         <span className="text-xs text-gray-400">{t.date}</span>
