@@ -73,6 +73,7 @@ export function Dashboard({ onNavigateToAnalysis, onNavigateToHistory }: Dashboa
   const [isLoading, setIsLoading] = useState(true);
   const [monthlySpent, setMonthlySpent] = useState(0);
   const [income, setIncome] = useState(0);
+  const [noMoneyDays, setNoMoneyDays] = useState(0);
   const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
   const [categoryIcons, setCategoryIcons] = useState<Record<string, string>>({});
   const [categoryBudgets, setCategoryBudgets] = useState<CategoryBudget[]>([]);
@@ -121,7 +122,7 @@ export function Dashboard({ onNavigateToAnalysis, onNavigateToHistory }: Dashboa
 
       const { data: monthlyData } = await supabase
         .from('transactions')
-        .select('amount, category_main, items')
+        .select('amount, category_main, items, date')
         .eq('user_type', userType)
         .eq('type', 'expense')
         .gte('date', start)
@@ -129,6 +130,16 @@ export function Dashboard({ onNavigateToAnalysis, onNavigateToHistory }: Dashboa
 
       const total = monthlyData?.reduce((sum, t) => sum + t.amount, 0) || 0;
       setMonthlySpent(total);
+
+      // ノーマネーデー: 今月1日〜今日のうち「支出がない日」を正しくカウント
+      const now = new Date();
+      const expenseDateSet = new Set((monthlyData || []).map((t) => t.date));
+      let noMoneyCount = 0;
+      for (let d = 1; d <= now.getDate(); d++) {
+        const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        if (!expenseDateSet.has(dateStr)) noMoneyCount++;
+      }
+      setNoMoneyDays(noMoneyCount);
 
       // 収入: target_month があればそれを基準、なければ date を基準に月別集計
       const currentMonth = start.substring(0, 7); // "YYYY-MM"
@@ -270,19 +281,6 @@ export function Dashboard({ onNavigateToAnalysis, onNavigateToHistory }: Dashboa
     t.category_sub === '外食' || t.category_sub === 'カフェ・間食'
   ).length;
 
-  // ノーマネーデー計算
-  const getNoMoneyDays = () => {
-    const now = new Date();
-    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-    const expenseDates = new Set(recentTransactions.map(t => t.date));
-    let count = 0;
-    for (let d = 1; d <= Math.min(now.getDate(), daysInMonth); d++) {
-      const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-      if (!expenseDates.has(dateStr)) count++;
-    }
-    return count;
-  };
-
   // ウィジェットレンダリングヘルパー
   const ICON_MAP: Record<string, any> = {
     food_budget: UtensilsCrossed,
@@ -386,7 +384,7 @@ export function Dashboard({ onNavigateToAnalysis, onNavigateToHistory }: Dashboa
           <QuickStatsCard
             key={index}
             title="ノーマネーデー"
-            value={`${getNoMoneyDays()}日`}
+            value={`${noMoneyDays}日`}
             icon={IconComp}
             subtitle="今月"
             colorClass={meta.colorClass}

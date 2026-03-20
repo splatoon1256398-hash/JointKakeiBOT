@@ -16,7 +16,7 @@ webpush.setVapidDetails(
 
 export async function POST(request: NextRequest) {
   try {
-    const { title, body, excludeUserId, targetUserId, notificationType } = await request.json();
+    const { title, body, excludeUserId, targetUserId, notificationType, url } = await request.json();
 
     if (!title || !body) {
       return NextResponse.json(
@@ -73,7 +73,16 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const payload = JSON.stringify({ title, body, url: "/" });
+    const inferredUrl = (() => {
+      if (typeof url === "string" && url.trim()) return url;
+      if (notificationType === "joint_expense_alert") return "/?page=kakeibo&tab=history";
+      if (notificationType === "budget_alert") return "/?page=kakeibo&tab=analysis";
+      if (typeof title === "string" && title.includes("Gmail")) return "/?page=kakeibo&tab=history";
+      if (typeof title === "string" && title.includes("共同支出")) return "/?page=kakeibo&tab=history";
+      return "/";
+    })();
+
+    const payload = JSON.stringify({ title, body, url: inferredUrl });
 
     // 全購読者に送信
     const results = await Promise.allSettled(

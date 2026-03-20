@@ -174,7 +174,8 @@ async function checkBudgetAlert(
   userId: string,
   userType: string,
   parsedItems: { category_main: string; amount: number }[],
-  appUrl: string
+  appUrl: string,
+  dateForLink?: string
 ): Promise<void> {
   try {
     const now = new Date();
@@ -252,6 +253,9 @@ async function checkBudgetAlert(
           body: alerts.join("\n"),
           targetUserId: userId,
           notificationType: "budget_alert",
+          url: dateForLink
+            ? `/?page=kakeibo&tab=history&date=${dateForLink}`
+            : "/?page=kakeibo&tab=analysis",
         }),
       });
 
@@ -378,9 +382,10 @@ export async function POST(request: Request) {
           // 各商品を個別トランザクションとしてINSERT
           const userType = userSettings.linked_user_type || "共同";
           let insertedCount = 0;
+          let firstInsertedTxId: string | null = null;
 
           for (const item of parsedItems) {
-            const { error: insertError } = await supabaseAdmin
+            const { data: inserted, error: insertError } = await supabaseAdmin
               .from("transactions")
               .insert({
                 user_id: userSettings.user_id,
@@ -393,12 +398,17 @@ export async function POST(request: Request) {
                 amount: item.amount,
                 memo: item.memo || item.store || "",
                 source: `gmail_pubsub:${messageId}`,
-              });
+              })
+              .select("id")
+              .single();
 
             if (insertError) {
               console.error("Transaction insert error:", insertError);
             } else {
               insertedCount++;
+              if (!firstInsertedTxId) {
+                firstInsertedTxId = inserted?.id || null;
+              }
             }
           }
 
@@ -413,6 +423,7 @@ export async function POST(request: Request) {
               const totalAmount = parsedItems.reduce((s, i) => s + i.amount, 0);
               const storeName = parsedItems[0]?.store || "不明";
               const itemCount = parsedItems.length > 1 ? `(${parsedItems.length}件)` : "";
+              const dateForLink = parsedItems[0]?.date?.substring(0, 10);
               const appUrl = process.env.NEXT_PUBLIC_APP_URL || "";
               await fetch(`${appUrl}/api/push/send`, {
                 method: "POST",
@@ -421,11 +432,14 @@ export async function POST(request: Request) {
                   title: "自動記録完了",
                   body: `${storeName}${itemCount}での決済(¥${totalAmount.toLocaleString()})を自動記録しました`,
                   targetUserId: userSettings.user_id,
+                  url: dateForLink
+                    ? `/?page=kakeibo&tab=history&date=${dateForLink}${firstInsertedTxId ? `&txId=${firstInsertedTxId}` : ""}`
+                    : "/?page=kakeibo&tab=history",
                 }),
               });
 
               // 予算アラートチェック
-              await checkBudgetAlert(userSettings.user_id, userType, parsedItems, appUrl);
+              await checkBudgetAlert(userSettings.user_id, userType, parsedItems, appUrl, dateForLink);
             } catch (pushError) {
               console.error("Push notification error:", pushError);
             }

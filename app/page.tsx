@@ -68,6 +68,21 @@ function AppContent() {
     setCurrentPage("kakeibo");
   };
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const page = params.get("page");
+    const tab = params.get("tab");
+
+    if (page === "dashboard" || page === "kakeibo" || page === "savings" || page === "chat") {
+      setCurrentPage(page);
+    }
+    if (tab === "analysis" || tab === "history") {
+      setKakeiboTab(tab);
+      setCurrentPage("kakeibo");
+    }
+  }, [setKakeiboTab]);
+
   // スプラッシュ表示中
   if (showSplash) {
     return <SplashScreen fadeOut={splashFadeOut} />;

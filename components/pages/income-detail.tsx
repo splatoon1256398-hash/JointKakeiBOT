@@ -195,7 +195,7 @@ export function IncomeDetail({ onBack, selectedYear, selectedMonth }: Props) {
         {/* ヘッダー */}
         <button
           onClick={() => setView("top")}
-          className="flex items-center gap-2 text-white/60 hover:text-white transition-colors"
+          className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 border border-white/20 bg-white/10 text-white/90 hover:bg-white/20 transition-colors"
         >
           <ChevronLeft className="h-5 w-5" />
           <span className="text-sm">収入分析に戻る</span>
@@ -490,7 +490,7 @@ export function IncomeDetail({ onBack, selectedYear, selectedMonth }: Props) {
       {/* 戻るボタン */}
       <button
         onClick={onBack}
-        className="flex items-center gap-2 text-white/60 hover:text-white transition-colors"
+        className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 border border-white/20 bg-white/10 text-white/90 hover:bg-white/20 transition-colors"
       >
         <ChevronLeft className="h-5 w-5" />
         <span className="text-sm">分析に戻る</span>

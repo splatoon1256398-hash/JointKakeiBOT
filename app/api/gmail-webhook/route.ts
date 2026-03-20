@@ -22,7 +22,8 @@ async function checkBudgetAlert(
   userId: string,
   userType: string,
   categoryMain: string,
-  appUrl: string
+  appUrl: string,
+  dateForLink?: string
 ): Promise<void> {
   try {
     const now = new Date();
@@ -95,6 +96,9 @@ async function checkBudgetAlert(
           body: alertBody,
           targetUserId: userId,
           notificationType: "budget_alert",
+          url: dateForLink
+            ? `/?page=kakeibo&tab=history&date=${dateForLink}`
+            : "/?page=kakeibo&tab=analysis",
         }),
       });
 
@@ -182,6 +186,7 @@ export async function POST(request: NextRequest) {
           title: "Gmail支出が自動登録されました",
           body: `¥${body.amount.toLocaleString()} (${body.memo || body.store})`,
           targetUserId: settings.user_id,
+          url: `/?page=kakeibo&tab=history&date=${body.date.substring(0, 10)}&txId=${transaction.id}`,
         }),
       });
     } catch (pushError) {
@@ -199,6 +204,7 @@ export async function POST(request: NextRequest) {
             body: `¥${body.amount.toLocaleString()} (${body.memo || body.store})`,
             excludeUserId: settings.user_id,
             notificationType: "joint_expense_alert",
+            url: `/?page=kakeibo&tab=history&date=${body.date.substring(0, 10)}&txId=${transaction.id}`,
           }),
         });
       } catch (pushError) {
@@ -211,7 +217,8 @@ export async function POST(request: NextRequest) {
       settings.user_id,
       body.user_type,
       body.category_main,
-      new URL(request.url).origin
+      new URL(request.url).origin,
+      body.date.substring(0, 10)
     );
 
     return NextResponse.json({

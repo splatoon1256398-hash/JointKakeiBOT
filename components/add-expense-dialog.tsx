@@ -251,10 +251,11 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
     try {
       // 現在のユーザーIDを取得
       const { data: { user } } = await supabase.auth.getUser();
+      let insertedTxId: string | null = null;
       
       if (items.length > 1) {
         // 複数項目 → 1つのトランザクション + items JSONB に格納
-        const { error } = await supabase
+        const { data: inserted, error } = await supabase
           .from('transactions')
           .insert({
             user_id: user?.id,
@@ -273,17 +274,20 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
               amount: item.amount,
               memo: item.memo,
             })),
-          });
+          })
+          .select('id')
+          .single();
 
         if (error) {
           console.error('Supabase保存エラー:', error);
           alert(`保存に失敗しました: ${error.message}`);
           return;
         }
+        insertedTxId = inserted?.id || null;
       } else {
         // 単一項目 → 通常のトランザクション
         const item = items[0];
-        const { error } = await supabase
+        const { data: inserted, error } = await supabase
           .from('transactions')
           .insert({
             user_id: user?.id,
@@ -295,13 +299,16 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
             store_name: item.storeName,
             amount: item.amount,
             memo: item.memo,
-          });
+          })
+          .select('id')
+          .single();
 
         if (error) {
           console.error('Supabase保存エラー:', error);
           alert(`保存に失敗しました: ${error.message}`);
           return;
         }
+        insertedTxId = inserted?.id || null;
       }
 
       alert('支出を追加しました！');
@@ -318,6 +325,7 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
               body: `¥${totalAmount.toLocaleString()} (${memoText})`,
               excludeUserId: user?.id,
               notificationType: "joint_expense_alert",
+              url: `/?page=kakeibo&tab=history&date=${date}${insertedTxId ? `&txId=${insertedTxId}` : ""}`,
             }),
           });
         } catch (pushError) {
@@ -456,6 +464,7 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
             body: alerts.join('\n'),
             targetUserId: userId,
             notificationType: 'budget_alert',
+            url: `/?page=kakeibo&tab=analysis`,
           }),
         });
 

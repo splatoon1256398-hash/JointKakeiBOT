@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { ChevronRight, ChevronLeft, ChevronsLeft, ChevronsRight, TrendingUp, TrendingDown, Calendar as CalendarIcon, Banknote } from "lucide-react";
+import { ChevronRight, ChevronLeft, ChevronsLeft, ChevronsRight, TrendingUp, TrendingDown, Calendar as CalendarIcon, Banknote, Search, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useApp } from "@/contexts/app-context";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
@@ -9,6 +9,7 @@ import { ExpenseCard } from "@/components/widgets/expense-card";
 import { EditTransactionDialog, TransactionForEdit } from "@/components/edit-transaction-dialog";
 import { type TransactionItem } from "@/lib/gemini";
 import { IncomeDetail } from "@/components/pages/income-detail";
+import { Input } from "@/components/ui/input";
 
 interface Transaction {
   id: string;
@@ -65,6 +66,8 @@ export function Analysis() {
   const [selectedSubCategory, setSelectedSubCategory] = useState<string>('');
   const [editingTransaction, setEditingTransaction] = useState<TransactionForEdit | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
 
   // 月の移動ヘルパー
   const goToPrevMonth = useCallback(() => {
@@ -240,6 +243,12 @@ export function Analysis() {
   };
 
   const totalExpense = categoryData.reduce((sum, c) => sum + c.value, 0);
+  const normalizedQuery = searchQuery.trim().toLowerCase();
+
+  const categoryDataForView = categoryData.filter((cat) => {
+    if (!normalizedQuery) return true;
+    return `${cat.name} ${cat.icon}`.toLowerCase().includes(normalizedQuery);
+  });
 
   // ドリルダウンハンドラー
   const handleMainCategoryClick = (name: string) => {
@@ -270,6 +279,19 @@ export function Analysis() {
     const lastDayStr = `${selectedYear}-${mm}-${String(lastDay.getDate()).padStart(2, '0')}`;
     return transactions.filter(t => {
       if (t.type !== 'expense' || t.date < firstDayStr || t.date > lastDayStr) return false;
+
+      if (normalizedQuery) {
+        const words = `${t.date} ${t.category_main} ${t.category_sub} ${t.store_name} ${t.memo} ${t.amount}`.toLowerCase();
+        const itemWords = (t.items && Array.isArray(t.items))
+          ? (t.items as TransactionItem[])
+              .map((item) => `${item.categoryMain} ${item.categorySub} ${item.storeName} ${item.memo} ${item.amount}`.toLowerCase())
+              .join(" ")
+          : "";
+        if (!words.includes(normalizedQuery) && !itemWords.includes(normalizedQuery)) {
+          return false;
+        }
+      }
+
       if (t.items && Array.isArray(t.items) && t.items.length > 0) {
         return (t.items as TransactionItem[]).some(item =>
           item.categoryMain === selectedMainCategory &&
@@ -339,12 +361,12 @@ export function Analysis() {
           <TrendingDown className="h-4 w-4 text-red-400" />
           {selectedMonth}月の支出内訳
         </h3>
-        {categoryData.length === 0 ? (
+        {categoryDataForView.length === 0 ? (
           <p className="text-white/40 text-center py-8 text-sm">この月の支出はありません</p>
         ) : (
           <div className="flex items-center gap-4">
             <div className="flex-1 space-y-2">
-              {categoryData.slice(0, 6).map((cat, index) => (
+              {categoryDataForView.slice(0, 6).map((cat, index) => (
                 <div key={cat.name} className="flex items-center gap-2">
                   <div className="w-3 h-3 rounded-sm flex-shrink-0" style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }} />
                   <div className="flex-1 min-w-0">
@@ -357,8 +379,8 @@ export function Analysis() {
             <div className="w-40 h-40 relative">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie data={categoryData} cx="50%" cy="50%" innerRadius={35} outerRadius={65} paddingAngle={3} dataKey="value" startAngle={90} endAngle={-270}>
-                    {categoryData.map((_, index) => (
+                  <Pie data={categoryDataForView} cx="50%" cy="50%" innerRadius={35} outerRadius={65} paddingAngle={3} dataKey="value" startAngle={90} endAngle={-270}>
+                    {categoryDataForView.map((_, index) => (
                       <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
                     ))}
                   </Pie>
@@ -377,11 +399,11 @@ export function Analysis() {
       </div>
 
       {/* カテゴリー別リスト */}
-      {categoryData.length > 0 && (
+      {categoryDataForView.length > 0 && (
         <div className="card-solid p-4">
           <h3 className="text-sm font-semibold text-white mb-3">カテゴリー詳細</h3>
           <div className="space-y-2">
-            {categoryData.map((cat) => {
+            {categoryDataForView.map((cat) => {
               const pct = totalExpense > 0 ? (cat.value / totalExpense * 100) : 0;
               return (
                 <button
@@ -463,7 +485,10 @@ export function Analysis() {
 
     return (
       <div className="space-y-3">
-        <button onClick={handleBack} className="flex items-center gap-2 text-white/60 hover:text-white transition-colors">
+        <button
+          onClick={handleBack}
+          className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 border border-white/20 bg-white/10 text-white/90 hover:bg-white/20 transition-colors"
+        >
           <ChevronLeft className="h-5 w-5" />
           <span className="text-sm">カテゴリー一覧に戻る</span>
         </button>
@@ -574,7 +599,10 @@ export function Analysis() {
 
     return (
       <div className="space-y-3">
-        <button onClick={handleBack} className="flex items-center gap-2 text-white/60 hover:text-white transition-colors">
+        <button
+          onClick={handleBack}
+          className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 border border-white/20 bg-white/10 text-white/90 hover:bg-white/20 transition-colors"
+        >
           <ChevronLeft className="h-5 w-5" />
           <span className="text-sm">{selectedMainCategory} に戻る</span>
         </button>
@@ -709,6 +737,37 @@ export function Analysis() {
 
   return (
     <div className="space-y-3">
+      <div className="flex items-center justify-end gap-2">
+        {isSearchOpen ? (
+          <div className="flex items-center gap-2 w-full">
+            <Input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="カテゴリ・店名・メモ・金額で検索"
+              className="h-9 bg-slate-800/60 border-white/15 text-white placeholder:text-white/40"
+            />
+            <button
+              onClick={() => {
+                setSearchQuery("");
+                setIsSearchOpen(false);
+              }}
+              className="h-9 w-9 rounded-full border border-white/20 bg-white/10 text-white/80 hover:text-white hover:bg-white/20 transition-colors flex items-center justify-center"
+              aria-label="検索を閉じる"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setIsSearchOpen(true)}
+            className="h-9 w-9 rounded-full border border-white/20 bg-white/10 text-white/80 hover:text-white hover:bg-white/20 transition-colors flex items-center justify-center"
+            aria-label="検索"
+          >
+            <Search className="h-4 w-4" />
+          </button>
+        )}
+      </div>
+
       {/* 月選択ナビゲーション */}
       {renderMonthNav()}
 

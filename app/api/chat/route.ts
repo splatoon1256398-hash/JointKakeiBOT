@@ -549,6 +549,7 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
           if (userType === "共同") {
             try {
               const origin = new URL(request.url).origin;
+              const transactionDate = ((args.date as string) || todayJST).substring(0, 10);
               await fetch(`${origin}/api/push/send`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -557,6 +558,7 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
                   body: `${displayName}が共同支出を登録: ${(args.store_name as string) || (args.category_main as string)} ¥${Number(args.amount).toLocaleString()}`,
                   excludeUserId: user.id,
                   notificationType: "joint_expense_alert",
+                  url: `/?page=kakeibo&tab=history&date=${transactionDate}${newLastRecordedId ? `&txId=${newLastRecordedId}` : ""}`,
                 }),
               });
             } catch (pushErr) {

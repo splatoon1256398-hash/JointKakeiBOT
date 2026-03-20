@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { History as HistoryIcon, Calendar as CalendarIcon, List } from "lucide-react";
+import { History as HistoryIcon, Calendar as CalendarIcon, List, Search, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useApp } from "@/contexts/app-context";
 import { ExpenseCard } from "@/components/widgets/expense-card";
 import { EditTransactionDialog, TransactionForEdit } from "@/components/edit-transaction-dialog";
+import { Input } from "@/components/ui/input";
 import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
 
@@ -46,6 +47,9 @@ export function History({ isCompact = false }: HistoryProps) {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [editingTransaction, setEditingTransaction] = useState<TransactionForEdit | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [targetTxId, setTargetTxId] = useState<string | null>(null);
 
   const fetchCategoryIcons = async () => {
     const { data } = await supabase
@@ -94,7 +98,62 @@ export function History({ isCompact = false }: HistoryProps) {
     }
   }, [refreshTrigger]);
 
-  const groupedTransactions = transactions.reduce((acc, transaction) => {
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const dateParam = params.get("date");
+    const txIdParam = params.get("txId");
+    if (!dateParam || !/^\d{4}-\d{2}-\d{2}$/.test(dateParam)) return;
+
+    const d = new Date(`${dateParam}T00:00:00`);
+    if (Number.isNaN(d.getTime())) return;
+    setSelectedDate(d);
+    setViewMode("calendar");
+    if (txIdParam) setTargetTxId(txIdParam);
+  }, []);
+
+  useEffect(() => {
+    if (!targetTxId || isLoading) return;
+
+    let attempts = 0;
+    const maxAttempts = 8;
+
+    const scrollToTarget = () => {
+      const target = document.querySelector(`[data-tx-id="${targetTxId}"]`) as HTMLElement | null;
+      if (target) {
+        target.scrollIntoView({ behavior: "smooth", block: "center" });
+        return;
+      }
+
+      attempts += 1;
+      if (attempts < maxAttempts) {
+        setTimeout(scrollToTarget, 250);
+      }
+    };
+
+    scrollToTarget();
+  }, [targetTxId, isLoading, viewMode, selectedDate, transactions, searchQuery]);
+
+  const normalizedQuery = searchQuery.trim().toLowerCase();
+  const filteredTransactions = transactions.filter((t) => {
+    if (!normalizedQuery) return true;
+    const words = [
+      t.date,
+      t.category_main,
+      t.category_sub,
+      t.store_name,
+      t.memo,
+      t.type,
+      String(t.amount),
+      `¥${t.amount}`,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return words.includes(normalizedQuery);
+  });
+
+  const groupedTransactions = filteredTransactions.reduce((acc, transaction) => {
     const date = transaction.date;
     if (!acc[date]) {
       acc[date] = [];
@@ -151,6 +210,37 @@ export function History({ isCompact = false }: HistoryProps) {
 
   return (
     <div className={isCompact ? "space-y-4" : "space-y-6 pb-24"}>
+      <div className="flex items-center justify-end gap-2">
+        {isSearchOpen ? (
+          <div className="flex items-center gap-2 w-full">
+            <Input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="店名・メモ・カテゴリ・金額で検索"
+              className="h-9 bg-slate-800/60 border-white/15 text-white placeholder:text-white/40"
+            />
+            <button
+              onClick={() => {
+                setSearchQuery("");
+                setIsSearchOpen(false);
+              }}
+              className="h-9 w-9 rounded-full border border-white/20 bg-white/10 text-white/80 hover:text-white hover:bg-white/20 transition-colors flex items-center justify-center"
+              aria-label="検索を閉じる"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setIsSearchOpen(true)}
+            className="h-9 w-9 rounded-full border border-white/20 bg-white/10 text-white/80 hover:text-white hover:bg-white/20 transition-colors flex items-center justify-center"
+            aria-label="検索"
+          >
+            <Search className="h-4 w-4" />
+          </button>
+        )}
+      </div>
+
       {/* コンパクトモード時のタブ */}
       {isCompact && (
         <div className="relative inline-flex w-full rounded-lg p-0.5 border border-white/10" style={{ background: 'rgba(0,0,0,0.2)' }}>
@@ -234,34 +324,39 @@ export function History({ isCompact = false }: HistoryProps) {
                     {/* 明細 */}
                     <div className="p-2 space-y-1.5">
                       {dayTransactions.map((t) => (
-                        <ExpenseCard
+                        <div
                           key={t.id}
-                          memo={t.memo}
-                          storeName={t.store_name}
-                          categoryMain={t.category_main}
-                          categorySub={t.category_sub}
-                          categoryIcon={categoryIcons[t.category_main] || '📦'}
-                          amount={t.amount}
-                          type={t.type as "expense" | "income"}
-                          items={t.items}
-                          source={t.source}
-                          onEdit={() => {
-                            setEditingTransaction({
-                              id: t.id,
-                              date: t.date,
-                              category_main: t.category_main,
-                              category_sub: t.category_sub,
-                              store_name: t.store_name,
-                              amount: t.amount,
-                              memo: t.memo,
-                              user_type: selectedUser,
-                              type: t.type,
-                              items: t.items,
-                              metadata: t.metadata,
-                            });
-                            setIsEditDialogOpen(true);
-                          }}
-                        />
+                          data-tx-id={t.id}
+                          className={targetTxId === t.id ? "rounded-xl ring-2 ring-yellow-300/90 shadow-lg shadow-yellow-300/20" : ""}
+                        >
+                          <ExpenseCard
+                            memo={t.memo}
+                            storeName={t.store_name}
+                            categoryMain={t.category_main}
+                            categorySub={t.category_sub}
+                            categoryIcon={categoryIcons[t.category_main] || '📦'}
+                            amount={t.amount}
+                            type={t.type as "expense" | "income"}
+                            items={t.items}
+                            source={t.source}
+                            onEdit={() => {
+                              setEditingTransaction({
+                                id: t.id,
+                                date: t.date,
+                                category_main: t.category_main,
+                                category_sub: t.category_sub,
+                                store_name: t.store_name,
+                                amount: t.amount,
+                                memo: t.memo,
+                                user_type: selectedUser,
+                                type: t.type,
+                                items: t.items,
+                                metadata: t.metadata,
+                              });
+                              setIsEditDialogOpen(true);
+                            }}
+                          />
+                        </div>
                       ))}
                     </div>
                   </div>
@@ -307,34 +402,39 @@ export function History({ isCompact = false }: HistoryProps) {
                       {/* 明細（ExpenseCard） */}
                       <div className="p-2 space-y-1.5">
                         {dayTransactions.map((t) => (
-                          <ExpenseCard
+                          <div
                             key={t.id}
-                            memo={t.memo}
-                            storeName={t.store_name}
-                            categoryMain={t.category_main}
-                            categorySub={t.category_sub}
-                            categoryIcon={categoryIcons[t.category_main] || '📦'}
-                            amount={t.amount}
-                            type={t.type as "expense" | "income"}
-                            items={t.items}
-                            source={t.source}
-                            onEdit={() => {
-                              setEditingTransaction({
-                                id: t.id,
-                                date: t.date,
-                                category_main: t.category_main,
-                                category_sub: t.category_sub,
-                                store_name: t.store_name,
-                                amount: t.amount,
-                                memo: t.memo,
-                                user_type: selectedUser,
-                                type: t.type,
-                                items: t.items,
-                                metadata: t.metadata,
-                              });
-                              setIsEditDialogOpen(true);
-                            }}
-                          />
+                            data-tx-id={t.id}
+                            className={targetTxId === t.id ? "rounded-xl ring-2 ring-yellow-300/90 shadow-lg shadow-yellow-300/20" : ""}
+                          >
+                            <ExpenseCard
+                              memo={t.memo}
+                              storeName={t.store_name}
+                              categoryMain={t.category_main}
+                              categorySub={t.category_sub}
+                              categoryIcon={categoryIcons[t.category_main] || '📦'}
+                              amount={t.amount}
+                              type={t.type as "expense" | "income"}
+                              items={t.items}
+                              source={t.source}
+                              onEdit={() => {
+                                setEditingTransaction({
+                                  id: t.id,
+                                  date: t.date,
+                                  category_main: t.category_main,
+                                  category_sub: t.category_sub,
+                                  store_name: t.store_name,
+                                  amount: t.amount,
+                                  memo: t.memo,
+                                  user_type: selectedUser,
+                                  type: t.type,
+                                  items: t.items,
+                                  metadata: t.metadata,
+                                });
+                                setIsEditDialogOpen(true);
+                              }}
+                            />
+                          </div>
                         ))}
                       </div>
                     </div>

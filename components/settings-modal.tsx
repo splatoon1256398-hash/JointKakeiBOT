@@ -96,7 +96,7 @@ export function SettingsModal() {
               onClick={() => setIsSettingsOpen(false)}
               variant="ghost"
               size="sm"
-              className="h-8 w-8 p-0 text-gray-400 hover:text-white"
+              className="h-8 w-8 p-0 rounded-full border border-white/20 bg-white/10 text-white/85 hover:text-white hover:bg-white/20"
             >
               <X className="h-4 w-4" />
             </Button>
