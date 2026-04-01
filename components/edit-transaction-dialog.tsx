@@ -349,6 +349,21 @@ export function EditTransactionDialog({ open, onOpenChange, transaction }: EditT
             </div>
           ) : (
             <>
+              {/* 単一品目ヘッダー（追加ボタン付き） */}
+              <div className="flex items-center justify-between">
+                <Label className="text-white/70 text-xs">品目（1点）</Label>
+                <button
+                  type="button"
+                  onClick={() => setItems([
+                    { categoryMain, categorySub, storeName, amount, memo },
+                    { categoryMain: "食費", categorySub: "食料品", storeName: "", amount: 0, memo: "" }
+                  ])}
+                  className="flex items-center gap-1 text-xs px-2 py-1 rounded-md hover:bg-white/10 transition-colors"
+                  style={{ color: theme.primary }}
+                >
+                  <Plus className="h-3 w-3" /> 追加
+                </button>
+              </div>
               {/* カテゴリー（DBから取得） */}
               <div className="grid gap-3 grid-cols-2">
                 <div className="space-y-1">

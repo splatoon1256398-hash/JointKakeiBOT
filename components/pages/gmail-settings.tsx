@@ -10,6 +10,7 @@ interface UserSettings {
   linked_user_type?: string;
   google_refresh_token?: string | null;
   gmail_watch_expiration?: string | null;
+  gmail_auto_processing?: boolean | null;
 }
 
 interface GmailFilter {
@@ -19,11 +20,36 @@ interface GmailFilter {
   keyword: string;
 }
 
+// Bearer token取得ヘルパー
+async function getAuthHeaders(): Promise<Record<string, string>> {
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token || "";
+  return { "Authorization": `Bearer ${token}` };
+}
+
 export function GmailSettings() {
   const { user, theme } = useApp();
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+
+  // Gmail 自動処理 ON/OFF
+  const toggleAutoProcessing = async () => {
+    if (!user || !settings) return;
+    const newValue = settings.gmail_auto_processing === false ? true : false;
+    setSaving(true);
+    try {
+      await supabase
+        .from("user_settings")
+        .update({ gmail_auto_processing: newValue })
+        .eq("user_id", user.id);
+      setSettings({ ...settings, gmail_auto_processing: newValue });
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   // Gmail Pub/Sub 関連
   const [isWatching, setIsWatching] = useState(false);
@@ -64,7 +90,8 @@ export function GmailSettings() {
   const fetchFilters = async () => {
     if (!user) return;
     try {
-      const res = await fetch(`/api/gmail/filters?user_id=${user.id}`);
+      const auth = await getAuthHeaders();
+      const res = await fetch(`/api/gmail/filters?user_id=${user.id}`, { headers: auth });
       const data = await res.json();
       if (Array.isArray(data)) {
         setFilters(data);
@@ -90,9 +117,10 @@ export function GmailSettings() {
     if (!user) return;
     setIsWatching(true);
     try {
+      const auth = await getAuthHeaders();
       const res = await fetch("/api/gmail/watch", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...auth },
         body: JSON.stringify({ userId: user.id }),
       });
       const data = await res.json();
@@ -115,9 +143,10 @@ export function GmailSettings() {
     if (!user || !newFilter.keyword.trim()) return;
     setAddingFilter(true);
     try {
+      const auth = await getAuthHeaders();
       const res = await fetch("/api/gmail/filters", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...auth },
         body: JSON.stringify({
           userId: user.id,
           filterType: newFilter.filterType,
@@ -139,7 +168,8 @@ export function GmailSettings() {
   // フィルタ削除
   const deleteFilter = async (filterId: string) => {
     try {
-      await fetch(`/api/gmail/filters?id=${filterId}`, { method: "DELETE" });
+      const auth = await getAuthHeaders();
+      await fetch(`/api/gmail/filters?id=${filterId}`, { method: "DELETE", headers: auth });
       await fetchFilters();
     } catch (error) {
       console.error("フィルタ削除エラー:", error);
@@ -209,6 +239,33 @@ export function GmailSettings() {
               {ut}
             </button>
           ))}
+        </div>
+      </div>
+
+      {/* === 自動処理 ON/OFF === */}
+      <div className="rounded-xl p-4 bg-black/15 border border-white/5">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs font-semibold text-white">Gmail自動処理</p>
+            <p className="text-[10px] text-gray-400 mt-0.5">
+              {settings?.gmail_auto_processing === false
+                ? 'OFFにしています。メールは処理されません。'
+                : '決済メールを受信すると自動で家計簿に記録します'}
+            </p>
+          </div>
+          <button
+            onClick={toggleAutoProcessing}
+            disabled={saving}
+            className={`relative w-12 h-6 rounded-full transition-colors duration-200 flex-shrink-0 ${
+              settings?.gmail_auto_processing === false ? 'bg-white/15' : ''
+            }`}
+            style={settings?.gmail_auto_processing !== false ? { backgroundColor: theme.primary } : {}}
+            aria-label="Gmail自動処理トグル"
+          >
+            <span className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200 ${
+              settings?.gmail_auto_processing === false ? 'translate-x-1' : 'translate-x-7'
+            }`} />
+          </button>
         </div>
       </div>
 

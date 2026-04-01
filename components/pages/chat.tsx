@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { MessageCircle, Send, Sparkles, Loader2 } from "lucide-react";
+import { MessageCircle, Send, Sparkles, Loader2, Mic, MicOff } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useApp } from "@/contexts/app-context";
 
@@ -21,9 +21,40 @@ export function Chat() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const lastRecordedIdRef = useRef<string | null>(null);
   const sendingRef = useRef(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const recognitionRef = useRef<any>(null);
+
+  const startVoiceInput = () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const w = window as any;
+    const SpeechRecognitionAPI = w.SpeechRecognition || w.webkitSpeechRecognition;
+    if (!SpeechRecognitionAPI) {
+      alert('このブラウザは音声入力に対応していません。');
+      return;
+    }
+    if (isRecording) {
+      recognitionRef.current?.stop();
+      return;
+    }
+    const recognition = new SpeechRecognitionAPI();
+    recognition.lang = 'ja-JP';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    recognitionRef.current = recognition;
+    recognition.onstart = () => setIsRecording(true);
+    recognition.onend = () => setIsRecording(false);
+    recognition.onerror = () => setIsRecording(false);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    recognition.onresult = (event: any) => {
+      const transcript = event.results[0][0].transcript;
+      setInput((prev: string) => prev ? prev + ' ' + transcript : transcript);
+    };
+    recognition.start();
+  };
 
   // selectedUserが変わったらチャットをリセット
   useEffect(() => {
@@ -198,6 +229,18 @@ export function Chat() {
               className="flex-1 bg-slate-700/50 border-slate-600 text-white placeholder:text-gray-400"
               disabled={isLoading}
             />
+            <Button
+              type="button"
+              onClick={startVoiceInput}
+              disabled={isLoading}
+              variant="outline"
+              className={`border-slate-600 bg-slate-700/50 hover:bg-slate-600/50 px-3 ${isRecording ? 'border-red-500 bg-red-500/10' : ''}`}
+              title={isRecording ? '録音中（タップで停止）' : '音声入力'}
+            >
+              {isRecording
+                ? <MicOff className="h-5 w-5 text-red-400 animate-pulse" />
+                : <Mic className="h-5 w-5 text-slate-300" />}
+            </Button>
             <Button
               onClick={handleSend}
               disabled={isLoading || !input.trim()}

@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 
 async function withRetry<T>(fn: () => Promise<T>, maxRetries = 2): Promise<T> {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -76,8 +76,6 @@ export async function POST(request: NextRequest) {
         if (delErr) console.warn("Storage削除エラー:", delErr);
       });
 
-    const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
-
     const imagePart = {
       inlineData: {
         data: base64Data,
@@ -111,8 +109,11 @@ export async function POST(request: NextRequest) {
 - 日付が読み取れない場合は "${new Date().toISOString().split("T")[0]}" を使用してください
 - 必ずJSON形式のみで返答してください`;
 
-    const result = await withRetry(() => model.generateContent([prompt, imagePart]));
-    const text = result.response.text();
+    const result = await withRetry(() => ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: [{ role: "user", parts: [{ text: prompt }, imagePart] }],
+    }));
+    const text = result.text ?? "";
 
     console.log("Income scan Gemini response:", text);
 

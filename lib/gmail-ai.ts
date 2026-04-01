@@ -1,7 +1,7 @@
-import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
+import { GoogleGenAI, Type } from "@google/genai";
 
 // サーバーサイド専用（APIルートからのみ使用）
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 
 async function withRetry<T>(fn: () => Promise<T>, maxRetries = 2): Promise<T> {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -94,34 +94,28 @@ export async function parseEmailWithAI(
   receivedDate?: string
 ): Promise<ParsedTransaction[] | null> {
   try {
-    const model = genAI.getGenerativeModel({
-      model: "gemini-3-flash-preview",
-      generationConfig: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: SchemaType.OBJECT,
-          properties: {
-            is_transaction: { type: SchemaType.BOOLEAN },
-            items: {
-              type: SchemaType.ARRAY,
-              items: {
-                type: SchemaType.OBJECT,
-                properties: {
-                  date: { type: SchemaType.STRING },
-                  amount: { type: SchemaType.NUMBER },
-                  store: { type: SchemaType.STRING },
-                  category_main: { type: SchemaType.STRING },
-                  category_sub: { type: SchemaType.STRING },
-                  memo: { type: SchemaType.STRING },
-                },
-                required: ["date", "amount", "store", "category_main", "category_sub", "memo"],
-              },
+    const responseSchema = {
+      type: Type.OBJECT,
+      properties: {
+        is_transaction: { type: Type.BOOLEAN },
+        items: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              date: { type: Type.STRING },
+              amount: { type: Type.NUMBER },
+              store: { type: Type.STRING },
+              category_main: { type: Type.STRING },
+              category_sub: { type: Type.STRING },
+              memo: { type: Type.STRING },
             },
+            required: ["date", "amount", "store", "category_main", "category_sub", "memo"],
           },
-          required: ["is_transaction"],
         },
       },
-    });
+      required: ["is_transaction"],
+    };
 
     let categoryInstruction: string;
     if (categories && categories.length > 0) {
@@ -161,8 +155,15 @@ ${categoryInstruction}
 メール本文:
 ${emailBody.substring(0, 4000)}`;
 
-    const result = await withRetry(() => model.generateContent(prompt));
-    const text = result.response.text();
+    const result = await withRetry(() => ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema,
+      },
+    }));
+    const text = result.text ?? "";
     const parsed: ParsedEmailResult = JSON.parse(text);
 
     if (!parsed.is_transaction || !parsed.items || parsed.items.length === 0) {

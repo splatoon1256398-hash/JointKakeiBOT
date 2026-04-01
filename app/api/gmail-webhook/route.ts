@@ -90,7 +90,7 @@ async function checkBudgetAlert(
 
       await fetch(`${appUrl}/api/push/send`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Internal-Secret": process.env.INTERNAL_API_SECRET || "" },
         body: JSON.stringify({
           title: "予算アラート",
           body: alertBody,
@@ -181,7 +181,7 @@ export async function POST(request: NextRequest) {
     try {
       await fetch(pushUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Internal-Secret": process.env.INTERNAL_API_SECRET || "" },
         body: JSON.stringify({
           title: "Gmail支出が自動登録されました",
           body: `¥${body.amount.toLocaleString()} (${body.memo || body.store})`,
@@ -198,7 +198,7 @@ export async function POST(request: NextRequest) {
       try {
         await fetch(pushUrl, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", "X-Internal-Secret": process.env.INTERNAL_API_SECRET || "" },
           body: JSON.stringify({
             title: "共同支出が登録されました",
             body: `¥${body.amount.toLocaleString()} (${body.memo || body.store})`,

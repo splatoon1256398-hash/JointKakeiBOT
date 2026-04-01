@@ -31,10 +31,25 @@ async function getAccessToken(refreshToken: string): Promise<string | null> {
 
 export async function POST(request: Request) {
   try {
+    // Bearer token 認証
+    const authHeader = request.headers.get("authorization");
+    const token = authHeader?.replace("Bearer ", "");
+    if (!token) {
+      return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
+    }
+    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
+    if (authError || !user) {
+      return NextResponse.json({ error: "認証に失敗しました" }, { status: 401 });
+    }
+
     const { userId } = await request.json();
 
     if (!userId) {
       return NextResponse.json({ error: "userId is required" }, { status: 400 });
+    }
+
+    if (userId !== user.id) {
+      return NextResponse.json({ error: "権限がありません" }, { status: 403 });
     }
 
     // refresh_token を取得
@@ -81,9 +96,15 @@ export async function POST(request: Request) {
       ? new Date(parseInt(watchData.expiration)).toISOString()
       : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
+    // expiration と historyId を保存
+    const updatePayload: Record<string, string> = { gmail_watch_expiration: expiration };
+    if (watchData.historyId) {
+      updatePayload.gmail_history_id = String(watchData.historyId);
+    }
+
     await supabaseAdmin
       .from("user_settings")
-      .update({ gmail_watch_expiration: expiration })
+      .update(updatePayload)
       .eq("user_id", userId);
 
     return NextResponse.json({

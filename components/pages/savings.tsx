@@ -134,6 +134,7 @@ export function Savings() {
       const { error } = await supabase
         .from('saving_goals')
         .insert({
+          user_id: user?.id,
           user_type: selectedUser,
           goal_name: newGoal.goal_name,
           target_amount: parseInt(newGoal.target_amount),
@@ -248,23 +249,6 @@ export function Savings() {
         memo: withdrawMemo || null,
         date: new Date().toISOString().split('T')[0],
       });
-
-      // transactionsに「貯金からの取り崩し」として履歴を残す
-      const { error: insertError } = await supabase
-        .from('transactions')
-        .insert({
-          user_id: user.id,
-          user_type: selectedUser,
-          type: 'expense',
-          date: new Date().toISOString().split('T')[0],
-          category_main: '資金',
-          category_sub: '貯金・積立',
-          store_name: '',
-          amount: amount,
-          memo: `【貯金取崩】${withdrawGoal.goal_name}${withdrawMemo ? ` - ${withdrawMemo}` : ''}`,
-        });
-
-      if (insertError) throw insertError;
 
       await fetchGoals();
       // 展開中なら履歴も再取得
@@ -501,24 +485,24 @@ export function Savings() {
                           {logs[goal.id].map((log) => (
                             <div
                               key={log.id}
-                              className="flex items-center justify-between p-3 rounded-xl card-solid-inner"
+                              className={`flex items-center justify-between px-3 py-2.5 rounded-xl card-solid-inner border-l-2 ${
+                                log.type === 'deposit' ? 'border-emerald-500' : 'border-orange-500'
+                              }`}
                             >
-                              <div className="flex items-center gap-3">
-                                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
-                                  log.type === 'deposit' 
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className={`shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                                  log.type === 'deposit'
                                     ? 'bg-emerald-500/20 text-emerald-400'
                                     : 'bg-orange-500/20 text-orange-400'
                                 }`}>
-                                  {log.type === 'deposit' ? '入' : '出'}
-                                </div>
-                                <div>
-                                  <p className="text-sm text-white">
-                                    {log.memo || (log.type === 'deposit' ? '入金' : '取り崩し')}
-                                  </p>
-                                  <p className="text-xs text-gray-500">{log.date}</p>
-                                </div>
+                                  {log.type === 'deposit' ? '入金' : '出金'}
+                                </span>
+                                <span className="text-xs text-gray-500 shrink-0">{log.date}</span>
+                                {log.memo && (
+                                  <span className="text-xs text-white/60 truncate">{log.memo}</span>
+                                )}
                               </div>
-                              <span className={`text-sm font-bold ${
+                              <span className={`text-sm font-bold shrink-0 ml-2 ${
                                 log.type === 'deposit' ? 'text-emerald-400' : 'text-orange-400'
                               }`}>
                                 {log.type === 'deposit' ? '+' : '-'}¥{log.amount.toLocaleString()}

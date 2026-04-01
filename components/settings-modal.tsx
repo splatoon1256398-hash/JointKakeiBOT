@@ -2,8 +2,7 @@
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Button } from "@/components/ui/button";
-import { Settings as SettingsIcon, Tag, Wallet, CreditCard, Mail, Bell, LayoutGrid, X, User, Users } from "lucide-react";
+import { Settings as SettingsIcon, Tag, Wallet, CreditCard, Mail, Bell, LayoutGrid, User, Users } from "lucide-react";
 import { useApp } from "@/contexts/app-context";
 import { Settings } from "@/components/pages/settings";
 import { BudgetSettings } from "@/components/pages/budget-settings";
@@ -92,14 +91,6 @@ export function SettingsModal() {
                 )}
               </div>
             </div>
-            <Button
-              onClick={() => setIsSettingsOpen(false)}
-              variant="ghost"
-              size="sm"
-              className="h-8 w-8 p-0 rounded-full border border-white/20 bg-white/10 text-white/85 hover:text-white hover:bg-white/20"
-            >
-              <X className="h-4 w-4" />
-            </Button>
           </div>
         </DialogHeader>
 

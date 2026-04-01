@@ -247,7 +247,7 @@ async function checkBudgetAlert(
     if (alerts.length > 0) {
       await fetch(`${appUrl}/api/push/send`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Internal-Secret": process.env.INTERNAL_API_SECRET || "" },
         body: JSON.stringify({
           title: "予算アラート",
           body: alerts.join("\n"),
@@ -271,6 +271,13 @@ async function checkBudgetAlert(
 
 export async function POST(request: Request) {
   try {
+    // PUBSUB_TOKEN による認証（Pub/Sub サブスクリプション URL に ?token=xxx を付与）
+    const { searchParams } = new URL(request.url);
+    const pubsubToken = searchParams.get("token");
+    if (!pubsubToken || pubsubToken !== process.env.PUBSUB_TOKEN) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
     const body = await request.json();
 
     const pubsubMessage = body.message;
@@ -283,6 +290,7 @@ export async function POST(request: Request) {
     );
 
     const emailAddress = decodedData.emailAddress;
+    const notificationHistoryId = decodedData.historyId;
 
     if (!emailAddress) {
       return NextResponse.json({ error: "No email address in notification" }, { status: 400 });
@@ -290,7 +298,7 @@ export async function POST(request: Request) {
 
     const { data: users } = await supabaseAdmin
       .from("user_settings")
-      .select("user_id, google_refresh_token, linked_user_type, api_secret_key")
+      .select("user_id, google_refresh_token, linked_user_type, api_secret_key, gmail_auto_processing, gmail_history_id")
       .not("google_refresh_token", "is", null);
 
     if (!users || users.length === 0) {
@@ -301,6 +309,9 @@ export async function POST(request: Request) {
 
     for (const userSettings of users) {
       try {
+        // gmail_auto_processing が明示的に false の場合はスキップ
+        if (userSettings.gmail_auto_processing === false) continue;
+
         const accessToken = await getAccessToken(userSettings.google_refresh_token);
         if (!accessToken) continue;
 
@@ -315,17 +326,60 @@ export async function POST(request: Request) {
         // 処理済みラベルを取得 or 作成
         const processedLabelId = await getOrCreateLabelId(accessToken);
 
-        // 最新メッセージを取得
-        const messagesRes = await fetch(
-          `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=3&labelIds=INBOX`,
-          { headers: { Authorization: `Bearer ${accessToken}` } }
-        );
-        const messagesData = await messagesRes.json();
+        // historyId ベースの増分同期
+        const storedHistoryId = userSettings.gmail_history_id;
+        let messageIds: string[] = [];
 
-        if (!messagesData.messages || messagesData.messages.length === 0) continue;
+        if (storedHistoryId) {
+          // 増分同期: history.list で新着メッセージIDを取得
+          const historyRes = await fetch(
+            `https://gmail.googleapis.com/gmail/v1/users/me/history?startHistoryId=${storedHistoryId}&historyTypes=messageAdded&labelId=INBOX`,
+            { headers: { Authorization: `Bearer ${accessToken}` } }
+          );
+          const historyData = await historyRes.json();
 
-        for (const msg of messagesData.messages) {
-          const messageId: string = msg.id;
+          if (historyRes.status === 404) {
+            // historyId が古すぎる場合はフォールバック
+            const messagesRes = await fetch(
+              `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=3&labelIds=INBOX`,
+              { headers: { Authorization: `Bearer ${accessToken}` } }
+            );
+            const messagesData = await messagesRes.json();
+            messageIds = (messagesData.messages || []).map((m: { id: string }) => m.id);
+          } else if (historyData.history) {
+            // history から messagesAdded を抽出
+            const idSet = new Set<string>();
+            for (const h of historyData.history) {
+              if (h.messagesAdded) {
+                for (const added of h.messagesAdded) {
+                  if (added.message?.id) idSet.add(added.message.id);
+                }
+              }
+            }
+            messageIds = Array.from(idSet);
+          }
+        } else {
+          // historyId 未保存: フォールバック（従来通り最新3件）
+          const messagesRes = await fetch(
+            `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=3&labelIds=INBOX`,
+            { headers: { Authorization: `Bearer ${accessToken}` } }
+          );
+          const messagesData = await messagesRes.json();
+          messageIds = (messagesData.messages || []).map((m: { id: string }) => m.id);
+        }
+
+        if (messageIds.length === 0) {
+          // メッセージなしでも historyId を更新
+          if (notificationHistoryId) {
+            await supabaseAdmin
+              .from("user_settings")
+              .update({ gmail_history_id: notificationHistoryId })
+              .eq("user_id", userSettings.user_id);
+          }
+          continue;
+        }
+
+        for (const messageId of messageIds) {
 
           // DB重複排除（原子的ロック）
           if (!(await tryLockMessage(userSettings.user_id, messageId))) {
@@ -427,7 +481,7 @@ export async function POST(request: Request) {
               const appUrl = process.env.NEXT_PUBLIC_APP_URL || "";
               await fetch(`${appUrl}/api/push/send`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: { "Content-Type": "application/json", "X-Internal-Secret": process.env.INTERNAL_API_SECRET || "" },
                 body: JSON.stringify({
                   title: "自動記録完了",
                   body: `${storeName}${itemCount}での決済(¥${totalAmount.toLocaleString()})を自動記録しました`,
@@ -447,8 +501,17 @@ export async function POST(request: Request) {
 
           console.log(`Auto-recorded [${messageId}]: ${insertedCount} items from "${subject}"`);
         }
+
+        // 処理完了後に historyId を更新
+        if (notificationHistoryId) {
+          await supabaseAdmin
+            .from("user_settings")
+            .update({ gmail_history_id: notificationHistoryId })
+            .eq("user_id", userSettings.user_id);
+        }
       } catch (userError) {
         console.error(`Error processing user ${userSettings.user_id}:`, userError);
+        // エラー時は historyId を更新しない（次回リトライで再処理可能）
       }
     }
 

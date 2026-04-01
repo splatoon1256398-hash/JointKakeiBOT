@@ -8,6 +8,17 @@ const supabaseAdmin = createClient(
 
 export async function POST(request: NextRequest) {
   try {
+    // Bearer token 認証
+    const authHeader = request.headers.get("authorization");
+    const token = authHeader?.replace("Bearer ", "");
+    if (!token) {
+      return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
+    }
+    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
+    if (authError || !user) {
+      return NextResponse.json({ error: "認証に失敗しました" }, { status: 401 });
+    }
+
     const { subscription, userId } = await request.json();
 
     if (!subscription || !userId) {
@@ -15,6 +26,11 @@ export async function POST(request: NextRequest) {
         { error: "subscription と userId は必須です" },
         { status: 400 }
       );
+    }
+
+    // userId がトークンのユーザーと一致することを確認
+    if (userId !== user.id) {
+      return NextResponse.json({ error: "権限がありません" }, { status: 403 });
     }
 
     // 既存の購読を確認（同じエンドポイント）

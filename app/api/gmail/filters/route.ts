@@ -6,13 +6,32 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY || ""
 );
 
+// Bearer token 認証ヘルパー
+async function authenticate(request: Request) {
+  const authHeader = request.headers.get("authorization");
+  const token = authHeader?.replace("Bearer ", "");
+  if (!token) return null;
+  const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
+  if (error || !user) return null;
+  return user;
+}
+
 // GET: フィルタ一覧
 export async function GET(request: Request) {
+  const user = await authenticate(request);
+  if (!user) {
+    return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
+  }
+
   const { searchParams } = new URL(request.url);
   const userId = searchParams.get("user_id");
 
   if (!userId) {
     return NextResponse.json({ error: "user_id is required" }, { status: 400 });
+  }
+
+  if (userId !== user.id) {
+    return NextResponse.json({ error: "権限がありません" }, { status: 403 });
   }
 
   const { data, error } = await supabaseAdmin
@@ -30,11 +49,20 @@ export async function GET(request: Request) {
 
 // POST: フィルタ追加
 export async function POST(request: Request) {
+  const user = await authenticate(request);
+  if (!user) {
+    return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
+  }
+
   try {
     const { userId, filterType, targetType, keyword } = await request.json();
 
     if (!userId || !filterType || !targetType || !keyword) {
       return NextResponse.json({ error: "Missing fields" }, { status: 400 });
+    }
+
+    if (userId !== user.id) {
+      return NextResponse.json({ error: "権限がありません" }, { status: 403 });
     }
 
     const { data, error } = await supabaseAdmin
@@ -60,11 +88,27 @@ export async function POST(request: Request) {
 
 // DELETE: フィルタ削除
 export async function DELETE(request: Request) {
+  const user = await authenticate(request);
+  if (!user) {
+    return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
+  }
+
   const { searchParams } = new URL(request.url);
   const filterId = searchParams.get("id");
 
   if (!filterId) {
     return NextResponse.json({ error: "id is required" }, { status: 400 });
+  }
+
+  // フィルタの所有者を確認
+  const { data: filter } = await supabaseAdmin
+    .from("gmail_filters")
+    .select("user_id")
+    .eq("id", filterId)
+    .single();
+
+  if (!filter || filter.user_id !== user.id) {
+    return NextResponse.json({ error: "権限がありません" }, { status: 403 });
   }
 
   const { error } = await supabaseAdmin

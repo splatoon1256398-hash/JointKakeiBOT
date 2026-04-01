@@ -16,6 +16,23 @@ webpush.setVapidDetails(
 
 export async function POST(request: NextRequest) {
   try {
+    // 認証: INTERNAL_API_SECRET（サーバー間）または Bearer token（クライアント）
+    const internalSecret = request.headers.get("x-internal-secret");
+    const authHeader = request.headers.get("authorization");
+    const bearerToken = authHeader?.replace("Bearer ", "");
+
+    let authenticated = false;
+    if (internalSecret && internalSecret === process.env.INTERNAL_API_SECRET) {
+      authenticated = true;
+    } else if (bearerToken) {
+      const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(bearerToken);
+      if (!authError && user) authenticated = true;
+    }
+
+    if (!authenticated) {
+      return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
+    }
+
     const { title, body, excludeUserId, targetUserId, notificationType, url } = await request.json();
 
     if (!title || !body) {

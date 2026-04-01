@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
+import { GoogleGenAI, Type } from "@google/genai";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 
 /**
  * リトライ付きGemini呼び出し（最大2回リトライ）
@@ -288,45 +288,43 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
 
 - 複数件登録時は各件を箇条書きで並べる。絶対にテーブルを使わないこと`;
 
-    // ===== Gemini モデル（Function Calling） =====
-    // gemini-3-flash-preview + SDK v0.24: 最新モデル
-    const model = genAI.getGenerativeModel({
-      model: "gemini-3-flash-preview",
-      tools: [
-        {
-          functionDeclarations: [
+    // ===== Gemini ツール定義 =====
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const tools: any[] = [
+      {
+        functionDeclarations: [
             {
               name: "recordExpense",
               description: "支出を記録する。店名+金額が分かれば即座に呼ぶ",
               parameters: {
-                type: SchemaType.OBJECT,
+                type: Type.OBJECT,
                 properties: {
                   user_type: {
-                    type: SchemaType.STRING,
+                    type: Type.STRING,
                     description: "区分（共同/れん/あかね）",
                   },
                   category_main: {
-                    type: SchemaType.STRING,
+                    type: Type.STRING,
                     description: "大カテゴリー",
                   },
                   category_sub: {
-                    type: SchemaType.STRING,
+                    type: Type.STRING,
                     description: "小カテゴリー",
                   },
                   store_name: {
-                    type: SchemaType.STRING,
+                    type: Type.STRING,
                     description: "店名（ブランド名・店舗名）",
                   },
                   amount: {
-                    type: SchemaType.NUMBER,
+                    type: Type.NUMBER,
                     description: "金額",
                   },
                   date: {
-                    type: SchemaType.STRING,
+                    type: Type.STRING,
                     description: "日付（YYYY-MM-DD）",
                   },
                   memo: {
-                    type: SchemaType.STRING,
+                    type: Type.STRING,
                     description:
                       "メモ（商品詳細。店名だけの場合は空文字）",
                   },
@@ -344,35 +342,35 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
               description:
                 '直前に記録したトランザクションを修正する。「やっぱり○○円だった」「カテゴリを変えて」等に使う',
               parameters: {
-                type: SchemaType.OBJECT,
+                type: Type.OBJECT,
                 properties: {
                   transaction_id: {
-                    type: SchemaType.STRING,
+                    type: Type.STRING,
                     description:
                       "トランザクションID（省略時は直前の記録）",
                   },
                   amount: {
-                    type: SchemaType.NUMBER,
+                    type: Type.NUMBER,
                     description: "修正後の金額",
                   },
                   category_main: {
-                    type: SchemaType.STRING,
+                    type: Type.STRING,
                     description: "修正後の大カテゴリー",
                   },
                   category_sub: {
-                    type: SchemaType.STRING,
+                    type: Type.STRING,
                     description: "修正後の小カテゴリー",
                   },
                   store_name: {
-                    type: SchemaType.STRING,
+                    type: Type.STRING,
                     description: "修正後の店名",
                   },
                   memo: {
-                    type: SchemaType.STRING,
+                    type: Type.STRING,
                     description: "修正後のメモ",
                   },
                   date: {
-                    type: SchemaType.STRING,
+                    type: Type.STRING,
                     description: "修正後の日付",
                   },
                 },
@@ -383,14 +381,14 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
               name: "addSaving",
               description: "貯金目標に入金する",
               parameters: {
-                type: SchemaType.OBJECT,
+                type: Type.OBJECT,
                 properties: {
                   goal_name: {
-                    type: SchemaType.STRING,
+                    type: Type.STRING,
                     description: "目標名",
                   },
                   amount: {
-                    type: SchemaType.NUMBER,
+                    type: Type.NUMBER,
                     description: "入金額",
                   },
                 },
@@ -402,18 +400,18 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
               description:
                 '予算を設定・変更する。「予算を5万円にして」等',
               parameters: {
-                type: SchemaType.OBJECT,
+                type: Type.OBJECT,
                 properties: {
                   user_type: {
-                    type: SchemaType.STRING,
+                    type: Type.STRING,
                     description: "区分（共同/れん/あかね）",
                   },
                   category_main: {
-                    type: SchemaType.STRING,
+                    type: Type.STRING,
                     description: "対象カテゴリー",
                   },
                   monthly_budget: {
-                    type: SchemaType.NUMBER,
+                    type: Type.NUMBER,
                     description: "月間予算額",
                   },
                 },
@@ -425,18 +423,18 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
               description:
                 'カテゴリを追加・更新する。「カテゴリに推し活を追加して」等',
               parameters: {
-                type: SchemaType.OBJECT,
+                type: Type.OBJECT,
                 properties: {
                   main_category: {
-                    type: SchemaType.STRING,
+                    type: Type.STRING,
                     description: "大カテゴリー名",
                   },
                   subcategory: {
-                    type: SchemaType.STRING,
+                    type: Type.STRING,
                     description: "サブカテゴリー名",
                   },
                   icon: {
-                    type: SchemaType.STRING,
+                    type: Type.STRING,
                     description: "絵文字アイコン",
                   },
                 },
@@ -445,11 +443,9 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
             },
           ],
         },
-      ],
-    });
+      ];
 
     // ===== チャット履歴構築 =====
-    // Function Calling 履歴を正確に再構築（連続送信対応）
     const chatHistory: Array<{ role: "user" | "model"; parts: any[] }> = [
       { role: "user", parts: [{ text: systemPrompt }] },
       { role: "model", parts: [{ text: "はい、承知しました。家計簿アシスタントとして対応します。" }] },
@@ -459,24 +455,23 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
       if (m.role === "user") {
         chatHistory.push({ role: "user", parts: [{ text: m.content }] });
       } else {
-        // アシスタントのテキスト応答のみを履歴に含める
-        // functionCall/functionResponse の再構築はSDKバージョン間の互換性問題があるためスキップ
-        // テキスト応答に記録結果が含まれているのでコンテキストは十分
         if (m.content && m.content.trim()) {
           chatHistory.push({ role: "model", parts: [{ text: m.content }] });
         }
       }
     }
 
-    const chat = model.startChat({ history: chatHistory });
-
+    // ===== 第1回 Gemini 呼び出し =====
     let response;
     try {
-      const result = await withRetry(() => chat.sendMessage(message));
-      response = result.response;
+      response = await withRetry(() => ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: [...chatHistory, { role: "user", parts: [{ text: message }] }],
+        config: { tools },
+      }));
     } catch (geminiError) {
       const errDetail = geminiError instanceof Error ? geminiError.message : String(geminiError);
-      console.error("[Chat] Gemini sendMessage failed:", errDetail);
+      console.error("[Chat] Gemini generateContent failed:", errDetail);
       return NextResponse.json({
         reply: `AI接続エラーが発生しました。(${errDetail.substring(0, 100)})\nしばらく待ってからもう一度お試しください。`,
         lastRecordedId,
@@ -493,8 +488,7 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
     const executedFunctionCalls: Array<{ name: string; args: Record<string, unknown>; result: { success: boolean; message: string } }> = [];
 
     // ===== Function Calling 処理（複数対応） =====
-    // SDK v0.24 は思考モデルの functionCalls() を正しくパースする
-    const functionCalls = response.functionCalls();
+    const functionCalls = response.functionCalls;
     if (functionCalls && functionCalls.length > 0) {
       for (const functionCall of functionCalls) {
       let functionResult: { success: boolean; message: string } = {
@@ -552,7 +546,7 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
               const transactionDate = ((args.date as string) || todayJST).substring(0, 10);
               await fetch(`${origin}/api/push/send`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: { "Content-Type": "application/json", "X-Internal-Secret": process.env.INTERNAL_API_SECRET || "" },
                 body: JSON.stringify({
                   title: "共同支出が登録されました",
                   body: `${displayName}が共同支出を登録: ${(args.store_name as string) || (args.category_main as string)} ¥${Number(args.amount).toLocaleString()}`,
@@ -749,7 +743,7 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
       }
 
       executedFunctionCalls.push({
-        name: functionCall.name,
+        name: functionCall.name ?? "",
         args: { ...(functionCall.args as Record<string, unknown>) },
         result: functionResult,
       });
@@ -757,12 +751,22 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
 
       // すべての関数結果をまとめてAIに返して最終応答を生成
       try {
-        const finalResult = await withRetry(() => chat.sendMessage(
-          executedFunctionCalls.map(fc => ({
+        const modelTurn = response.candidates?.[0]?.content;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const finalContents: any[] = [
+          ...chatHistory,
+          { role: "user", parts: [{ text: message }] },
+          ...(modelTurn ? [modelTurn] : []),
+          { role: "user", parts: executedFunctionCalls.map(fc => ({
             functionResponse: { name: fc.name, response: fc.result as object },
-          }))
-        ));
-        reply = finalResult.response.text();
+          })) },
+        ];
+        const finalResult = await withRetry(() => ai.models.generateContent({
+          model: "gemini-3-flash-preview",
+          contents: finalContents,
+          config: { tools },
+        }));
+        reply = finalResult.text ?? "";
       } catch (textErr) {
         console.warn("Final sendMessage failed:", (textErr as Error)?.message?.substring(0, 200));
         reply = "";
@@ -775,9 +779,9 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
       }
     } else {
       try {
-        reply = response.text();
+        reply = response.text ?? "";
       } catch (textErr) {
-        console.warn("[Chat] response.text() failed:", (textErr as Error)?.message);
+        console.warn("[Chat] response.text failed:", (textErr as Error)?.message);
         reply = "";
       }
     }

@@ -5,7 +5,6 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Camera, Loader2, Sparkles, Upload, X, Plus, Trash2, Calendar, FileText } from "lucide-react";
 import { type ReceiptAnalysisResult, type ExpenseItem } from "@/lib/gemini";
 import { supabase } from "@/lib/supabase";
@@ -31,11 +30,13 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
         .order('sort_order')
         .then(({ data }) => {
           if (data) {
-            setDbCategories(data.map(d => ({
+            const cats = data.map(d => ({
               main: d.main_category,
               icon: d.icon || '📦',
               subs: d.subcategories || ['その他'],
-            })));
+            }));
+            setDbCategories(cats);
+            dbCategoriesRef.current = cats;
           }
         });
     }
@@ -51,7 +52,14 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
     return found?.icon || "📦";
   };
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisStage, setAnalysisStage] = useState<'uploading' | 'analyzing'>('uploading');
+  const dbCategoriesRef = useRef<{ main: string; icon: string; subs: string[] }[]>([]);
   const [isSaving, setIsSaving] = useState(false);
+  // カテゴリーピッカー状態
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerItemIndex, setPickerItemIndex] = useState(0);
+  const [pickerStep, setPickerStep] = useState<'main' | 'sub'>('main');
+  const [pickerTempMain, setPickerTempMain] = useState('');
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [isPdf, setIsPdf] = useState(false);
   const [continuousScan, setContinuousScan] = useState(false);
@@ -80,6 +88,32 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
       pdf: 'application/pdf',
     };
     return mimeMap[ext || ''] || 'image/jpeg';
+  };
+
+  // 画像をCanvas APIでリサイズ・圧縮してアップロード時間を短縮（PDFはそのまま）
+  const compressImage = async (file: File): Promise<File> => {
+    if (file.type === 'application/pdf' || file.type.includes('heic') || file.type.includes('heif')) return file;
+    return new Promise((resolve) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const MAX = 1200;
+        const scale = Math.min(1, MAX / Math.max(img.width, img.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        const ctx = canvas.getContext('2d');
+        if (!ctx) { resolve(file); return; }
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob((blob) => {
+          if (!blob) { resolve(file); return; }
+          resolve(new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' }));
+        }, 'image/jpeg', 0.82);
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+      img.src = url;
+    });
   };
 
   // Supabase Storageに画像をアップロードし、パスを返す
@@ -123,13 +157,16 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
     if (!file) return;
     e.target.value = '';
 
-    // プレビュー用にData URLを設定（表示のみ）
     const previewUrl = URL.createObjectURL(file);
     setCapturedImage(previewUrl);
     setIsPdf(false);
+    setIsAnalyzing(true);
+    setAnalysisStage('uploading');
 
     try {
-      const { path, mimeType } = await uploadToStorage(file);
+      const compressed = await compressImage(file);
+      const { path, mimeType } = await uploadToStorage(compressed);
+      setAnalysisStage('analyzing');
       await analyzeImage(path, mimeType);
     } catch (err) {
       console.error('カメラ処理エラー:', err);
@@ -148,9 +185,13 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
     const previewUrl = URL.createObjectURL(file);
     setCapturedImage(previewUrl);
     setIsPdf(isFilePdf);
+    setIsAnalyzing(true);
+    setAnalysisStage('uploading');
 
     try {
-      const { path, mimeType } = await uploadToStorage(file);
+      const compressed = await compressImage(file);
+      const { path, mimeType } = await uploadToStorage(compressed);
+      setAnalysisStage('analyzing');
       await analyzeImage(path, mimeType);
     } catch (err) {
       console.error('ファイル処理エラー:', err);
@@ -161,7 +202,6 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
 
   // サーバーサイドAPIでレシート解析（Storageパスのみ送信 → 413エラー原理的に不可能）
   const analyzeImage = async (storagePath: string, mimeType: string) => {
-    setIsAnalyzing(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
@@ -195,13 +235,23 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
       // 解析結果をフォームに反映（部分的な結果でも受け入れる）
       if (result.date) setDate(result.date);
       if (result.items && result.items.length > 0) {
-        setItems(result.items.map(item => ({
-          categoryMain: item.categoryMain || "その他",
-          categorySub: item.categorySub || "その他",
-          storeName: item.storeName || "",
-          amount: item.amount || 0,
-          memo: item.memo || "",
-        })));
+        const cats = dbCategoriesRef.current;
+        setItems(result.items.map(item => {
+          const main = item.categoryMain || "その他";
+          const catEntry = cats.find(c => c.main === main);
+          const validMain = catEntry ? main : (cats[0]?.main || "その他");
+          const validSubs = cats.find(c => c.main === validMain)?.subs || ["その他"];
+          const sub = item.categorySub && validSubs.includes(item.categorySub)
+            ? item.categorySub
+            : validSubs[0] || "その他";
+          return {
+            categoryMain: validMain,
+            categorySub: sub,
+            storeName: item.storeName || "",
+            amount: item.amount || 0,
+            memo: item.memo || "",
+          };
+        }));
       }
     } catch (error) {
       console.error("レシート解析エラー:", error);
@@ -249,8 +299,10 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
     setIsSaving(true);
 
     try {
-      // 現在のユーザーIDを取得
+      // 現在のユーザーIDとセッションを取得
       const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
+      const accessToken = session?.access_token || "";
       let insertedTxId: string | null = null;
       
       if (items.length > 1) {
@@ -319,7 +371,7 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
           const memoText = items[0]?.memo || items[0]?.storeName || items[0]?.categorySub || "支出";
           await fetch("/api/push/send", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${accessToken}` },
             body: JSON.stringify({
               title: "共同支出が登録されました",
               body: `¥${totalAmount.toLocaleString()} (${memoText})`,
@@ -456,9 +508,11 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
 
       // アラートがあればPush通知
       if (alerts.length > 0) {
+        const { data: { session: alertSession } } = await supabase.auth.getSession();
+        const alertToken = alertSession?.access_token || "";
         await fetch('/api/push/send', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${alertToken}` },
           body: JSON.stringify({
             title: '予算アラート',
             body: alerts.join('\n'),
@@ -504,22 +558,120 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
           </DialogDescription>
         </DialogHeader>
 
-        {/* AI解析中のアニメーション */}
+        {/* AI解析中のアニメーション（近未来スキャナー） */}
         {isAnalyzing && (
-          <div className="absolute inset-0 bg-background/95 backdrop-blur-md z-10 flex items-center justify-center rounded-lg">
-            <div className="text-center space-y-3">
-              <div className="relative">
-                <div className="absolute inset-0 bg-gradient-to-r from-purple-600 to-blue-600 rounded-full blur-xl opacity-50 animate-pulse"></div>
-                <Loader2 className="h-16 w-16 animate-spin text-purple-600 mx-auto relative" />
-                <Sparkles className="h-8 w-8 text-yellow-400 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 animate-pulse" />
+          <div className="absolute inset-0 bg-black/90 backdrop-blur-xl z-10 flex items-center justify-center rounded-lg overflow-hidden">
+            {/* 背景グリッド */}
+            <div className="absolute inset-0 opacity-10"
+              style={{ backgroundImage: 'linear-gradient(rgba(120,80,255,0.3) 1px, transparent 1px), linear-gradient(90deg, rgba(120,80,255,0.3) 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
+            {/* スキャンライン */}
+            <div className="absolute left-4 right-4 h-0.5 bg-gradient-to-r from-transparent via-purple-400 to-transparent opacity-80"
+              style={{ animation: 'scanline 2s ease-in-out infinite', top: '20%' }} />
+            <style>{`
+              @keyframes scanline { 0%,100%{top:20%;opacity:0} 10%{opacity:1} 90%{opacity:1} 50%{top:80%} }
+              @keyframes cornerPulse { 0%,100%{opacity:0.4} 50%{opacity:1} }
+            `}</style>
+            {/* コーナーマーカー */}
+            {[['top-6 left-6','border-t-2 border-l-2'],['top-6 right-6','border-t-2 border-r-2'],['bottom-6 left-6','border-b-2 border-l-2'],['bottom-6 right-6','border-b-2 border-r-2']].map(([pos, cls], i) => (
+              <div key={i} className={`absolute w-6 h-6 border-purple-400 ${pos} ${cls}`} style={{ animation: `cornerPulse 1.5s ease-in-out ${i * 0.2}s infinite` }} />
+            ))}
+            <div className="text-center space-y-4 px-8">
+              <div className="relative mx-auto w-16 h-16">
+                <div className="absolute inset-0 rounded-full border-2 border-purple-500/30 animate-ping" />
+                <div className="absolute inset-1 rounded-full border border-purple-400/60 animate-spin" style={{ animationDuration: '3s' }} />
+                <div className="absolute inset-3 rounded-full bg-gradient-to-br from-purple-600 to-blue-600 flex items-center justify-center">
+                  <Sparkles className="h-5 w-5 text-white" />
+                </div>
               </div>
-              <div className="space-y-1">
-                <p className="text-xl font-bold bg-gradient-to-r from-purple-600 via-pink-600 to-blue-600 bg-clip-text text-transparent animate-pulse">
-                  AIが読み取り中...
+              <div className="space-y-2">
+                <p className="text-base font-bold tracking-widest text-purple-300 uppercase">
+                  {analysisStage === 'uploading' ? 'UPLOADING...' : 'AI SCANNING...'}
                 </p>
-                <p className="text-xs text-muted-foreground">
-                  レシート情報を解析して項目を分類しています
+                <p className="text-xs text-white/40 tracking-wide">
+                  {analysisStage === 'uploading' ? '画像を送信中' : 'レシートを解析・分類中'}
                 </p>
+                <div className="flex justify-center gap-1 mt-1">
+                  {[0,1,2,3,4].map(i => (
+                    <div key={i} className="w-1 h-4 rounded-full bg-purple-500"
+                      style={{ animation: `pulse 1s ease-in-out ${i * 0.15}s infinite`, animationName: 'none', opacity: 0.3 + (i % 3) * 0.25 }} />
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* カテゴリーボトムシートピッカー */}
+        {pickerOpen && (
+          <div className="absolute inset-0 z-20 flex flex-col justify-end rounded-lg overflow-hidden">
+            <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setPickerOpen(false)} />
+            <div className="relative bg-slate-900/95 border-t border-white/10 rounded-t-2xl p-4 pb-6 max-h-[70%] flex flex-col"
+              style={{ boxShadow: '0 -8px 32px rgba(120,60,255,0.15)' }}>
+              {/* ハンドル */}
+              <div className="w-10 h-1 bg-white/20 rounded-full mx-auto mb-4" />
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  {pickerStep === 'sub' && (
+                    <button onClick={() => setPickerStep('main')} className="text-white/50 hover:text-white text-xs mr-1">←</button>
+                  )}
+                  <span className="text-sm font-bold text-white">
+                    {pickerStep === 'main' ? 'カテゴリーを選択' : `${pickerTempMain} › 小分類`}
+                  </span>
+                </div>
+                <button onClick={() => setPickerOpen(false)} className="text-white/40 hover:text-white text-xs px-2 py-1">✕</button>
+              </div>
+              <div className="overflow-y-auto flex-1">
+                {pickerStep === 'main' ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    {dbCategories.map((cat) => {
+                      const isSelected = items[pickerItemIndex]?.categoryMain === cat.main;
+                      return (
+                        <button
+                          key={cat.main}
+                          type="button"
+                          onClick={() => {
+                            setPickerTempMain(cat.main);
+                            setPickerStep('sub');
+                          }}
+                          className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border transition-all ${
+                            isSelected
+                              ? 'border-purple-500/60 bg-purple-500/15'
+                              : 'border-white/10 bg-white/5 hover:bg-white/10 hover:border-white/20'
+                          }`}
+                          style={isSelected ? { boxShadow: '0 0 12px rgba(168,85,247,0.4)' } : {}}
+                        >
+                          <span className="text-2xl">{cat.icon}</span>
+                          <span className="text-xs text-white/80 text-center leading-tight">{cat.main}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2">
+                    {getSubcategoriesFromDB(pickerTempMain).map((sub) => {
+                      const isSelected = items[pickerItemIndex]?.categoryMain === pickerTempMain && items[pickerItemIndex]?.categorySub === sub;
+                      return (
+                        <button
+                          key={sub}
+                          type="button"
+                          onClick={() => {
+                            updateItem(pickerItemIndex, 'categoryMain', pickerTempMain);
+                            updateItem(pickerItemIndex, 'categorySub', sub);
+                            setPickerOpen(false);
+                          }}
+                          className={`p-3 rounded-xl border text-xs transition-all ${
+                            isSelected
+                              ? 'border-purple-500/60 bg-purple-500/15 text-white font-semibold'
+                              : 'border-white/10 bg-white/5 hover:bg-white/10 text-white/70'
+                          }`}
+                          style={isSelected ? { boxShadow: '0 0 12px rgba(168,85,247,0.4)' } : {}}
+                        >
+                          {sub}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -649,47 +801,25 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
                     )}
                   </div>
 
-                  <div className="grid gap-2 grid-cols-2">
-                    {/* 大カテゴリー */}
-                    <div className="space-y-1">
-                      <Label className="text-xs">カテゴリー（大）*</Label>
-                      <Select 
-                        value={item.categoryMain} 
-                        onValueChange={(value) => updateItem(index, 'categoryMain', value)}
-                      >
-                        <SelectTrigger className="h-8 text-xs">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {dbCategories.map((category) => (
-                            <SelectItem key={category.main} value={category.main}>
-                              {category.icon} {category.main}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    {/* 小カテゴリー */}
-                    <div className="space-y-1">
-                      <Label className="text-xs">カテゴリー（小）*</Label>
-                      <Select 
-                        value={item.categorySub} 
-                        onValueChange={(value) => updateItem(index, 'categorySub', value)}
-                      >
-                        <SelectTrigger className="h-8 text-xs">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {getSubcategoriesFromDB(item.categoryMain).map((sub) => (
-                            <SelectItem key={sub} value={sub}>
-                              {sub}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
+                  {/* カテゴリー選択ボタン（ボトムシートピッカーを開く） */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPickerItemIndex(index);
+                      setPickerTempMain(item.categoryMain);
+                      setPickerStep('main');
+                      setPickerOpen(true);
+                    }}
+                    className="w-full flex items-center justify-between px-3 py-2 rounded-lg border border-white/15 bg-white/5 hover:bg-white/10 transition-all text-left"
+                  >
+                    <span className="flex items-center gap-2 text-xs text-white/80">
+                      <span className="text-base">{getCategoryIconFromDB(item.categoryMain)}</span>
+                      <span>{item.categoryMain}</span>
+                      <span className="text-white/30">/</span>
+                      <span className="text-white/60">{item.categorySub}</span>
+                    </span>
+                    <span className="text-[10px] text-white/30 shrink-0">変更 ›</span>
+                  </button>
 
                   <div className="grid gap-2 grid-cols-2">
                     {/* 店名 */}

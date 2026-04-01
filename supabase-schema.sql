@@ -129,12 +129,14 @@ CREATE TABLE IF NOT EXISTS saving_goals (
   deadline DATE,                        -- 期限
   icon TEXT DEFAULT '🎯',               -- アイコン（絵文字）
   color TEXT DEFAULT 'purple',          -- カラーテーマ
+  sort_order INTEGER DEFAULT 0,         -- 表示順序
   created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
 -- インデックスの作成
 CREATE INDEX IF NOT EXISTS idx_saving_goals_user_type ON saving_goals(user_type);
+CREATE INDEX IF NOT EXISTS idx_saving_goals_sort_order ON saving_goals(sort_order);
 
 -- RLS (Row Level Security) の有効化
 ALTER TABLE saving_goals ENABLE ROW LEVEL SECURITY;
@@ -436,3 +438,42 @@ CREATE TABLE IF NOT EXISTS gmail_processed_messages (
 ALTER TABLE gmail_processed_messages ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users can manage own processed messages" ON gmail_processed_messages
   FOR ALL USING (auth.uid() = user_id);
+
+-- マイグレーション: saving_goals テーブルに sort_order カラムを追加
+-- コードが既に使用しているため既存DBに対して追加が必要
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'saving_goals' AND column_name = 'sort_order'
+  ) THEN
+    ALTER TABLE saving_goals ADD COLUMN sort_order INTEGER DEFAULT 0;
+    COMMENT ON COLUMN saving_goals.sort_order IS '表示順序';
+  END IF;
+END $$;
+
+-- マイグレーション: user_settings に gmail_history_id カラムを追加
+-- Gmail Pub/Sub の増分同期に使用する historyId を保存
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'user_settings' AND column_name = 'gmail_history_id'
+  ) THEN
+    ALTER TABLE user_settings ADD COLUMN gmail_history_id TEXT;
+    COMMENT ON COLUMN user_settings.gmail_history_id IS 'Gmail 増分同期用の historyId。Pub/Sub 通知で更新される';
+  END IF;
+END $$;
+
+-- マイグレーション: user_settings に gmail_auto_processing カラムを追加
+-- Gmail の自動処理ON/OFFをユーザーごとに管理
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'user_settings' AND column_name = 'gmail_auto_processing'
+  ) THEN
+    ALTER TABLE user_settings ADD COLUMN gmail_auto_processing BOOLEAN DEFAULT true;
+    COMMENT ON COLUMN user_settings.gmail_auto_processing IS 'Gmail 自動処理の有効/無効フラグ';
+  END IF;
+END $$;

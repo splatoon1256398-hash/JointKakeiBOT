@@ -1,5 +1,7 @@
 "use client";
 
+import { supabase } from "@/lib/supabase";
+
 // Service Worker 登録
 export async function registerServiceWorker(): Promise<ServiceWorkerRegistration | null> {
   if (!('serviceWorker' in navigator)) {
@@ -68,9 +70,11 @@ export async function unsubscribeFromPush(): Promise<boolean> {
 
 // 購読情報をサーバーに保存
 async function saveSubscription(subscription: PushSubscription, userId: string): Promise<void> {
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token || "";
   await fetch('/api/push/subscribe', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
     body: JSON.stringify({
       subscription: subscription.toJSON(),
       userId,
