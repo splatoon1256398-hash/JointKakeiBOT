@@ -601,28 +601,31 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
           </div>
         )}
 
-        {/* カテゴリーボトムシートピッカー */}
+        {/* カテゴリーボトムシートピッカー（fixed で画面全体に表示） */}
         {pickerOpen && (
-          <div className="absolute inset-0 z-20 flex flex-col justify-end rounded-lg overflow-hidden">
-            <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setPickerOpen(false)} />
-            <div className="relative bg-slate-900/95 border-t border-white/10 rounded-t-2xl p-4 pb-6 max-h-[70%] flex flex-col"
-              style={{ boxShadow: '0 -8px 32px rgba(120,60,255,0.15)' }}>
+          <div className="fixed inset-0 z-[100] flex flex-col justify-end" onClick={() => setPickerOpen(false)}>
+            <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+            <div
+              className="relative bg-slate-900/95 border-t border-white/10 rounded-t-2xl p-4 pb-8 flex flex-col"
+              style={{ boxShadow: '0 -8px 32px rgba(120,60,255,0.15)', maxHeight: '65vh' }}
+              onClick={(e) => e.stopPropagation()}
+            >
               {/* ハンドル */}
               <div className="w-10 h-1 bg-white/20 rounded-full mx-auto mb-4" />
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
                   {pickerStep === 'sub' && (
-                    <button onClick={() => setPickerStep('main')} className="text-white/50 hover:text-white text-xs mr-1">←</button>
+                    <button onClick={() => setPickerStep('main')} className="text-white/50 hover:text-white text-sm mr-1">← 戻る</button>
                   )}
                   <span className="text-sm font-bold text-white">
-                    {pickerStep === 'main' ? 'カテゴリーを選択' : `${pickerTempMain} › 小分類`}
+                    {pickerStep === 'main' ? 'カテゴリーを選択' : `${getCategoryIconFromDB(pickerTempMain)} ${pickerTempMain} › 小分類`}
                   </span>
                 </div>
                 <button onClick={() => setPickerOpen(false)} className="text-white/40 hover:text-white text-xs px-2 py-1">✕</button>
               </div>
-              <div className="overflow-y-auto flex-1">
+              <div className="overflow-y-auto flex-1 -mx-1 px-1">
                 {pickerStep === 'main' ? (
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-3 gap-2">
                     {dbCategories.map((cat) => {
                       const isSelected = items[pickerItemIndex]?.categoryMain === cat.main;
                       return (
@@ -633,7 +636,7 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
                             setPickerTempMain(cat.main);
                             setPickerStep('sub');
                           }}
-                          className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border transition-all ${
+                          className={`flex flex-col items-center gap-1 p-2.5 rounded-xl border transition-all ${
                             isSelected
                               ? 'border-purple-500/60 bg-purple-500/15'
                               : 'border-white/10 bg-white/5 hover:bg-white/10 hover:border-white/20'
@@ -641,7 +644,7 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
                           style={isSelected ? { boxShadow: '0 0 12px rgba(168,85,247,0.4)' } : {}}
                         >
                           <span className="text-2xl">{cat.icon}</span>
-                          <span className="text-xs text-white/80 text-center leading-tight">{cat.main}</span>
+                          <span className="text-[11px] text-white/80 text-center leading-tight">{cat.main}</span>
                         </button>
                       );
                     })}
@@ -659,7 +662,7 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
                             updateItem(pickerItemIndex, 'categorySub', sub);
                             setPickerOpen(false);
                           }}
-                          className={`p-3 rounded-xl border text-xs transition-all ${
+                          className={`p-3 rounded-xl border text-sm transition-all ${
                             isSelected
                               ? 'border-purple-500/60 bg-purple-500/15 text-white font-semibold'
                               : 'border-white/10 bg-white/5 hover:bg-white/10 text-white/70'

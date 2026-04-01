@@ -36,7 +36,7 @@ export function GmailSettings() {
   // Gmail 自動処理 ON/OFF
   const toggleAutoProcessing = async () => {
     if (!user || !settings) return;
-    const newValue = settings.gmail_auto_processing === false ? true : false;
+    const newValue = settings.gmail_auto_processing === true ? false : true;
     setSaving(true);
     try {
       await supabase
@@ -248,22 +248,22 @@ export function GmailSettings() {
           <div>
             <p className="text-xs font-semibold text-white">Gmail自動処理</p>
             <p className="text-[10px] text-gray-400 mt-0.5">
-              {settings?.gmail_auto_processing === false
-                ? 'OFFにしています。メールは処理されません。'
-                : '決済メールを受信すると自動で家計簿に記録します'}
+              {settings?.gmail_auto_processing === true
+                ? '決済メールを受信すると自動で家計簿に記録します'
+                : 'OFFにしています。メールは処理されません。'}
             </p>
           </div>
           <button
             onClick={toggleAutoProcessing}
             disabled={saving}
             className={`relative w-12 h-6 rounded-full transition-colors duration-200 flex-shrink-0 ${
-              settings?.gmail_auto_processing === false ? 'bg-white/15' : ''
+              settings?.gmail_auto_processing === true ? '' : 'bg-white/15'
             }`}
-            style={settings?.gmail_auto_processing !== false ? { backgroundColor: theme.primary } : {}}
+            style={settings?.gmail_auto_processing === true ? { backgroundColor: theme.primary } : {}}
             aria-label="Gmail自動処理トグル"
           >
             <span className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200 ${
-              settings?.gmail_auto_processing === false ? 'translate-x-1' : 'translate-x-7'
+              settings?.gmail_auto_processing === true ? 'translate-x-7' : 'translate-x-1'
             }`} />
           </button>
         </div>
