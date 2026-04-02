@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -601,8 +602,8 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
           </div>
         )}
 
-        {/* カテゴリーポップアップピッカー（画面中央に表示） */}
-        {pickerOpen && (
+        {/* カテゴリーポップアップピッカー（Portalで画面中央に固定表示） */}
+        {pickerOpen && createPortal(
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-4" onClick={() => setPickerOpen(false)}>
             <div className="absolute inset-0 bg-black/60" />
             <div
@@ -675,7 +676,8 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
                 )}
               </div>
             </div>
-          </div>
+          </div>,
+          document.body
         )}
 
         <div className="space-y-4">
@@ -799,15 +801,15 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
                           setPickerStep('main');
                           setPickerOpen(true);
                         }}
-                        className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg border border-purple-500/30 bg-purple-500/10 hover:bg-purple-500/20 transition-all text-left"
+                        className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg border border-purple-300 dark:border-purple-500/30 bg-purple-50 dark:bg-purple-500/10 hover:bg-purple-100 dark:hover:bg-purple-500/20 transition-all text-left"
                       >
                         <span className="flex items-center gap-1.5 text-xs">
                           <span className="text-sm">{getCategoryIconFromDB(item.categoryMain)}</span>
-                          <span className="font-semibold text-white">{item.categoryMain}</span>
-                          <span className="text-white/30">/</span>
-                          <span className="text-white/60">{item.categorySub}</span>
+                          <span className="font-semibold text-slate-800 dark:text-white">{item.categoryMain}</span>
+                          <span className="text-slate-400 dark:text-white/30">/</span>
+                          <span className="text-slate-500 dark:text-white/60">{item.categorySub}</span>
                         </span>
-                        <span className="text-[10px] text-purple-400 shrink-0">変更 ›</span>
+                        <span className="text-[10px] text-purple-500 dark:text-purple-400 shrink-0">変更 ›</span>
                       </button>
                     </div>
                     {items.length > 1 && (
