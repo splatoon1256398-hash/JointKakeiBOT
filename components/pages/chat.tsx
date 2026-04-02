@@ -22,18 +22,37 @@ export function Chat() {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [speechSupported, setSpeechSupported] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const lastRecordedIdRef = useRef<string | null>(null);
   const sendingRef = useRef(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<any>(null);
 
+  // iOS PWA (standalone mode) ではWeb Speech APIが動作しないケースがある
+  useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const w = window as any;
+    const SpeechRecognitionAPI = w.SpeechRecognition || w.webkitSpeechRecognition;
+    if (!SpeechRecognitionAPI) {
+      setSpeechSupported(false);
+      return;
+    }
+    // iOS PWA standalone modeかどうかを検出
+    const isStandalone = w.navigator.standalone === true || w.matchMedia('(display-mode: standalone)').matches;
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    if (isIOS && isStandalone) {
+      // iOS PWAではWeb Speech APIが動作しない可能性が高いため非表示
+      setSpeechSupported(false);
+    }
+  }, []);
+
   const startVoiceInput = () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const w = window as any;
     const SpeechRecognitionAPI = w.SpeechRecognition || w.webkitSpeechRecognition;
     if (!SpeechRecognitionAPI) {
-      alert('このブラウザは音声入力に対応していません。');
+      setSpeechSupported(false);
       return;
     }
     if (isRecording) {
@@ -42,18 +61,47 @@ export function Chat() {
     }
     const recognition = new SpeechRecognitionAPI();
     recognition.lang = 'ja-JP';
-    recognition.interimResults = false;
+    recognition.interimResults = true;
     recognition.maxAlternatives = 1;
+    recognition.continuous = false;
     recognitionRef.current = recognition;
+
     recognition.onstart = () => setIsRecording(true);
-    recognition.onend = () => setIsRecording(false);
-    recognition.onerror = () => setIsRecording(false);
+    recognition.onend = () => {
+      setIsRecording(false);
+      recognitionRef.current = null;
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    recognition.onerror = (event: any) => {
+      setIsRecording(false);
+      recognitionRef.current = null;
+      if (event.error === 'not-allowed') {
+        alert('マイクへのアクセスが許可されていません。ブラウザの設定からマイクを許可してください。');
+      } else if (event.error === 'no-speech') {
+        // 音声が検出されなかった場合は静かに終了
+      } else if (event.error === 'network') {
+        alert('音声認識サービスに接続できません。ネットワーク接続を確認してください。');
+      }
+    };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     recognition.onresult = (event: any) => {
-      const transcript = event.results[0][0].transcript;
-      setInput((prev: string) => prev ? prev + ' ' + transcript : transcript);
+      let finalTranscript = '';
+      for (let i = 0; i < event.results.length; i++) {
+        if (event.results[i].isFinal) {
+          finalTranscript += event.results[i][0].transcript;
+        }
+      }
+      if (finalTranscript) {
+        setInput((prev: string) => prev ? prev + ' ' + finalTranscript : finalTranscript);
+      }
     };
-    recognition.start();
+
+    try {
+      recognition.start();
+    } catch {
+      setIsRecording(false);
+      setSpeechSupported(false);
+    }
   };
 
   // selectedUserが変わったらチャットをリセット
@@ -229,18 +277,20 @@ export function Chat() {
               className="flex-1 bg-slate-700/50 border-slate-600 text-white placeholder:text-gray-400"
               disabled={isLoading}
             />
-            <Button
-              type="button"
-              onClick={startVoiceInput}
-              disabled={isLoading}
-              variant="outline"
-              className={`border-slate-600 bg-slate-700/50 hover:bg-slate-600/50 px-3 ${isRecording ? 'border-red-500 bg-red-500/10' : ''}`}
-              title={isRecording ? '録音中（タップで停止）' : '音声入力'}
-            >
-              {isRecording
-                ? <MicOff className="h-5 w-5 text-red-400 animate-pulse" />
-                : <Mic className="h-5 w-5 text-slate-300" />}
-            </Button>
+            {speechSupported && (
+              <Button
+                type="button"
+                onClick={startVoiceInput}
+                disabled={isLoading}
+                variant="outline"
+                className={`border-slate-600 bg-slate-700/50 hover:bg-slate-600/50 px-3 ${isRecording ? 'border-red-500 bg-red-500/10' : ''}`}
+                title={isRecording ? '録音中（タップで停止）' : '音声入力'}
+              >
+                {isRecording
+                  ? <MicOff className="h-5 w-5 text-red-400 animate-pulse" />
+                  : <Mic className="h-5 w-5 text-slate-300" />}
+              </Button>
+            )}
             <Button
               onClick={handleSend}
               disabled={isLoading || !input.trim()}

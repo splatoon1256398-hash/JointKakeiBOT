@@ -559,44 +559,24 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
           </DialogDescription>
         </DialogHeader>
 
-        {/* AI解析中のアニメーション（近未来スキャナー） */}
+        {/* AI解析中のアニメーション */}
         {isAnalyzing && (
-          <div className="absolute inset-0 bg-black/90 backdrop-blur-xl z-10 flex items-center justify-center rounded-lg overflow-hidden">
-            {/* 背景グリッド */}
-            <div className="absolute inset-0 opacity-10"
-              style={{ backgroundImage: 'linear-gradient(rgba(120,80,255,0.3) 1px, transparent 1px), linear-gradient(90deg, rgba(120,80,255,0.3) 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
-            {/* スキャンライン */}
-            <div className="absolute left-4 right-4 h-0.5 bg-gradient-to-r from-transparent via-purple-400 to-transparent opacity-80"
-              style={{ animation: 'scanline 2s ease-in-out infinite', top: '20%' }} />
-            <style>{`
-              @keyframes scanline { 0%,100%{top:20%;opacity:0} 10%{opacity:1} 90%{opacity:1} 50%{top:80%} }
-              @keyframes cornerPulse { 0%,100%{opacity:0.4} 50%{opacity:1} }
-            `}</style>
-            {/* コーナーマーカー */}
-            {[['top-6 left-6','border-t-2 border-l-2'],['top-6 right-6','border-t-2 border-r-2'],['bottom-6 left-6','border-b-2 border-l-2'],['bottom-6 right-6','border-b-2 border-r-2']].map(([pos, cls], i) => (
-              <div key={i} className={`absolute w-6 h-6 border-purple-400 ${pos} ${cls}`} style={{ animation: `cornerPulse 1.5s ease-in-out ${i * 0.2}s infinite` }} />
-            ))}
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm z-10 flex items-center justify-center rounded-lg">
             <div className="text-center space-y-4 px-8">
-              <div className="relative mx-auto w-16 h-16">
-                <div className="absolute inset-0 rounded-full border-2 border-purple-500/30 animate-ping" />
-                <div className="absolute inset-1 rounded-full border border-purple-400/60 animate-spin" style={{ animationDuration: '3s' }} />
-                <div className="absolute inset-3 rounded-full bg-gradient-to-br from-purple-600 to-blue-600 flex items-center justify-center">
-                  <Sparkles className="h-5 w-5 text-white" />
+              <div className="relative mx-auto w-14 h-14">
+                <div className="absolute inset-0 rounded-full border-2 border-purple-500/20" />
+                <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-purple-400 animate-spin" style={{ animationDuration: '1s' }} />
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <Sparkles className="h-5 w-5 text-purple-300" />
                 </div>
               </div>
-              <div className="space-y-2">
-                <p className="text-base font-bold tracking-widest text-purple-300 uppercase">
-                  {analysisStage === 'uploading' ? 'UPLOADING...' : 'AI SCANNING...'}
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-white/90">
+                  {analysisStage === 'uploading' ? '画像をアップロード中...' : 'レシートを解析中...'}
                 </p>
-                <p className="text-xs text-white/40 tracking-wide">
-                  {analysisStage === 'uploading' ? '画像を送信中' : 'レシートを解析・分類中'}
+                <p className="text-xs text-white/40">
+                  {analysisStage === 'uploading' ? 'しばらくお待ちください' : 'AIが項目を分類しています'}
                 </p>
-                <div className="flex justify-center gap-1 mt-1">
-                  {[0,1,2,3,4].map(i => (
-                    <div key={i} className="w-1 h-4 rounded-full bg-purple-500"
-                      style={{ animation: `pulse 1s ease-in-out ${i * 0.15}s infinite`, animationName: 'none', opacity: 0.3 + (i % 3) * 0.25 }} />
-                  ))}
-                </div>
               </div>
             </div>
           </div>

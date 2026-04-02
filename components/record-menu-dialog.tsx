@@ -34,37 +34,46 @@ export function RecordMenuDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-3 py-4">
+        <div className="grid gap-2.5 py-3">
           {/* 支出ボタン */}
           <Button
             onClick={() => handleSelect(onSelectExpense)}
-            className="h-20 bg-gradient-to-br from-red-500 to-pink-500 hover:from-red-600 hover:to-pink-600 text-white shadow-lg hover:shadow-xl transition-all"
+            variant="outline"
+            className="h-14 bg-slate-800/60 border-slate-600/50 hover:bg-slate-700/60 hover:border-red-500/40 text-white transition-all justify-start px-4"
           >
-            <div className="flex flex-col items-center gap-2">
-              <TrendingDown className="h-8 w-8" />
-              <span className="text-lg font-bold">支出を記録</span>
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-lg bg-red-500/15 flex items-center justify-center">
+                <TrendingDown className="h-5 w-5 text-red-400" />
+              </div>
+              <span className="text-sm font-semibold">支出を記録</span>
             </div>
           </Button>
 
           {/* 収入ボタン */}
           <Button
             onClick={() => handleSelect(onSelectIncome)}
-            className="h-20 bg-gradient-to-br from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white shadow-lg hover:shadow-xl transition-all"
+            variant="outline"
+            className="h-14 bg-slate-800/60 border-slate-600/50 hover:bg-slate-700/60 hover:border-emerald-500/40 text-white transition-all justify-start px-4"
           >
-            <div className="flex flex-col items-center gap-2">
-              <TrendingUp className="h-8 w-8" />
-              <span className="text-lg font-bold">収入を記録</span>
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-lg bg-emerald-500/15 flex items-center justify-center">
+                <TrendingUp className="h-5 w-5 text-emerald-400" />
+              </div>
+              <span className="text-sm font-semibold">収入を記録</span>
             </div>
           </Button>
 
           {/* 貯金ボタン */}
           <Button
             onClick={() => handleSelect(onSelectSaving)}
-            className="h-20 bg-gradient-to-br from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white shadow-lg hover:shadow-xl transition-all"
+            variant="outline"
+            className="h-14 bg-slate-800/60 border-slate-600/50 hover:bg-slate-700/60 hover:border-purple-500/40 text-white transition-all justify-start px-4"
           >
-            <div className="flex flex-col items-center gap-2">
-              <PiggyBank className="h-8 w-8" />
-              <span className="text-lg font-bold">貯金に入金</span>
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-lg bg-purple-500/15 flex items-center justify-center">
+                <PiggyBank className="h-5 w-5 text-purple-400" />
+              </div>
+              <span className="text-sm font-semibold">貯金に入金</span>
             </div>
           </Button>
         </div>
