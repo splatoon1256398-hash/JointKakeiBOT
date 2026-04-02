@@ -604,7 +604,7 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
 
         {/* カテゴリーポップアップピッカー（Portalで画面中央に固定表示） */}
         {pickerOpen && createPortal(
-          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4" onClick={() => setPickerOpen(false)}>
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 pointer-events-auto" onClick={() => setPickerOpen(false)}>
             <div className="absolute inset-0 bg-black/60" />
             <div
               className="relative bg-slate-900 border border-white/15 rounded-2xl p-4 w-full max-w-sm flex flex-col"
