@@ -29,20 +29,12 @@ export function Chat() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<any>(null);
 
-  // iOS PWA (standalone mode) ではWeb Speech APIが動作しないケースがある
+  // Web Speech APIが存在しないブラウザではマイクボタンを非表示
   useEffect(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const w = window as any;
     const SpeechRecognitionAPI = w.SpeechRecognition || w.webkitSpeechRecognition;
     if (!SpeechRecognitionAPI) {
-      setSpeechSupported(false);
-      return;
-    }
-    // iOS PWA standalone modeかどうかを検出
-    const isStandalone = w.navigator.standalone === true || w.matchMedia('(display-mode: standalone)').matches;
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-    if (isIOS && isStandalone) {
-      // iOS PWAではWeb Speech APIが動作しない可能性が高いため非表示
       setSpeechSupported(false);
     }
   }, []);
