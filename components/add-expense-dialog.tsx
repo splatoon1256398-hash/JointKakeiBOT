@@ -547,7 +547,7 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto relative">
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base">
             <Sparkles className="h-4 w-4 text-purple-600" />
@@ -601,13 +601,13 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
           </div>
         )}
 
-        {/* カテゴリーポップアップピッカー（ダイアログ内オーバーレイ） */}
+        {/* カテゴリーポップアップピッカー（画面中央に表示） */}
         {pickerOpen && (
-          <div className="absolute inset-0 z-[60] flex items-center justify-center p-4" onClick={() => setPickerOpen(false)}>
-            <div className="absolute inset-0 bg-black/50 rounded-lg" />
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4" onClick={() => setPickerOpen(false)}>
+            <div className="absolute inset-0 bg-black/60" />
             <div
               className="relative bg-slate-900 border border-white/15 rounded-2xl p-4 w-full max-w-sm flex flex-col"
-              style={{ boxShadow: '0 8px 32px rgba(120,60,255,0.25)', maxHeight: '70%' }}
+              style={{ boxShadow: '0 8px 32px rgba(120,60,255,0.25)', maxHeight: '60vh' }}
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between mb-3">
