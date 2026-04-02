@@ -7,7 +7,9 @@
       "Bash(npm install:*)",
       "Bash(xargs -I {} basename {})",
       "Bash(npx next:*)",
-      "Bash(npx update-browserslist-db@latest)"
+      "Bash(npx update-browserslist-db@latest)",
+      "Bash(curl -s http://localhost:3000)",
+      "Bash(kill %1)"
     ]
   }
 }
