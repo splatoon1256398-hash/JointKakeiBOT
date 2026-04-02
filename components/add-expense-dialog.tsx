@@ -657,8 +657,15 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
                           key={sub}
                           type="button"
                           onClick={() => {
-                            updateItem(pickerItemIndex, 'categoryMain', pickerTempMain);
-                            updateItem(pickerItemIndex, 'categorySub', sub);
+                            setItems(prev => {
+                              const newItems = [...prev];
+                              newItems[pickerItemIndex] = {
+                                ...newItems[pickerItemIndex],
+                                categoryMain: pickerTempMain,
+                                categorySub: sub,
+                              };
+                              return newItems;
+                            });
                             setPickerOpen(false);
                           }}
                           className={`p-3 rounded-xl border text-sm transition-all ${

@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Save, Trash2, Users, User, Plus, X } from "lucide-react";
+/* Select removed — replaced by icon picker */
 import { supabase } from "@/lib/supabase";
 import { useApp } from "@/contexts/app-context";
 
@@ -54,6 +55,12 @@ export function EditTransactionDialog({ open, onOpenChange, transaction }: EditT
   const [items, setItems] = useState<ExpenseItem[]>([]);
   const [grossAmount, setGrossAmount] = useState<number>(0);
 
+  // カテゴリーピッカー状態
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerStep, setPickerStep] = useState<'main' | 'sub'>('main');
+  const [pickerTempMain, setPickerTempMain] = useState('');
+  const [pickerTarget, setPickerTarget] = useState<'single' | number>('single'); // 'single' = 単一品目, number = items[idx]
+
   // DBから最新のカテゴリを常に取得
   const [dbCategories, setDbCategories] = useState<{ main: string; icon: string; subs: string[] }[]>([]);
 
@@ -100,6 +107,36 @@ export function EditTransactionDialog({ open, onOpenChange, transaction }: EditT
   const getSubcategoriesFromDB = (mainCat: string): string[] => {
     const found = dbCategories.find(c => c.main === mainCat);
     return found?.subs || ["その他"];
+  };
+
+  const getCategoryIconFromDB = (mainCat: string): string => {
+    const found = dbCategories.find(c => c.main === mainCat);
+    return found?.icon || "📦";
+  };
+
+  const openPicker = (target: 'single' | number, currentMain: string) => {
+    setPickerTarget(target);
+    setPickerTempMain(currentMain);
+    setPickerStep('main');
+    setPickerOpen(true);
+  };
+
+  const handlePickerSelectSub = (sub: string) => {
+    if (pickerTarget === 'single') {
+      setCategoryMain(pickerTempMain);
+      setCategorySub(sub);
+    } else {
+      setItems(prev => {
+        const newItems = [...prev];
+        newItems[pickerTarget] = {
+          ...newItems[pickerTarget],
+          categoryMain: pickerTempMain,
+          categorySub: sub,
+        };
+        return newItems;
+      });
+    }
+    setPickerOpen(false);
   };
 
   const handleCategoryMainChange = (value: string) => {
@@ -298,43 +335,20 @@ export function EditTransactionDialog({ open, onOpenChange, transaction }: EditT
                         className="bg-slate-900/50 border-slate-700 text-white h-8 text-xs"
                       />
                     </div>
-                    {/* カテゴリー */}
-                    <div className="grid grid-cols-2 gap-2">
-                      <Select value={item.categoryMain} onValueChange={(v) => {
-                        const newItems = [...items];
-                        newItems[idx].categoryMain = v;
-                        const subs = getSubcategoriesFromDB(v);
-                        newItems[idx].categorySub = subs[0] || "その他";
-                        setItems(newItems);
-                      }}>
-                        <SelectTrigger className="bg-slate-900/50 border-slate-700 text-white h-7 text-[11px]">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {dbCategories.map((cat) => (
-                            <SelectItem key={cat.main} value={cat.main} className="text-xs">
-                              {cat.icon} {cat.main}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <Select value={item.categorySub} onValueChange={(v) => {
-                        const newItems = [...items];
-                        newItems[idx].categorySub = v;
-                        setItems(newItems);
-                      }}>
-                        <SelectTrigger className="bg-slate-900/50 border-slate-700 text-white h-7 text-[11px]">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {getSubcategoriesFromDB(item.categoryMain).map((sub) => (
-                            <SelectItem key={sub} value={sub} className="text-xs">
-                              {sub}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
+                    {/* カテゴリー選択ボタン */}
+                    <button
+                      type="button"
+                      onClick={() => openPicker(idx, item.categoryMain)}
+                      className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg border border-purple-500/30 bg-purple-500/10 hover:bg-purple-500/20 transition-all text-left"
+                    >
+                      <span className="flex items-center gap-1.5 text-xs">
+                        <span className="text-sm">{getCategoryIconFromDB(item.categoryMain)}</span>
+                        <span className="font-semibold text-white">{item.categoryMain}</span>
+                        <span className="text-white/30">/</span>
+                        <span className="text-white/60">{item.categorySub}</span>
+                      </span>
+                      <span className="text-[10px] text-purple-400 shrink-0">変更 ›</span>
+                    </button>
                   </div>
                 ))}
               </div>
@@ -364,38 +378,22 @@ export function EditTransactionDialog({ open, onOpenChange, transaction }: EditT
                   <Plus className="h-3 w-3" /> 追加
                 </button>
               </div>
-              {/* カテゴリー（DBから取得） */}
-              <div className="grid gap-3 grid-cols-2">
-                <div className="space-y-1">
-                  <Label className="text-white/70 text-xs">カテゴリー（大）</Label>
-                  <Select value={categoryMain} onValueChange={handleCategoryMainChange}>
-                    <SelectTrigger className="bg-slate-800/50 border-slate-700 text-white h-9 text-xs">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {dbCategories.map((cat) => (
-                        <SelectItem key={cat.main} value={cat.main}>
-                          {cat.icon} {cat.main}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-white/70 text-xs">カテゴリー（小）</Label>
-                  <Select value={categorySub} onValueChange={setCategorySub}>
-                    <SelectTrigger className="bg-slate-800/50 border-slate-700 text-white h-9 text-xs">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {getSubcategoriesFromDB(categoryMain).map((sub) => (
-                        <SelectItem key={sub} value={sub}>
-                          {sub}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+              {/* カテゴリー選択ボタン */}
+              <div className="space-y-1">
+                <Label className="text-white/70 text-xs">カテゴリー</Label>
+                <button
+                  type="button"
+                  onClick={() => openPicker('single', categoryMain)}
+                  className="w-full flex items-center justify-between px-3 py-2 rounded-lg border border-purple-500/30 bg-purple-500/10 hover:bg-purple-500/20 transition-all text-left"
+                >
+                  <span className="flex items-center gap-2 text-sm">
+                    <span>{getCategoryIconFromDB(categoryMain)}</span>
+                    <span className="font-semibold text-white">{categoryMain}</span>
+                    <span className="text-white/30">/</span>
+                    <span className="text-white/60">{categorySub}</span>
+                  </span>
+                  <span className="text-[10px] text-purple-400 shrink-0">変更 ›</span>
+                </button>
               </div>
 
               {/* 店名 & 金額 */}
@@ -480,6 +478,83 @@ export function EditTransactionDialog({ open, onOpenChange, transaction }: EditT
             </Button>
           </div>
         </div>
+
+        {/* カテゴリーポップアップピッカー（Portalで画面中央に固定表示） */}
+        {pickerOpen && createPortal(
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 pointer-events-auto" onClick={() => setPickerOpen(false)}>
+            <div className="absolute inset-0 bg-black/60" />
+            <div
+              className="relative bg-slate-900 border border-white/15 rounded-2xl p-4 w-full max-w-sm flex flex-col"
+              style={{ boxShadow: '0 8px 32px rgba(120,60,255,0.25)', maxHeight: '60vh' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  {pickerStep === 'sub' && (
+                    <button onClick={() => setPickerStep('main')} className="text-white/50 hover:text-white text-sm mr-1">← 戻る</button>
+                  )}
+                  <span className="text-sm font-bold text-white">
+                    {pickerStep === 'main' ? 'カテゴリーを選択' : `${getCategoryIconFromDB(pickerTempMain)} ${pickerTempMain} › 小分類`}
+                  </span>
+                </div>
+                <button onClick={() => setPickerOpen(false)} className="text-white/40 hover:text-white text-xs px-2 py-1">✕</button>
+              </div>
+              <div className="overflow-y-auto flex-1 -mx-1 px-1">
+                {pickerStep === 'main' ? (
+                  <div className="grid grid-cols-3 gap-2">
+                    {dbCategories.map((cat) => {
+                      const currentMain = pickerTarget === 'single' ? categoryMain : items[pickerTarget]?.categoryMain;
+                      const isSelected = currentMain === cat.main;
+                      return (
+                        <button
+                          key={cat.main}
+                          type="button"
+                          onClick={() => {
+                            setPickerTempMain(cat.main);
+                            setPickerStep('sub');
+                          }}
+                          className={`flex flex-col items-center gap-1 p-2.5 rounded-xl border transition-all ${
+                            isSelected
+                              ? 'border-purple-500/60 bg-purple-500/15'
+                              : 'border-white/10 bg-white/5 hover:bg-white/10 hover:border-white/20'
+                          }`}
+                          style={isSelected ? { boxShadow: '0 0 12px rgba(168,85,247,0.4)' } : {}}
+                        >
+                          <span className="text-2xl">{cat.icon}</span>
+                          <span className="text-[11px] text-white/80 text-center leading-tight">{cat.main}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2">
+                    {getSubcategoriesFromDB(pickerTempMain).map((sub) => {
+                      const currentMain = pickerTarget === 'single' ? categoryMain : items[pickerTarget as number]?.categoryMain;
+                      const currentSub = pickerTarget === 'single' ? categorySub : items[pickerTarget as number]?.categorySub;
+                      const isSelected = currentMain === pickerTempMain && currentSub === sub;
+                      return (
+                        <button
+                          key={sub}
+                          type="button"
+                          onClick={() => handlePickerSelectSub(sub)}
+                          className={`p-3 rounded-xl border text-sm transition-all ${
+                            isSelected
+                              ? 'border-purple-500/60 bg-purple-500/15 text-white font-semibold'
+                              : 'border-white/10 bg-white/5 hover:bg-white/10 text-white/70'
+                          }`}
+                          style={isSelected ? { boxShadow: '0 0 12px rgba(168,85,247,0.4)' } : {}}
+                        >
+                          {sub}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
       </DialogContent>
     </Dialog>
   );
