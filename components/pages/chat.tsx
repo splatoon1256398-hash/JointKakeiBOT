@@ -58,15 +58,30 @@ export function Chat() {
     recognition.continuous = false;
     recognitionRef.current = recognition;
 
-    recognition.onstart = () => setIsRecording(true);
-    recognition.onend = () => {
+    // onendが発火しない場合のフォールバック用タイマー
+    let endTimeout: ReturnType<typeof setTimeout> | null = null;
+    const forceEnd = () => {
       setIsRecording(false);
       recognitionRef.current = null;
+      if (endTimeout) clearTimeout(endTimeout);
+    };
+
+    recognition.onstart = () => {
+      setIsRecording(true);
+      // 安全策: 最大15秒でリセット（onendが発火しなかった場合のフォールバック）
+      endTimeout = setTimeout(() => {
+        if (recognitionRef.current) {
+          try { recognitionRef.current.stop(); } catch {}
+          forceEnd();
+        }
+      }, 15000);
+    };
+    recognition.onend = () => {
+      forceEnd();
     };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     recognition.onerror = (event: any) => {
-      setIsRecording(false);
-      recognitionRef.current = null;
+      forceEnd();
       if (event.error === 'not-allowed') {
         alert('マイクへのアクセスが許可されていません。ブラウザの設定からマイクを許可してください。');
       } else if (event.error === 'no-speech') {
@@ -85,6 +100,8 @@ export function Chat() {
       }
       if (finalTranscript) {
         setInput((prev: string) => prev ? prev + ' ' + finalTranscript : finalTranscript);
+        // final結果を受け取ったら明示的に停止（onendの確実な発火を促す）
+        try { recognition.stop(); } catch {}
       }
     };
 
