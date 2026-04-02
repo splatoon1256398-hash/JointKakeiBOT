@@ -547,7 +547,7 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto relative">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base">
             <Sparkles className="h-4 w-4 text-purple-600" />
@@ -601,18 +601,16 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
           </div>
         )}
 
-        {/* カテゴリーボトムシートピッカー（fixed で画面全体に表示） */}
+        {/* カテゴリーポップアップピッカー（ダイアログ内オーバーレイ） */}
         {pickerOpen && (
-          <div className="fixed inset-0 z-[100] flex flex-col justify-end" onClick={() => setPickerOpen(false)}>
-            <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+          <div className="absolute inset-0 z-[60] flex items-center justify-center p-4" onClick={() => setPickerOpen(false)}>
+            <div className="absolute inset-0 bg-black/50 rounded-lg" />
             <div
-              className="relative bg-slate-900/95 border-t border-white/10 rounded-t-2xl p-4 pb-8 flex flex-col"
-              style={{ boxShadow: '0 -8px 32px rgba(120,60,255,0.15)', maxHeight: '65vh' }}
+              className="relative bg-slate-900 border border-white/15 rounded-2xl p-4 w-full max-w-sm flex flex-col"
+              style={{ boxShadow: '0 8px 32px rgba(120,60,255,0.25)', maxHeight: '70%' }}
               onClick={(e) => e.stopPropagation()}
             >
-              {/* ハンドル */}
-              <div className="w-10 h-1 bg-white/20 rounded-full mx-auto mb-4" />
-              <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   {pickerStep === 'sub' && (
                     <button onClick={() => setPickerStep('main')} className="text-white/50 hover:text-white text-sm mr-1">← 戻る</button>
@@ -789,8 +787,29 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
                   key={index} 
                   className="p-3 rounded-lg border bg-white/50 dark:bg-slate-900/50 backdrop-blur-sm shadow hover:shadow-lg transition-all space-y-2"
                 >
-                  <div className="flex items-start justify-between gap-2">
-                    <span className="text-lg font-bold text-purple-600">#{index + 1}</span>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-bold text-purple-600">#{index + 1}</span>
+                    {/* カテゴリー選択ボタン（ポップアップピッカーを開く） */}
+                    <div className="relative flex-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPickerItemIndex(index);
+                          setPickerTempMain(item.categoryMain);
+                          setPickerStep('main');
+                          setPickerOpen(true);
+                        }}
+                        className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg border border-purple-500/30 bg-purple-500/10 hover:bg-purple-500/20 transition-all text-left"
+                      >
+                        <span className="flex items-center gap-1.5 text-xs">
+                          <span className="text-sm">{getCategoryIconFromDB(item.categoryMain)}</span>
+                          <span className="font-semibold text-white">{item.categoryMain}</span>
+                          <span className="text-white/30">/</span>
+                          <span className="text-white/60">{item.categorySub}</span>
+                        </span>
+                        <span className="text-[10px] text-purple-400 shrink-0">変更 ›</span>
+                      </button>
+                    </div>
                     {items.length > 1 && (
                       <Button
                         type="button"
@@ -803,26 +822,6 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
                       </Button>
                     )}
                   </div>
-
-                  {/* カテゴリー選択ボタン（ボトムシートピッカーを開く） */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPickerItemIndex(index);
-                      setPickerTempMain(item.categoryMain);
-                      setPickerStep('main');
-                      setPickerOpen(true);
-                    }}
-                    className="w-full flex items-center justify-between px-3 py-2 rounded-lg border border-white/15 bg-white/5 hover:bg-white/10 transition-all text-left"
-                  >
-                    <span className="flex items-center gap-2 text-xs text-white/80">
-                      <span className="text-base">{getCategoryIconFromDB(item.categoryMain)}</span>
-                      <span>{item.categoryMain}</span>
-                      <span className="text-white/30">/</span>
-                      <span className="text-white/60">{item.categorySub}</span>
-                    </span>
-                    <span className="text-[10px] text-white/30 shrink-0">変更 ›</span>
-                  </button>
 
                   <div className="grid gap-2 grid-cols-2">
                     {/* 店名 */}

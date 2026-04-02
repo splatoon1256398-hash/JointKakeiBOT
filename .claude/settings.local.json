@@ -5,7 +5,9 @@
       "Bash(grep -rn \"SpeechRecognition\\\\|webkitSpeechRecognition\\\\|getUserMedia\\\\|audioContext\\\\|Recorder\" /c/Users/splat/Desktop/Joint-Kakeibot-App --include=\"*.tsx\" --include=\"*.ts\" --include=\"*.jsx\" --include=\"*.js\" --include=\"*.json\" ! -path \"*/node_modules/*\" ! -path \"*/.next/*\")",
       "Bash(find /c/Users/splat/Desktop/Joint-Kakeibot-App -type f \\\\\\( -name \"*.tsx\" -o -name \"*.ts\" \\\\\\) ! -path \"*/.next/*\" ! -path \"*/node_modules/*\" -exec grep -l \"voice\\\\|speech\\\\|audio\\\\|record\\\\|Record\" {} \\\\;)",
       "Bash(npm install:*)",
-      "Bash(xargs -I {} basename {})"
+      "Bash(xargs -I {} basename {})",
+      "Bash(npx next:*)",
+      "Bash(npx update-browserslist-db@latest)"
     ]
   }
 }
