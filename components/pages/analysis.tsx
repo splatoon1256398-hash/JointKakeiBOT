@@ -537,6 +537,24 @@ export function Analysis() {
     );
   };
 
+  // 親トランザクションを見つけて編集ダイアログを開く
+  const openEditForParent = (parentId: string) => {
+    const parent = transactions.find(t => t.id === parentId);
+    if (!parent) return;
+    setEditingTransaction({
+      id: parent.id,
+      date: parent.date,
+      category_main: parent.category_main,
+      category_sub: parent.category_sub,
+      store_name: parent.store_name,
+      amount: parent.amount,
+      memo: parent.memo,
+      user_type: selectedUser,
+      items: parent.items as TransactionForEdit['items'],
+    });
+    setIsEditDialogOpen(true);
+  };
+
   // Level 3: 個別トランザクション（items対応 + 日付グループ化）
   const renderDetail = () => {
     const filtered = getFilteredTransactions();
@@ -659,6 +677,7 @@ export function Analysis() {
                               categoryIcon={categoryIcons[si.category_main] || '📦'}
                               amount={si.amount}
                               source={si.source}
+                              onEdit={() => openEditForParent(si.parentId!)}
                             />
                           ))}
                         </div>
@@ -676,6 +695,7 @@ export function Analysis() {
                         categoryIcon={categoryIcons[item.category_main] || '📦'}
                         amount={item.amount}
                         source={item.source}
+                        onEdit={() => openEditForParent(item.parentId!)}
                       />
                     );
                   }

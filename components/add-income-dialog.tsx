@@ -1,11 +1,11 @@
 "use client";
 
 import { useState, useRef } from "react";
+import { createPortal } from "react-dom";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TrendingUp, Loader2, Sparkles, Camera, Upload, X, FileText, CalendarCheck, Briefcase } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useApp } from "@/contexts/app-context";
@@ -48,6 +48,11 @@ export function AddIncomeDialog({ open, onOpenChange, selectedUser }: AddIncomeD
     const next = new Date(now.getFullYear(), now.getMonth() + 1, 1);
     return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`;
   });
+
+  // カテゴリーピッカー状態
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerStep, setPickerStep] = useState<'main' | 'sub'>('main');
+  const [pickerTempMain, setPickerTempMain] = useState('');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -241,16 +246,21 @@ export function AddIncomeDialog({ open, onOpenChange, selectedUser }: AddIncomeD
     onOpenChange(newOpen);
   };
 
-  const handleCategoryMainChange = (value: string) => {
-    setCategoryMain(value);
-    const category = INCOME_CATEGORIES.find(c => c.main === value);
-    if (category) {
-      setCategorySub(category.sub[0]);
-    }
+  const getCategoryIcon = (main: string): string => {
+    return INCOME_CATEGORIES.find(c => c.main === main)?.icon || "💵";
   };
 
-  const selectedCategory = INCOME_CATEGORIES.find(c => c.main === categoryMain);
-  const subcategories = selectedCategory?.sub || ["その他"];
+  const openPicker = () => {
+    setPickerTempMain(categoryMain);
+    setPickerStep('main');
+    setPickerOpen(true);
+  };
+
+  const handlePickerSelectSub = (sub: string) => {
+    setCategoryMain(pickerTempMain);
+    setCategorySub(sub);
+    setPickerOpen(false);
+  };
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -441,39 +451,22 @@ export function AddIncomeDialog({ open, onOpenChange, selectedUser }: AddIncomeD
             </p>
           </div>
 
-          {/* カテゴリー */}
-          <div className="grid gap-2 grid-cols-2">
-            <div className="space-y-1">
-              <Label className="text-xs text-white">カテゴリー（大）*</Label>
-              <Select value={categoryMain} onValueChange={handleCategoryMainChange}>
-                <SelectTrigger className="h-8 text-xs bg-slate-800/50 border-slate-700 text-white">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {INCOME_CATEGORIES.map((category) => (
-                    <SelectItem key={category.main} value={category.main}>
-                      {category.icon} {category.main}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-1">
-              <Label className="text-xs text-white">カテゴリー（小）*</Label>
-              <Select value={categorySub} onValueChange={setCategorySub}>
-                <SelectTrigger className="h-8 text-xs bg-slate-800/50 border-slate-700 text-white">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {subcategories.map((sub) => (
-                    <SelectItem key={sub} value={sub}>
-                      {sub}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          {/* カテゴリー選択ボタン（ピッカーUI） */}
+          <div className="space-y-1">
+            <Label className="text-xs text-white">カテゴリー</Label>
+            <button
+              type="button"
+              onClick={openPicker}
+              className="w-full flex items-center justify-between px-3 py-2 rounded-lg border border-green-500/30 bg-green-500/10 hover:bg-green-500/20 transition-all text-left"
+            >
+              <span className="flex items-center gap-2 text-sm">
+                <span>{getCategoryIcon(categoryMain)}</span>
+                <span className="font-semibold text-white">{categoryMain}</span>
+                <span className="text-white/30">/</span>
+                <span className="text-white/60">{categorySub}</span>
+              </span>
+              <span className="text-[10px] text-green-400 shrink-0">変更 ›</span>
+            </button>
           </div>
 
           {/* 収入源 */}
@@ -579,6 +572,79 @@ export function AddIncomeDialog({ open, onOpenChange, selectedUser }: AddIncomeD
             </Button>
           </div>
         </form>
+        {/* カテゴリーポップアップピッカー */}
+        {pickerOpen && createPortal(
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 pointer-events-auto" onClick={() => setPickerOpen(false)}>
+            <div className="absolute inset-0 bg-black/60" />
+            <div
+              className="relative bg-slate-900 border border-white/15 rounded-2xl p-4 w-full max-w-sm flex flex-col"
+              style={{ boxShadow: '0 8px 32px rgba(16,185,129,0.25)', maxHeight: '60vh' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  {pickerStep === 'sub' && (
+                    <button onClick={() => setPickerStep('main')} className="text-white/50 hover:text-white text-sm mr-1">← 戻る</button>
+                  )}
+                  <span className="text-sm font-bold text-white">
+                    {pickerStep === 'main' ? '収入カテゴリーを選択' : `${getCategoryIcon(pickerTempMain)} ${pickerTempMain} › 小分類`}
+                  </span>
+                </div>
+                <button onClick={() => setPickerOpen(false)} className="text-white/40 hover:text-white text-xs px-2 py-1">✕</button>
+              </div>
+              <div className="overflow-y-auto flex-1 -mx-1 px-1">
+                {pickerStep === 'main' ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    {INCOME_CATEGORIES.map((cat) => {
+                      const isSelected = categoryMain === cat.main;
+                      return (
+                        <button
+                          key={cat.main}
+                          type="button"
+                          onClick={() => {
+                            setPickerTempMain(cat.main);
+                            setPickerStep('sub');
+                          }}
+                          className={`flex flex-col items-center gap-1 p-3 rounded-xl border transition-all ${
+                            isSelected
+                              ? 'border-green-500/60 bg-green-500/15'
+                              : 'border-white/10 bg-white/5 hover:bg-white/10 hover:border-white/20'
+                          }`}
+                          style={isSelected ? { boxShadow: '0 0 12px rgba(16,185,129,0.4)' } : {}}
+                        >
+                          <span className="text-2xl">{cat.icon}</span>
+                          <span className="text-[11px] text-white/80 text-center leading-tight">{cat.main}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2">
+                    {(INCOME_CATEGORIES.find(c => c.main === pickerTempMain)?.sub || ["その他"]).map((sub) => {
+                      const isSelected = categoryMain === pickerTempMain && categorySub === sub;
+                      return (
+                        <button
+                          key={sub}
+                          type="button"
+                          onClick={() => handlePickerSelectSub(sub)}
+                          className={`p-3 rounded-xl border text-sm transition-all ${
+                            isSelected
+                              ? 'border-green-500/60 bg-green-500/15 text-white font-semibold'
+                              : 'border-white/10 bg-white/5 hover:bg-white/10 text-white/70'
+                          }`}
+                          style={isSelected ? { boxShadow: '0 0 12px rgba(16,185,129,0.4)' } : {}}
+                        >
+                          {sub}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
       </DialogContent>
     </Dialog>
   );
