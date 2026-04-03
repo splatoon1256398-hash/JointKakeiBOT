@@ -16,6 +16,41 @@ interface Message {
   functionCalls?: Array<{ name: string; args: Record<string, unknown>; result: { success: boolean; message: string } }>;
 }
 
+interface BrowserSpeechRecognitionResult {
+  isFinal: boolean;
+  [index: number]: {
+    transcript: string;
+  };
+}
+
+interface BrowserSpeechRecognitionEvent {
+  results: ArrayLike<BrowserSpeechRecognitionResult>;
+}
+
+interface BrowserSpeechRecognitionErrorEvent {
+  error: string;
+}
+
+interface BrowserSpeechRecognition {
+  lang: string;
+  interimResults: boolean;
+  maxAlternatives: number;
+  continuous: boolean;
+  start: () => void;
+  stop: () => void;
+  onstart: (() => void) | null;
+  onend: (() => void) | null;
+  onerror: ((event: BrowserSpeechRecognitionErrorEvent) => void) | null;
+  onresult: ((event: BrowserSpeechRecognitionEvent) => void) | null;
+}
+
+type BrowserSpeechRecognitionConstructor = new () => BrowserSpeechRecognition;
+
+interface BrowserSpeechWindow extends Window {
+  SpeechRecognition?: BrowserSpeechRecognitionConstructor;
+  webkitSpeechRecognition?: BrowserSpeechRecognitionConstructor;
+}
+
 export function Chat() {
   const { selectedUser, user, theme, displayName, triggerRefresh } = useApp();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -26,13 +61,11 @@ export function Chat() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const lastRecordedIdRef = useRef<string | null>(null);
   const sendingRef = useRef(false);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const recognitionRef = useRef<any>(null);
+  const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
 
   // Web Speech APIが存在しないブラウザではマイクボタンを非表示
   useEffect(() => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const w = window as any;
+    const w = window as BrowserSpeechWindow;
     const SpeechRecognitionAPI = w.SpeechRecognition || w.webkitSpeechRecognition;
     if (!SpeechRecognitionAPI) {
       setSpeechSupported(false);
@@ -40,8 +73,7 @@ export function Chat() {
   }, []);
 
   const startVoiceInput = () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const w = window as any;
+    const w = window as BrowserSpeechWindow;
     const SpeechRecognitionAPI = w.SpeechRecognition || w.webkitSpeechRecognition;
     if (!SpeechRecognitionAPI) {
       setSpeechSupported(false);
@@ -79,8 +111,7 @@ export function Chat() {
     recognition.onend = () => {
       forceEnd();
     };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    recognition.onerror = (event: any) => {
+    recognition.onerror = (event: BrowserSpeechRecognitionErrorEvent) => {
       forceEnd();
       if (event.error === 'not-allowed') {
         alert('マイクへのアクセスが許可されていません。ブラウザの設定からマイクを許可してください。');
@@ -90,8 +121,7 @@ export function Chat() {
         alert('音声認識サービスに接続できません。ネットワーク接続を確認してください。');
       }
     };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    recognition.onresult = (event: any) => {
+    recognition.onresult = (event: BrowserSpeechRecognitionEvent) => {
       let finalTranscript = '';
       for (let i = 0; i < event.results.length; i++) {
         if (event.results[i].isFinal) {
@@ -174,7 +204,6 @@ export function Chat() {
         body: JSON.stringify({
           message: input,
           selectedUser,
-          displayName,
           history: historyForApi,
           lastRecordedId: lastRecordedIdRef.current,
         }),

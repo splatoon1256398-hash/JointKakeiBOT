@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { verifyCronSecret } from "@/lib/auth";
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
@@ -29,7 +30,12 @@ async function getAccessToken(refreshToken: string): Promise<string | null> {
  * Vercel Cron Job で毎日実行。
  * gmail_watch_expiration が残り1日以内のユーザーの watch() を自動更新。
  */
-export async function GET() {
+export async function GET(request: Request) {
+  // Vercel Cron 認証チェック
+  if (!verifyCronSecret(request)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
     const oneDayFromNow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 

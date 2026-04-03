@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { GoogleGenAI, Type } from "@google/genai";
+import { validateSelectedUser } from "@/lib/auth";
+import { getJSTDateString, getJSTMonthRange, getJSTPrevMonthRange } from "@/lib/date";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -45,30 +47,10 @@ interface ChatHistoryItem {
 interface ChatRequest {
   message: string;
   selectedUser: string;
-  displayName: string;
   history: ChatHistoryItem[];
   lastRecordedId: string | null;
 }
 
-function getJSTDateString(): string {
-  const now = new Date();
-  // UTC+9
-  const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
-  return `${jst.getUTCFullYear()}-${String(jst.getUTCMonth() + 1).padStart(2, "0")}-${String(jst.getUTCDate()).padStart(2, "0")}`;
-}
-
-function getMonthRange() {
-  const now = new Date();
-  const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
-  const year = jst.getUTCFullYear();
-  const month = jst.getUTCMonth();
-  const firstDay = new Date(Date.UTC(year, month, 1));
-  const lastDay = new Date(Date.UTC(year, month + 1, 0));
-  return {
-    start: firstDay.toISOString().split("T")[0],
-    end: lastDay.toISOString().split("T")[0],
-  };
-}
 
 export async function POST(request: NextRequest) {
   try {
@@ -90,18 +72,23 @@ export async function POST(request: NextRequest) {
     }
 
     const body: ChatRequest = await request.json();
-    const { message, selectedUser, displayName, history, lastRecordedId } =
-      body;
+    const { message, selectedUser, history, lastRecordedId } = body;
+    const authDisplayName = typeof user.user_metadata?.display_name === "string"
+      ? user.user_metadata.display_name.trim()
+      : (user.email?.split("@")[0] ?? "");
+
+    // ===== selectedUser の認可チェック =====
+    if (!validateSelectedUser(selectedUser, authDisplayName)) {
+      return NextResponse.json(
+        { error: "許可されていないユーザー区分です" },
+        { status: 403 }
+      );
+    }
 
     // ===== コンテキスト取得 =====
-    const { start, end } = getMonthRange();
+    const { start, end } = getJSTMonthRange();
     const todayJST = getJSTDateString();
-    const now = new Date();
-    const jstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
-    const prevMonth = new Date(Date.UTC(jstNow.getUTCFullYear(), jstNow.getUTCMonth() - 1, 1));
-    const prevMonthEnd = new Date(Date.UTC(jstNow.getUTCFullYear(), jstNow.getUTCMonth(), 0));
-    const prevStart = `${prevMonth.getFullYear()}-${String(prevMonth.getMonth() + 1).padStart(2, "0")}-01`;
-    const prevEnd = `${prevMonthEnd.getFullYear()}-${String(prevMonthEnd.getMonth() + 1).padStart(2, "0")}-${String(prevMonthEnd.getDate()).padStart(2, "0")}`;
+    const { start: prevStart, end: prevEnd } = getJSTPrevMonthRange();
 
     const [
       { data: expenseData },
@@ -202,7 +189,7 @@ export async function POST(request: NextRequest) {
 
     const systemPrompt = `あなたは「${selectedUser}」の家計簿パーソナル執事AIである。
 無意味な挨拶や冗長な説明は省き、ユーザーの資産管理を支える「正確なツール」として振る舞え。
-現在のユーザー名: ${displayName}
+現在のユーザー名: ${authDisplayName || "未設定"}
 現在の日本時間(JST): ${todayJST}
 
 【現在の状況】
@@ -229,7 +216,7 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
 【区分(user_type)の決定ルール】
 - 現在の選択区分: 「${selectedUser}」
 - ユーザーが区分を指定しなければ、必ず「${selectedUser}」をuser_typeに設定せよ
-- 「自分の」「個人」と明言された場合のみ → user_type="${displayName}"
+- 「自分の」「個人」と明言された場合のみ → user_type="${authDisplayName || selectedUser}"
 - 「共同の」「共同で」と明言された場合のみ → user_type="共同"
 - 迷ったら聞き返さず「${selectedUser}」を使え
 
@@ -289,7 +276,6 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
 - 複数件登録時は各件を箇条書きで並べる。絶対にテーブルを使わないこと`;
 
     // ===== Gemini ツール定義 =====
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const tools: any[] = [
       {
         functionDeclarations: [
@@ -499,7 +485,7 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
 
       if (functionCall.name === "recordExpense") {
         if (args.user_type === "自分" || args.user_type === "個人") {
-          args.user_type = displayName || selectedUser;
+          args.user_type = authDisplayName || selectedUser;
         }
         // カテゴリをDBで検証
         let catMain = (args.category_main as string) || "その他";
@@ -549,7 +535,7 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
                 headers: { "Content-Type": "application/json", "X-Internal-Secret": process.env.INTERNAL_API_SECRET || "" },
                 body: JSON.stringify({
                   title: "共同支出が登録されました",
-                  body: `${displayName}が共同支出を登録: ${(args.store_name as string) || (args.category_main as string)} ¥${Number(args.amount).toLocaleString()}`,
+                  body: `${authDisplayName || "ユーザー"}が共同支出を登録: ${(args.store_name as string) || (args.category_main as string)} ¥${Number(args.amount).toLocaleString()}`,
                   excludeUserId: user.id,
                   notificationType: "joint_expense_alert",
                   url: `/?page=kakeibo&tab=history&date=${transactionDate}${newLastRecordedId ? `&txId=${newLastRecordedId}` : ""}`,
@@ -569,6 +555,19 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
               "修正対象のトランザクションが見つかりません。",
           };
         } else {
+          // 所有確認: 本人のトランザクションのみ修正可能
+          const { data: txRow } = await supabaseAdmin
+            .from("transactions")
+            .select("user_id")
+            .eq("id", targetId)
+            .single();
+
+          if (!txRow || txRow.user_id !== user.id) {
+            functionResult = {
+              success: false,
+              message: "修正対象のトランザクションが見つかりません。",
+            };
+          } else {
           const updates: Record<string, unknown> = {};
           if (args.amount !== undefined) updates.amount = args.amount;
           if (args.category_main)
@@ -603,6 +602,7 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
                 message: `トランザクション(${targetId})を修正しました！`,
               };
             }
+          }
           }
         }
       } else if (functionCall.name === "addSaving") {
@@ -640,7 +640,7 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
               type: "deposit",
               amount: args.amount as number,
               memo: `AIチャットから入金`,
-              date: new Date().toISOString().split("T")[0],
+              date: todayJST,
             }).then(({ error: logErr }) => {
               if (logErr) console.warn("saving_logs insert error:", logErr);
             });
@@ -752,7 +752,6 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
       // すべての関数結果をまとめてAIに返して最終応答を生成
       try {
         const modelTurn = response.candidates?.[0]?.content;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const finalContents: any[] = [
           ...chatHistory,
           { role: "user", parts: [{ text: message }] },

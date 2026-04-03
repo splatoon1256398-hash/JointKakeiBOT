@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { GoogleGenAI } from "@google/genai";
+import { getJSTDateString } from "@/lib/date";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -58,6 +59,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: "画像パスが必要です" },
         { status: 400 }
+      );
+    }
+
+    // storagePath が本人のディレクトリ配下かを検証
+    if (!storagePath.startsWith(`${user.id}/`)) {
+      return NextResponse.json(
+        { error: "アクセス権限がありません" },
+        { status: 403 }
       );
     }
 
@@ -157,7 +166,7 @@ ${categoryList}
 
 - 各itemのmemoは個別商品名を書け（「野菜、肉など」のようにまとめるな）
 - 同じカテゴリーの商品でもまとめずに1品1itemで出力せよ
-- 日付が読み取れない場合は、今日の日付（${new Date().toISOString().split("T")[0]}）を使用してください
+- 日付が読み取れない場合は、今日の日付（${getJSTDateString()}）を使用してください
 - 必ずJSON形式のみで返答してください（他の文字は含めないでください）`;
 
     const result = await withRetry(() => ai.models.generateContent({
@@ -289,18 +298,9 @@ ${categoryList}
     return NextResponse.json(receiptData);
   } catch (error) {
     console.error("Receipt analysis error:", error);
-    return NextResponse.json({
-      date: new Date().toISOString().split("T")[0],
-      items: [
-        {
-          categoryMain: "食費",
-          categorySub: "食料品",
-          storeName: "不明",
-          amount: 0,
-          memo: "手動で入力してください",
-        },
-      ],
-      totalAmount: 0,
-    });
+    return NextResponse.json(
+      { error: "レシート解析に失敗しました。再度お試しください。" },
+      { status: 500 }
+    );
   }
 }

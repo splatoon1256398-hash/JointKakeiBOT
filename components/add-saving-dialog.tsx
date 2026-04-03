@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { getJSTDateString } from "@/lib/date";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,7 +32,7 @@ export function AddSavingDialog({ open, onOpenChange }: AddSavingDialogProps) {
   const [amount, setAmount] = useState<string>("");
   const [memo, setMemo] = useState("");
 
-  const fetchGoals = async () => {
+  const fetchGoals = useCallback(async () => {
     try {
       const { data } = await supabase
         .from('saving_goals')
@@ -46,13 +47,13 @@ export function AddSavingDialog({ open, onOpenChange }: AddSavingDialogProps) {
     } catch (error) {
       console.error('目標取得エラー:', error);
     }
-  };
+  }, [selectedUser, selectedGoalId]);
 
   useEffect(() => {
     if (open) {
       fetchGoals();
     }
-  }, [open, selectedUser]);
+  }, [open, fetchGoals]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -95,7 +96,7 @@ export function AddSavingDialog({ open, onOpenChange }: AddSavingDialogProps) {
           type: 'deposit',
           amount: Number(amount),
           memo: memo || null,
-          date: new Date().toISOString().split('T')[0],
+          date: getJSTDateString(),
         });
       }
 

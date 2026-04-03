@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Input } from "@/components/ui/input";
 import { Wallet, Save, Loader2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
@@ -19,7 +19,7 @@ export function BudgetSettings() {
   const [isSaving, setIsSaving] = useState(false);
   const [budgets, setBudgets] = useState<Record<string, number>>({});
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setIsLoading(true);
     try {
       const { data: categoriesData } = await supabase
@@ -50,11 +50,11 @@ export function BudgetSettings() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [selectedUser]);
 
   useEffect(() => {
     fetchData();
-  }, [selectedUser]);
+  }, [fetchData]);
 
   const handleBudgetChange = (category: string, value: string) => {
     setBudgets(prev => ({

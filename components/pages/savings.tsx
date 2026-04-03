@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { getJSTDateString } from "@/lib/date";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -58,7 +59,7 @@ export function Savings() {
     icon: "🎯",
   });
 
-  const fetchGoals = async () => {
+  const fetchGoals = useCallback(async () => {
     setIsLoading(true);
     try {
       const { data } = await supabase
@@ -74,25 +75,14 @@ export function Savings() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [selectedUser]);
 
   useEffect(() => {
     fetchGoals();
-  }, [selectedUser]);
-
-  const { refreshTrigger } = useApp();
-  useEffect(() => {
-    if (refreshTrigger > 0) {
-      fetchGoals();
-      // 展開中の履歴も再読み込み
-      if (expandedGoalId) {
-        fetchLogs(expandedGoalId);
-      }
-    }
-  }, [refreshTrigger]);
+  }, [fetchGoals]);
 
   // 貯金履歴の取得
-  const fetchLogs = async (goalId: string) => {
+  const fetchLogs = useCallback(async (goalId: string) => {
     setLogsLoading(goalId);
     try {
       const { data } = await supabase
@@ -109,7 +99,18 @@ export function Savings() {
     } finally {
       setLogsLoading(null);
     }
-  };
+  }, []);
+
+  const { refreshTrigger } = useApp();
+  useEffect(() => {
+    if (refreshTrigger > 0) {
+      fetchGoals();
+      // 展開中の履歴も再読み込み
+      if (expandedGoalId) {
+        fetchLogs(expandedGoalId);
+      }
+    }
+  }, [refreshTrigger, expandedGoalId, fetchGoals, fetchLogs]);
 
   // カードタップで履歴をアコーディオン展開/閉じ
   const toggleGoalExpand = async (goalId: string) => {
@@ -247,7 +248,7 @@ export function Savings() {
         type: 'withdraw',
         amount: amount,
         memo: withdrawMemo || null,
-        date: new Date().toISOString().split('T')[0],
+        date: getJSTDateString(),
       });
 
       await fetchGoals();

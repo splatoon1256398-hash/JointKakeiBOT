@@ -59,15 +59,7 @@ export function HomeWidgetSettings() {
   const [categories, setCategories] = useState<{ main: string; icon: string; subs: string[] }[]>([]);
   const [savingGoals, setSavingGoals] = useState<{ id: string; name: string }[]>([]);
 
-  useEffect(() => {
-    if (user) {
-      loadSettings();
-      loadCategories();
-      loadSavingGoals();
-    }
-  }, [user]);
-
-  const loadSettings = async () => {
+  const loadSettings = useCallback(async () => {
     if (!user) return;
     try {
       const { data, error } = await supabase
@@ -96,9 +88,9 @@ export function HomeWidgetSettings() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [user]);
 
-  const loadCategories = async () => {
+  const loadCategories = useCallback(async () => {
     const { data } = await supabase
       .from("categories")
       .select("main_category, icon, subcategories")
@@ -106,9 +98,9 @@ export function HomeWidgetSettings() {
     if (data) {
       setCategories(data.map(d => ({ main: d.main_category, icon: d.icon, subs: d.subcategories || [] })));
     }
-  };
+  }, []);
 
-  const loadSavingGoals = async () => {
+  const loadSavingGoals = useCallback(async () => {
     const { data } = await supabase
       .from("saving_goals")
       .select("id, goal_name")
@@ -116,7 +108,15 @@ export function HomeWidgetSettings() {
     if (data) {
       setSavingGoals(data.map(d => ({ id: d.id, name: d.goal_name })));
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (user) {
+      loadSettings();
+      loadCategories();
+      loadSavingGoals();
+    }
+  }, [user, loadSettings, loadCategories, loadSavingGoals]);
 
   const updateSlot = useCallback((index: number, updates: Partial<WidgetSlot>) => {
     setSlots(prev => {

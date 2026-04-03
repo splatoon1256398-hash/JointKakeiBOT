@@ -96,7 +96,7 @@ export function History({ isCompact = false }: HistoryProps) {
     if (refreshTrigger > 0) {
       fetchTransactions(selectedUser as UserType);
     }
-  }, [refreshTrigger]);
+  }, [refreshTrigger, selectedUser]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;

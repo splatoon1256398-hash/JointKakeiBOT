@@ -106,17 +106,7 @@ export function Analysis() {
 
   const isCurrentMonth = selectedYear === new Date().getFullYear() && selectedMonth === new Date().getMonth() + 1;
 
-  useEffect(() => {
-    fetchData();
-  }, [selectedUser, selectedYear, selectedMonth]);
-
-  useEffect(() => {
-    if (refreshTrigger > 0) {
-      fetchData();
-    }
-  }, [refreshTrigger]);
-
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setIsLoading(true);
     try {
       const { data: categories } = await supabase
@@ -240,7 +230,17 @@ export function Analysis() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [selectedUser, selectedYear, selectedMonth]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  useEffect(() => {
+    if (refreshTrigger > 0) {
+      fetchData();
+    }
+  }, [refreshTrigger, fetchData]);
 
   const totalExpense = categoryData.reduce((sum, c) => sum + c.value, 0);
   const normalizedQuery = searchQuery.trim().toLowerCase();

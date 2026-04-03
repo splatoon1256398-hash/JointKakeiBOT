@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Mail, Check, RefreshCw, Loader2, AlertCircle, Shield, Wifi, Plus, Trash2, Filter } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useApp } from "@/contexts/app-context";
@@ -57,7 +57,7 @@ export function GmailSettings() {
   const [newFilter, setNewFilter] = useState({ filterType: "WHITELIST", targetType: "SUBJECT", keyword: "" });
   const [addingFilter, setAddingFilter] = useState(false);
 
-  const fetchSettings = async () => {
+  const fetchSettings = useCallback(async () => {
     if (!user) return;
     setLoading(true);
     try {
@@ -85,9 +85,9 @@ export function GmailSettings() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user]);
 
-  const fetchFilters = async () => {
+  const fetchFilters = useCallback(async () => {
     if (!user) return;
     try {
       const auth = await getAuthHeaders();
@@ -99,17 +99,33 @@ export function GmailSettings() {
     } catch (error) {
       console.error("フィルタ取得エラー:", error);
     }
-  };
+  }, [user]);
 
   useEffect(() => {
     fetchSettings();
     fetchFilters();
-  }, [user]);
+  }, [fetchSettings, fetchFilters]);
 
   // Google OAuth 開始
-  const startGoogleOAuth = () => {
+  const startGoogleOAuth = async () => {
     if (!user) return;
-    window.location.href = `/api/auth/google?user_id=${user.id}`;
+    try {
+      const auth = await getAuthHeaders();
+      const response = await fetch("/api/auth/google", {
+        method: "POST",
+        headers: auth,
+      });
+      const data = await response.json();
+
+      if (!response.ok || !data.url) {
+        throw new Error(data.error || "Google OAuth URL の取得に失敗しました");
+      }
+
+      window.location.href = data.url;
+    } catch (error) {
+      console.error("Google OAuth開始エラー:", error);
+      alert("Google連携の開始に失敗しました");
+    }
   };
 
   // Gmail Watch 開始

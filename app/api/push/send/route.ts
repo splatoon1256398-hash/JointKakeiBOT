@@ -21,19 +21,37 @@ export async function POST(request: NextRequest) {
     const authHeader = request.headers.get("authorization");
     const bearerToken = authHeader?.replace("Bearer ", "");
 
-    let authenticated = false;
+    let isInternalCall = false;
+    let authenticatedUserId: string | null = null;
+
     if (internalSecret && internalSecret === process.env.INTERNAL_API_SECRET) {
-      authenticated = true;
+      isInternalCall = true;
     } else if (bearerToken) {
       const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(bearerToken);
-      if (!authError && user) authenticated = true;
+      if (!authError && user) authenticatedUserId = user.id;
     }
 
-    if (!authenticated) {
+    if (!isInternalCall && !authenticatedUserId) {
       return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
     }
 
     const { title, body, excludeUserId, targetUserId, notificationType, url } = await request.json();
+
+    // 非内部呼び出しの場合: 自分宛の通知のみに制限
+    if (!isInternalCall) {
+      if (!targetUserId || targetUserId !== authenticatedUserId) {
+        return NextResponse.json(
+          { error: "クライアントから送信できるのは自分宛の通知のみです" },
+          { status: 403 }
+        );
+      }
+      if (excludeUserId) {
+        return NextResponse.json(
+          { error: "クライアントからの除外条件付き送信は許可されていません" },
+          { status: 403 }
+        );
+      }
+    }
 
     if (!title || !body) {
       return NextResponse.json(

@@ -2,6 +2,8 @@
 
 import { useState, useRef } from "react";
 import { createPortal } from "react-dom";
+import NextImage from "next/image";
+import { getJSTDateString } from "@/lib/date";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,7 +32,7 @@ export function AddIncomeDialog({ open, onOpenChange, selectedUser }: AddIncomeD
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [isPdf, setIsPdf] = useState(false);
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(getJSTDateString());
   const [categoryMain, setCategoryMain] = useState("給与・賞与");
   const [categorySub, setCategorySub] = useState("給与");
   const [source, setSource] = useState("");
@@ -223,7 +225,7 @@ export function AddIncomeDialog({ open, onOpenChange, selectedUser }: AddIncomeD
   };
 
   const resetForm = () => {
-    setDate(new Date().toISOString().split('T')[0]);
+    setDate(getJSTDateString());
     setCategoryMain("給与・賞与");
     setCategorySub("給与");
     setSource("");
@@ -335,9 +337,12 @@ export function AddIncomeDialog({ open, onOpenChange, selectedUser }: AddIncomeD
               {isPdf ? (
                 <FileText className="h-5 w-5 text-green-400" />
               ) : (
-                <img
+                <NextImage
                   src={capturedImage}
                   alt="給与明細"
+                  width={40}
+                  height={40}
+                  unoptimized
                   className="h-10 w-10 object-cover rounded"
                 />
               )}

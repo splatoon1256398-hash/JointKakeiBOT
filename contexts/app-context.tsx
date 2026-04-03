@@ -244,17 +244,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [loadThemeColors]);
 
   useEffect(() => {
+    if (!user) return;
+    // 本人のトランザクション + 共同トランザクションのみ監視
     const channel = supabase
       .channel('transactions-realtime')
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'transactions' },
+        { event: '*', schema: 'public', table: 'transactions', filter: `user_id=eq.${user.id}` },
+        () => { triggerRefresh(); }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'transactions', filter: `user_type=eq.共同` },
         () => { triggerRefresh(); }
       )
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     if (user && !fixedExpensesProcessed.current) {

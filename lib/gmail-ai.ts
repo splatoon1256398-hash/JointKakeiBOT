@@ -130,7 +130,9 @@ ${catLines.join("\n")}`;
 小分類は適切なものを推測してください。`;
     }
 
-    const today = new Date().toISOString().split('T')[0];
+    // JST基準の今日の日付
+    const jstNow = new Date(Date.now() + 9 * 60 * 60 * 1000);
+    const today = `${jstNow.getUTCFullYear()}-${String(jstNow.getUTCMonth() + 1).padStart(2, "0")}-${String(jstNow.getUTCDate()).padStart(2, "0")}`;
     const dateToUse = receivedDate || today;
 
     const prompt = `以下のメールから決済・取引情報を抽出してください。

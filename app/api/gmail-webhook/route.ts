@@ -150,6 +150,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // user_type のバリデーション: 許可された値のみ
+    const allowedUserTypes = ["共同", "れん", "あかね"];
+    if (!allowedUserTypes.includes(body.user_type)) {
+      return NextResponse.json(
+        { error: "無効なuser_typeです" },
+        { status: 400 }
+      );
+    }
+
     // transactionsテーブルにデータを挿入
     const { data: transaction, error: insertError } = await supabaseAdmin
       .from("transactions")

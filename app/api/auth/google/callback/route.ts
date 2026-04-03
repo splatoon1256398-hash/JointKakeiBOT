@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { verifyOAuthState } from "@/lib/auth";
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
@@ -14,10 +15,15 @@ const supabaseAdmin = createClient(
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const code = searchParams.get("code");
-  const userId = searchParams.get("state");
+  const stateParam = searchParams.get("state");
 
-  if (!code || !userId) {
+  if (!code || !stateParam) {
     return NextResponse.json({ error: "Missing code or state" }, { status: 400 });
+  }
+
+  const userId = verifyOAuthState(stateParam);
+  if (!userId) {
+    return NextResponse.json({ error: "Invalid or expired state" }, { status: 403 });
   }
 
   try {

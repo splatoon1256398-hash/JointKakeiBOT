@@ -2,6 +2,8 @@
 
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
+import NextImage from "next/image";
+import { getJSTDateString } from "@/lib/date";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -65,7 +67,7 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
   const [isPdf, setIsPdf] = useState(false);
   const [continuousScan, setContinuousScan] = useState(false);
   const [scanCount, setScanCount] = useState(0);
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(getJSTDateString());
   const [items, setItems] = useState<ExpenseItem[]>([
     {
       categoryMain: "食費",
@@ -369,16 +371,11 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
       // 共同支出の場合、パートナーに Push 通知を送信
       if (selectedUser === "共同") {
         try {
-          const memoText = items[0]?.memo || items[0]?.storeName || items[0]?.categorySub || "支出";
-          await fetch("/api/push/send", {
+          await fetch("/api/push/joint-expense", {
             method: "POST",
             headers: { "Content-Type": "application/json", "Authorization": `Bearer ${accessToken}` },
             body: JSON.stringify({
-              title: "共同支出が登録されました",
-              body: `¥${totalAmount.toLocaleString()} (${memoText})`,
-              excludeUserId: user?.id,
-              notificationType: "joint_expense_alert",
-              url: `/?page=kakeibo&tab=history&date=${date}${insertedTxId ? `&txId=${insertedTxId}` : ""}`,
+              transactionId: insertedTxId,
             }),
           });
         } catch (pushError) {
@@ -420,7 +417,7 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
 
   // フォームをリセット
   const resetForm = () => {
-    setDate(new Date().toISOString().split('T')[0]);
+    setDate(getJSTDateString());
     setItems([{
       categoryMain: "食費",
       categorySub: "食料品",
@@ -722,7 +719,14 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
                   <span className="text-sm font-semibold">PDFファイル</span>
                 </div>
               ) : (
-                <img src={capturedImage} alt="撮影したレシート" className="w-full" />
+                <NextImage
+                  src={capturedImage}
+                  alt="撮影したレシート"
+                  width={1200}
+                  height={1600}
+                  unoptimized
+                  className="w-full h-auto"
+                />
               )}
               <Button
                 type="button"

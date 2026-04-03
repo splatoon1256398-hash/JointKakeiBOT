@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
+import { getJSTDateString } from "@/lib/date";
 import { Plus, Trash2, Calendar, Loader2, CreditCard, Pencil, X, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -96,7 +97,7 @@ export function FixedExpenses() {
   };
 
   // 固定費の取得
-  const fetchExpenses = async () => {
+  const fetchExpenses = useCallback(async () => {
     if (!user) return;
     setLoading(true);
     try {
@@ -114,11 +115,11 @@ export function FixedExpenses() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user, selectedUser]);
 
   useEffect(() => {
     fetchExpenses();
-  }, [user, selectedUser]);
+  }, [fetchExpenses]);
 
   // 編集開始（インライン）
   const handleEdit = (expense: FixedExpense) => {
@@ -220,7 +221,7 @@ export function FixedExpenses() {
 
   // 有効かどうか判定
   const isActiveNow = (exp: FixedExpense) => {
-    const today = new Date().toISOString().split("T")[0];
+    const today = getJSTDateString();
     if (exp.start_date && today < exp.start_date) return false;
     if (exp.end_date && today > exp.end_date) return false;
     return true;

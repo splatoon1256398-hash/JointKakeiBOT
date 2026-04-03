@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { GoogleGenAI } from "@google/genai";
+import { getJSTDateString } from "@/lib/date";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -55,6 +56,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "画像パスが必要です" }, { status: 400 });
     }
 
+    // storagePath が本人のディレクトリ配下かを検証
+    if (!storagePath.startsWith(`${user.id}/`)) {
+      return NextResponse.json(
+        { error: "アクセス権限がありません" },
+        { status: 403 }
+      );
+    }
+
     // Supabase Storageから画像をダウンロード
     const { data: fileData, error: downloadError } = await supabaseAdmin.storage
       .from("receipt-images")
@@ -106,7 +115,7 @@ export async function POST(request: NextRequest) {
 - 賞与の場合は category_sub を "賞与" にしてください
 - 副業やフリーランスの場合は category_main を "副業" にしてください
 - 金額が読み取れない場合は 0 にしてください。捏造は禁止です
-- 日付が読み取れない場合は "${new Date().toISOString().split("T")[0]}" を使用してください
+- 日付が読み取れない場合は "${getJSTDateString()}" を使用してください
 - 必ずJSON形式のみで返答してください`;
 
     const result = await withRetry(() => ai.models.generateContent({
@@ -128,15 +137,8 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("Income scan error:", error);
     return NextResponse.json(
-      {
-        date: new Date().toISOString().split("T")[0],
-        net_amount: 0,
-        gross_amount: 0,
-        source: "",
-        memo: "手動で入力してください",
-        category_main: "給与・賞与",
-        category_sub: "給与",
-      }
+      { error: "収入書類の解析に失敗しました。再度お試しください。" },
+      { status: 500 }
     );
   }
 }

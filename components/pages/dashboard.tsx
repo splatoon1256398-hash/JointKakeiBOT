@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useApp } from "@/contexts/app-context";
 import { 
   Wallet, 
@@ -88,7 +88,7 @@ export function Dashboard({ onNavigateToAnalysis, onNavigateToHistory }: Dashboa
   ]);
   const [savingGoals, setSavingGoals] = useState<{ id: string; goal_name: string; target_amount: number; current_amount: number }[]>([]);
 
-  const fetchCategoryIcons = async () => {
+  const fetchCategoryIcons = useCallback(async () => {
     const { data } = await supabase
       .from('categories')
       .select('main_category, icon');
@@ -100,7 +100,7 @@ export function Dashboard({ onNavigateToAnalysis, onNavigateToHistory }: Dashboa
       });
       setCategoryIcons(icons);
     }
-  };
+  }, []);
 
   const getMonthRange = () => {
     const now = new Date();
@@ -115,7 +115,7 @@ export function Dashboard({ onNavigateToAnalysis, onNavigateToHistory }: Dashboa
     };
   };
 
-  const fetchData = async (userType: UserType) => {
+  const fetchData = useCallback(async (userType: UserType) => {
     setIsLoading(true);
     try {
       const { start, end } = getMonthRange();
@@ -216,10 +216,10 @@ export function Dashboard({ onNavigateToAnalysis, onNavigateToHistory }: Dashboa
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [categoryIcons]);
 
   // ウィジェット設定・貯金目標を読み込み
-  const fetchWidgetSettings = async () => {
+  const fetchWidgetSettings = useCallback(async () => {
     if (!user) return;
     try {
       const { data } = await supabase
@@ -234,33 +234,33 @@ export function Dashboard({ onNavigateToAnalysis, onNavigateToHistory }: Dashboa
     } catch {
       // デフォルトのまま
     }
-  };
+  }, [user]);
 
-  const fetchSavingGoals = async () => {
+  const fetchSavingGoals = useCallback(async () => {
     const { data } = await supabase
       .from("saving_goals")
       .select("id, goal_name, target_amount, current_amount")
       .eq("user_type", selectedUser);
     setSavingGoals(data || []);
-  };
+  }, [selectedUser]);
 
   useEffect(() => {
     fetchCategoryIcons();
     fetchWidgetSettings();
-  }, [user]);
+  }, [fetchCategoryIcons, fetchWidgetSettings]);
 
   useEffect(() => {
     if (Object.keys(categoryIcons).length > 0) {
       fetchData(selectedUser as UserType);
       fetchSavingGoals();
     }
-  }, [selectedUser, categoryIcons]);
+  }, [selectedUser, categoryIcons, fetchData, fetchSavingGoals]);
 
   useEffect(() => {
     if (Object.keys(categoryIcons).length > 0 && refreshTrigger > 0) {
       fetchData(selectedUser as UserType);
     }
-  }, [refreshTrigger]);
+  }, [refreshTrigger, categoryIcons, fetchData, selectedUser]);
 
   const balance = income - monthlySpent;
 
