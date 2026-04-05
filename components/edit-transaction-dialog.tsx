@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -54,6 +54,19 @@ export function EditTransactionDialog({ open, onOpenChange, transaction }: EditT
   const [transactionType, setTransactionType] = useState("expense");
   const [items, setItems] = useState<ExpenseItem[]>([]);
   const [grossAmount, setGrossAmount] = useState<number>(0);
+
+  const itemsEndRef = useRef<HTMLDivElement>(null);
+  const prevItemsLengthRef = useRef(0);
+
+  // 項目追加時に末尾へスクロール
+  useEffect(() => {
+    if (items.length > prevItemsLengthRef.current && prevItemsLengthRef.current > 0) {
+      setTimeout(() => {
+        itemsEndRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }, 100);
+    }
+    prevItemsLengthRef.current = items.length;
+  }, [items.length]);
 
   // カテゴリーピッカー状態
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -351,6 +364,7 @@ export function EditTransactionDialog({ open, onOpenChange, transaction }: EditT
                     </button>
                   </div>
                 ))}
+                <div ref={itemsEndRef} />
               </div>
 
               {/* 合計金額プレビュー */}

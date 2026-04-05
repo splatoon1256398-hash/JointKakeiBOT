@@ -264,6 +264,19 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
     }
   };
 
+  const itemsEndRef = useRef<HTMLDivElement>(null);
+  const prevItemsLengthRef = useRef(0);
+
+  // 項目追加時に末尾へスクロール
+  useEffect(() => {
+    if (items.length > prevItemsLengthRef.current && prevItemsLengthRef.current > 0) {
+      setTimeout(() => {
+        itemsEndRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }, 100);
+    }
+    prevItemsLengthRef.current = items.length;
+  }, [items.length]);
+
   // 項目を追加
   const addItem = () => {
     setItems([...items, {
@@ -854,6 +867,7 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
                   </div>
                 </div>
               ))}
+              <div ref={itemsEndRef} />
             </div>
 
             {/* 合計金額表示 */}

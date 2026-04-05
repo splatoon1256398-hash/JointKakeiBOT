@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { getJSTDateString } from "@/lib/date";
 import { Plus, Trash2, Calendar, Loader2, CreditCard, Pencil, X, Check } from "lucide-react";
@@ -134,10 +134,15 @@ export function FixedExpenses() {
     setShowAddForm(false);
   };
 
+  const addFormRef = useRef<HTMLDivElement>(null);
+
   // 新規追加フォームを開く
   const handleOpenAdd = () => {
     resetForm();
     setShowAddForm(true);
+    setTimeout(() => {
+      addFormRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }, 100);
   };
 
   // 固定費の追加 or 更新
@@ -448,7 +453,9 @@ export function FixedExpenses() {
       </div>
 
       {/* 新規追加フォーム */}
-      {showAddForm && renderInlineForm(true)}
+      <div ref={addFormRef}>
+        {showAddForm && renderInlineForm(true)}
+      </div>
 
       {/* 固定費リスト */}
       {loading ? (
