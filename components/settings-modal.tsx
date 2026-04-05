@@ -32,7 +32,7 @@ const TAB_SCOPE_LABEL: Record<string, string> = {
   home: "あなた個人のホーム設定",
   gmail: "あなた個人のGmail連携",
   push: "あなた個人の通知設定",
-  other: "あなた個人の��ーマ・着せ替え設��",
+  other: "あなた個人のテーマ・着せ替え設定",
 };
 
 function ScopeBadge({ scope, label }: { scope: "personal" | "shared"; label?: string }) {

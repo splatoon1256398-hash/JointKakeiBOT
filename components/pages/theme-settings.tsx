@@ -140,7 +140,7 @@ export function ThemeSettings() {
             <div className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center">
               <Wallet className="h-6 w-6 text-white/60" />
             </div>
-            <span className="text-xs font-semibold text-white/80">ノーマ���</span>
+            <span className="text-xs font-semibold text-white/80">ノーマル</span>
           </button>
 
           {/* キャラクター一覧 */}
