@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { PiggyBank, Plus, Trash2, Target, Calendar, TrendingUp, Pencil, MinusCircle, ChevronUp, ChevronDown } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useApp } from "@/contexts/app-context";
+import { EmptyState } from "@/components/empty-state";
 
 interface SavingGoal {
   id: string;
@@ -339,8 +340,7 @@ export function Savings() {
         </div>
       ) : goals.length === 0 ? (
         <div className="card-solid p-12 text-center">
-          <PiggyBank className="h-20 w-20 mx-auto text-gray-600 mb-4" />
-          <p className="text-lg font-semibold text-gray-400 mb-2">まだ目標がありません</p>
+          <EmptyState message="まだ目標がありません" />
           <p className="text-sm text-gray-500 mb-4">「＋新規」ボタンから目標を追加しましょう</p>
         </div>
       ) : (

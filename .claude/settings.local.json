@@ -1,5 +1,6 @@
 {
   "permissions": {
+    "defaultMode": "bypassPermissions",
     "allow": [
       "Bash(xargs grep:*)",
       "Bash(grep -rn \"SpeechRecognition\\\\|webkitSpeechRecognition\\\\|getUserMedia\\\\|audioContext\\\\|Recorder\" /c/Users/splat/Desktop/Joint-Kakeibot-App --include=\"*.tsx\" --include=\"*.ts\" --include=\"*.jsx\" --include=\"*.js\" --include=\"*.json\" ! -path \"*/node_modules/*\" ! -path \"*/.next/*\")",
@@ -13,6 +14,7 @@
       "Bash(git add:*)",
       "Bash(git commit -m ':*)",
       "Bash(git push:*)"
-    ]
+    ],
+    "deny": []
   }
 }

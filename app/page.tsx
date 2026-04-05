@@ -15,9 +15,12 @@ import { RecordMenuDialog } from "@/components/record-menu-dialog";
 import { AddExpenseDialog } from "@/components/add-expense-dialog";
 import { AddIncomeDialog } from "@/components/add-income-dialog";
 import { AddSavingDialog } from "@/components/add-saving-dialog";
+import { useCharacter } from "@/lib/use-character";
+import Image from "next/image";
 
 function AppContent() {
   const { user, isAuthLoading, selectedUser, theme, setKakeiboTab } = useApp();
+  const { assets: charAssets, isActive: charActive } = useCharacter();
   const [currentPage, setCurrentPage] = useState<NavPage>("dashboard");
   const [isRecordMenuOpen, setIsRecordMenuOpen] = useState(false);
   const [isAddExpenseOpen, setIsAddExpenseOpen] = useState(false);
@@ -99,6 +102,13 @@ function AppContent() {
       className="min-h-screen min-h-[100dvh] transition-colors duration-500"
       style={{ backgroundColor: theme.background }}
     >
+      {/* 背景ウォーターマーク */}
+      {charActive && charAssets && (
+        <div className="fixed inset-0 pointer-events-none z-0 flex items-center justify-center opacity-[0.04]">
+          <Image src={charAssets.watermark} alt="" width={300} height={300} className="select-none" draggable={false} />
+        </div>
+      )}
+
       {/* 共通ヘッダー */}
       <CommonHeader />
 

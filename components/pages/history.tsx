@@ -7,6 +7,7 @@ import { useApp } from "@/contexts/app-context";
 import { ExpenseCard } from "@/components/widgets/expense-card";
 import { EditTransactionDialog, TransactionForEdit } from "@/components/edit-transaction-dialog";
 import { Input } from "@/components/ui/input";
+import { EmptyState } from "@/components/empty-state";
 import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
 
@@ -374,10 +375,9 @@ export function History({ isCompact = false }: HistoryProps) {
                 {[1, 2, 3].map((i) => (<div key={i} className="h-16 bg-white/10 rounded-xl animate-pulse" />))}
               </div>
             ) : Object.keys(groupedTransactions).length === 0 ? (
-              <div className="text-center py-12">
-                <HistoryIcon className="h-16 w-16 mx-auto text-white/20 mb-4" />
-                <p className="text-lg font-semibold text-white/40">まだ履歴がありません</p>
-                <p className="text-sm text-white/30 mt-2">支出を記録すると、ここに表示されます</p>
+              <div>
+                <EmptyState message="まだ履歴がありません" />
+                <p className="text-sm text-white/30 text-center">支出を記録すると、ここに表示されます</p>
               </div>
             ) : (
               <div className="space-y-3">

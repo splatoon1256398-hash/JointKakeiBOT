@@ -7,6 +7,8 @@ import { Input } from "@/components/ui/input";
 import { MessageCircle, Send, Sparkles, Loader2, Mic, MicOff } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useApp } from "@/contexts/app-context";
+import { useCharacter } from "@/lib/use-character";
+import Image from "next/image";
 
 interface Message {
   id: string;
@@ -53,6 +55,7 @@ interface BrowserSpeechWindow extends Window {
 
 export function Chat() {
   const { selectedUser, user, theme, displayName, triggerRefresh } = useApp();
+  const { assets: charAssets, isActive: charActive, characterName } = useCharacter();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -283,8 +286,12 @@ export function Chat() {
               >
                 {message.role === "assistant" && (
                   <div className="flex items-center gap-2 mb-2">
-                    <Sparkles className="h-4 w-4 text-purple-400" />
-                    <span className="text-xs text-purple-400 font-semibold">AI</span>
+                    {charActive && charAssets ? (
+                      <Image src={charAssets.avatar} alt={characterName || "AI"} width={20} height={20} className="rounded-full" />
+                    ) : (
+                      <Sparkles className="h-4 w-4 text-purple-400" />
+                    )}
+                    <span className="text-xs text-purple-400 font-semibold">{charActive && characterName ? characterName : "AI"}</span>
                   </div>
                 )}
                 <p className="text-sm whitespace-pre-wrap">{message.content}</p>
@@ -297,7 +304,11 @@ export function Chat() {
           {isLoading && (
             <div className="flex justify-start">
               <div className="bg-slate-800/90 border border-white/10 rounded-2xl p-4">
-                <Loader2 className="h-5 w-5 animate-spin text-purple-400" />
+                {charActive && charAssets ? (
+                  <Image src={charAssets.avatar} alt="Loading" width={24} height={24} className="animate-bounce rounded-full" />
+                ) : (
+                  <Loader2 className="h-5 w-5 animate-spin text-purple-400" />
+                )}
               </div>
             </div>
           )}

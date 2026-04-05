@@ -1,8 +1,10 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { Palette, Check, RotateCcw, Info, Users, User } from "lucide-react";
+import { Palette, Check, RotateCcw, Info, Users, User, Sparkles, Wallet } from "lucide-react";
 import { useApp } from "@/contexts/app-context";
+import { CHARACTER_LIST, CharacterId } from "@/lib/characters";
+import Image from "next/image";
 
 const PRESET_COLORS = [
   { label: "パープル", hex: "#8b5cf6" },
@@ -28,6 +30,7 @@ export function ThemeSettings() {
     theme, selectedUser, displayName,
     customThemeColor, setCustomThemeColor, saveCustomThemeColor,
     jointThemeColor, setJointThemeColor, saveJointThemeColor,
+    characterId, saveCharacterId,
   } = useApp();
 
   const isJoint = selectedUser === "共同";
@@ -93,8 +96,93 @@ export function ThemeSettings() {
     }
   };
 
+  const [charSaving, setCharSaving] = useState(false);
+
+  const handleCharacterSelect = useCallback(async (id: CharacterId) => {
+    setCharSaving(true);
+    try {
+      await saveCharacterId(id);
+    } finally {
+      setCharSaving(false);
+    }
+  }, [saveCharacterId]);
+
   return (
     <div className="space-y-4">
+      {/* 着せ替え設定 */}
+      <div>
+        <h3 className="text-lg font-bold text-white flex items-center gap-2">
+          <Sparkles className="h-5 w-5" style={{ color: theme.primary }} />
+          着せ替え
+        </h3>
+        <p className="text-xs text-gray-400 mt-0.5">
+          キャラクターを選ぶとアプリ全体のアイコンが変わります
+        </p>
+      </div>
+
+      <div className="rounded-xl p-4 bg-black/15 border border-white/5">
+        <div className="grid grid-cols-2 gap-3">
+          {/* ノーマル */}
+          <button
+            onClick={() => handleCharacterSelect("none")}
+            disabled={charSaving}
+            className={`relative flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${
+              characterId === "none"
+                ? "border-white/40 bg-white/10"
+                : "border-white/10 bg-white/[0.03] hover:bg-white/[0.06]"
+            }`}
+          >
+            {characterId === "none" && (
+              <div className="absolute top-2 right-2">
+                <Check className="h-4 w-4 text-white" />
+              </div>
+            )}
+            <div className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center">
+              <Wallet className="h-6 w-6 text-white/60" />
+            </div>
+            <span className="text-xs font-semibold text-white/80">ノーマ���</span>
+          </button>
+
+          {/* キャラクター一覧 */}
+          {CHARACTER_LIST.map((char) => (
+            <button
+              key={char.id}
+              onClick={() => handleCharacterSelect(char.id)}
+              disabled={charSaving}
+              className={`relative flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${
+                characterId === char.id
+                  ? "border-white/40 bg-white/10"
+                  : "border-white/10 bg-white/[0.03] hover:bg-white/[0.06]"
+              }`}
+            >
+              {characterId === char.id && (
+                <div className="absolute top-2 right-2">
+                  <Check className="h-4 w-4 text-white" />
+                </div>
+              )}
+              <div className="w-12 h-12 rounded-full overflow-hidden bg-white/10 flex items-center justify-center">
+                <Image
+                  src={char.previewImage}
+                  alt={char.name}
+                  width={48}
+                  height={48}
+                  className="object-cover"
+                  onError={(e) => {
+                    const target = e.currentTarget;
+                    target.style.display = "none";
+                  }}
+                />
+              </div>
+              <span className="text-xs font-semibold text-white/80">{char.name}</span>
+              <span className="text-[9px] text-white/40 text-center leading-tight">{char.description}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <hr className="border-white/10" />
+
+      {/* テーマカラー設定 */}
       <div>
         <h3 className="text-lg font-bold text-white flex items-center gap-2">
           <Palette className="h-5 w-5" style={{ color: theme.primary }} />

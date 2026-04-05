@@ -12,6 +12,7 @@ import { Camera, Loader2, Sparkles, Upload, X, Plus, Trash2, Calendar, FileText 
 import { type ReceiptAnalysisResult, type ExpenseItem } from "@/lib/gemini";
 import { supabase } from "@/lib/supabase";
 import { useApp } from "@/contexts/app-context";
+import { useCharacter } from "@/lib/use-character";
 
 interface AddExpenseDialogProps {
   open: boolean;
@@ -21,6 +22,7 @@ interface AddExpenseDialogProps {
 
 export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpenseDialogProps) {
   const { triggerRefresh } = useApp();
+  const { assets: charAssets, isActive: charActive } = useCharacter();
   
   // DBからカテゴリを常に最新で取得
   const [dbCategories, setDbCategories] = useState<{ main: string; icon: string; subs: string[] }[]>([]);
@@ -577,7 +579,11 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
                 <div className="absolute inset-0 rounded-full border-2 border-purple-500/20" />
                 <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-purple-400 animate-spin" style={{ animationDuration: '1s' }} />
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <Sparkles className="h-5 w-5 text-purple-300" />
+                  {charActive && charAssets ? (
+                    <NextImage src={charAssets.scanning} alt="解析中" width={28} height={28} className="animate-bounce" />
+                  ) : (
+                    <Sparkles className="h-5 w-5 text-purple-300" />
+                  )}
                 </div>
               </div>
               <div className="space-y-1">

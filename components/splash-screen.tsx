@@ -1,12 +1,24 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { Wallet } from "lucide-react";
+import Image from "next/image";
+import { CharacterId, isValidCharacterId, getCharacterAssets } from "@/lib/characters";
 
 interface SplashScreenProps {
   fadeOut?: boolean;
 }
 
 export function SplashScreen({ fadeOut = false }: SplashScreenProps) {
+  const [charId, setCharId] = useState<CharacterId>("none");
+
+  useEffect(() => {
+    const cached = localStorage.getItem("characterId");
+    if (isValidCharacterId(cached)) setCharId(cached);
+  }, []);
+
+  const charAssets = getCharacterAssets(charId);
+
   return (
     <div
       className={`fixed inset-0 z-[9999] flex items-center justify-center transition-all duration-500 ${
@@ -20,8 +32,12 @@ export function SplashScreen({ fadeOut = false }: SplashScreenProps) {
         {/* ロゴ */}
         <div className="relative">
           <div className="absolute inset-0 rounded-3xl bg-white/20 blur-2xl animate-pulse-glow" />
-          <div className="relative w-24 h-24 rounded-3xl bg-white/20 backdrop-blur-xl flex items-center justify-center shadow-2xl">
-            <Wallet className="w-12 h-12 text-white" />
+          <div className="relative w-24 h-24 rounded-3xl bg-white/20 backdrop-blur-xl flex items-center justify-center shadow-2xl overflow-hidden">
+            {charAssets ? (
+              <Image src={charAssets.splash} alt="Character" width={96} height={96} className="object-contain" />
+            ) : (
+              <Wallet className="w-12 h-12 text-white" />
+            )}
           </div>
         </div>
 

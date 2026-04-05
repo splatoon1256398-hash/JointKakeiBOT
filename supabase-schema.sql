@@ -477,3 +477,19 @@ BEGIN
     COMMENT ON COLUMN user_settings.gmail_auto_processing IS 'Gmail 自動処理の有効/無効フラグ';
   END IF;
 END $$;
+
+-- ==========================================
+-- マイグレーション: user_settings に character_id カラムを追加
+-- キャラクター着せ替え機能のID保存用
+-- ==========================================
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'user_settings' AND column_name = 'character_id'
+  ) THEN
+    ALTER TABLE user_settings ADD COLUMN character_id TEXT DEFAULT 'none';
+    COMMENT ON COLUMN user_settings.character_id IS 'キャラ着せ替えID。none=通常、hachiware=ハチワレ';
+  END IF;
+END $$;

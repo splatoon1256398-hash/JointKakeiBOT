@@ -21,6 +21,7 @@ import { QuickStatsCard } from "@/components/widgets/quick-stats-card";
 import { ExpenseCard } from "@/components/widgets/expense-card";
 import { EditTransactionDialog, TransactionForEdit } from "@/components/edit-transaction-dialog";
 import { calculateDaysToPayday, WIDGET_TYPES } from "@/lib/widgets";
+import { EmptyState } from "@/components/empty-state";
 
 type UserType = "共同" | "れん" | "あかね";
 
@@ -546,10 +547,7 @@ export function Dashboard({ onNavigateToAnalysis, onNavigateToHistory }: Dashboa
               {[1, 2, 3].map((i) => (<div key={i} className="h-16 bg-white/10 rounded-xl animate-pulse" />))}
             </div>
           ) : Object.keys(groupedTransactions).length === 0 ? (
-            <div className="text-center py-12">
-              <TrendingDown className="w-12 h-12 mx-auto text-white/20 mb-3" />
-              <p className="text-white/40">まだ支出がありません</p>
-            </div>
+            <EmptyState message="まだ支出がありません" />
           ) : (
             <div className="space-y-4">
               {Object.entries(groupedTransactions).slice(0, 5).map(([date, dayTransactions]) => {

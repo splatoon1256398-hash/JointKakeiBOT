@@ -3,6 +3,9 @@
 import { Home, BookOpen, PlusCircle, PiggyBank, MessageCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/contexts/app-context";
+import { useCharacter } from "@/lib/use-character";
+import { CharacterAssets } from "@/lib/characters";
+import Image from "next/image";
 
 export type NavPage = "dashboard" | "kakeibo" | "savings" | "chat";
 
@@ -14,13 +17,14 @@ interface BottomNavProps {
 
 export function BottomNav({ currentPage, onPageChange, onRecordClick }: BottomNavProps) {
   const { theme } = useApp();
-  
-  const navItems = [
-    { id: "dashboard" as NavPage, icon: Home, label: "ホーム" },
-    { id: "kakeibo" as NavPage, icon: BookOpen, label: "家計簿" },
-    { id: "record", icon: PlusCircle, label: "記録", isCenter: true },
-    { id: "savings" as NavPage, icon: PiggyBank, label: "貯金" },
-    { id: "chat" as NavPage, icon: MessageCircle, label: "チャット" },
+  const { assets, isActive } = useCharacter();
+
+  const navItems: { id: NavPage | "record"; icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>; label: string; isCenter?: boolean; assetKey?: keyof CharacterAssets }[] = [
+    { id: "dashboard" as NavPage, icon: Home, label: "ホーム", assetKey: "navHome" },
+    { id: "kakeibo" as NavPage, icon: BookOpen, label: "家計簿", assetKey: "navKakeibo" },
+    { id: "record", icon: PlusCircle, label: "記録", isCenter: true, assetKey: "navRecord" },
+    { id: "savings" as NavPage, icon: PiggyBank, label: "貯金", assetKey: "navSavings" },
+    { id: "chat" as NavPage, icon: MessageCircle, label: "チャット", assetKey: "navChat" },
   ];
 
   return (
@@ -58,11 +62,15 @@ export function BottomNav({ currentPage, onPageChange, onRecordClick }: BottomNa
                   />
                   
                   {/* メインボタン */}
-                  <div 
-                    className="relative w-16 h-16 rounded-full flex items-center justify-center shadow-2xl transform transition-all duration-300 group-hover:scale-110 group-active:scale-95"
+                  <div
+                    className="relative w-16 h-16 rounded-full flex items-center justify-center shadow-2xl transform transition-all duration-300 group-hover:scale-110 group-active:scale-95 overflow-hidden"
                     style={{ background: `linear-gradient(135deg, ${theme.primary}, ${theme.secondary})` }}
                   >
-                    <Icon className="w-8 h-8 text-white" />
+                    {isActive && assets && item.assetKey && assets[item.assetKey] ? (
+                      <Image src={assets[item.assetKey]!} alt={item.label} width={32} height={32} className="object-contain" />
+                    ) : (
+                      <Icon className="w-8 h-8 text-white" />
+                    )}
                     
                     {/* キラキラエフェクト */}
                     <div className="absolute inset-0 rounded-full overflow-hidden">
@@ -82,14 +90,25 @@ export function BottomNav({ currentPage, onPageChange, onRecordClick }: BottomNa
                   isActive ? "scale-110" : "scale-100 opacity-60 hover:opacity-100"
                 )}
               >
-                <div 
+                <div
                   className="relative p-2 rounded-xl transition-all duration-300"
                   style={isActive ? { background: `rgba(255,255,255,0.15)` } : {}}
                 >
-                  <Icon 
-                    className="w-6 h-6 transition-colors"
-                    style={{ color: isActive ? '#ffffff' : 'rgba(255,255,255,0.5)' }}
-                  />
+                  {assets && item.assetKey && assets[item.assetKey] ? (
+                    <Image
+                      src={assets[item.assetKey]!}
+                      alt={item.label}
+                      width={24}
+                      height={24}
+                      className="w-6 h-6 object-contain transition-opacity"
+                      style={{ opacity: isActive ? 1 : 0.5 }}
+                    />
+                  ) : (
+                    <Icon
+                      className="w-6 h-6 transition-colors"
+                      style={{ color: isActive ? '#ffffff' : 'rgba(255,255,255,0.5)' }}
+                    />
+                  )}
                   
                   {/* アクティブインジケーター */}
                   {isActive && (

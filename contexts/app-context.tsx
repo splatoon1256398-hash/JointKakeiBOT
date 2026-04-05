@@ -4,6 +4,7 @@ import { createContext, useContext, useState, useEffect, useRef, ReactNode, useC
 import { supabase } from '@/lib/supabase';
 import { User } from '@supabase/supabase-js';
 import { processFixedExpenses } from '@/lib/fixed-expenses';
+import { CharacterId, isValidCharacterId } from '@/lib/characters';
 
 export type UserType = "共同" | string;
 
@@ -40,6 +41,9 @@ interface AppContextType {
   jointThemeColor: string | null;
   setJointThemeColor: (color: string | null) => void;
   saveJointThemeColor: (color: string | null) => Promise<void>;
+  characterId: CharacterId;
+  setCharacterId: (id: CharacterId) => void;
+  saveCharacterId: (id: CharacterId) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -110,6 +114,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [customThemeColor, setCustomThemeColor] = useState<string | null>(null);
   const [jointThemeColor, setJointThemeColor] = useState<string | null>(null);
+  const [characterId, setCharacterId] = useState<CharacterId>(() => {
+    if (typeof window !== "undefined") {
+      const cached = localStorage.getItem("characterId");
+      return isValidCharacterId(cached) ? cached : "none";
+    }
+    return "none";
+  });
   const fixedExpensesProcessed = useRef(false);
 
   // ===== テーマ構築ロジック =====
@@ -155,6 +166,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setCustomThemeColor(typeof tc === "string" && tc.startsWith("#") ? tc : null);
       const jtc = record["joint_theme_color"];
       setJointThemeColor(typeof jtc === "string" && jtc.startsWith("#") ? jtc : null);
+      const cid = record["character_id"];
+      const charId = isValidCharacterId(cid) ? cid : "none";
+      setCharacterId(charId);
+      localStorage.setItem("characterId", charId);
     } catch {
       setCustomThemeColor(null);
       setJointThemeColor(null);
@@ -210,6 +225,33 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
     } catch (err) {
       console.error("共同テーマカラー保存エラー:", err);
+    }
+  }, [user]);
+
+  // DB にキャラクター着せ替えIDを保存
+  const saveCharacterId = useCallback(async (id: CharacterId) => {
+    if (!user) return;
+    setCharacterId(id);
+    localStorage.setItem("characterId", id);
+    try {
+      const { data: existing } = await supabase
+        .from("user_settings")
+        .select("user_id")
+        .eq("user_id", user.id)
+        .single();
+
+      if (existing) {
+        await supabase
+          .from("user_settings")
+          .update({ character_id: id })
+          .eq("user_id", user.id);
+      } else {
+        await supabase
+          .from("user_settings")
+          .insert({ user_id: user.id, character_id: id });
+      }
+    } catch (err) {
+      console.error("キャラクター保存エラー:", err);
     }
   }, [user]);
 
@@ -284,6 +326,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setDisplayName("");
     setCustomThemeColor(null);
     setJointThemeColor(null);
+    setCharacterId("none");
+    localStorage.removeItem("characterId");
   };
 
   return (
@@ -296,6 +340,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       signOut, theme, refreshTrigger, triggerRefresh,
       customThemeColor, setCustomThemeColor, saveCustomThemeColor,
       jointThemeColor, setJointThemeColor, saveJointThemeColor,
+      characterId, setCharacterId, saveCharacterId,
     }}>
       {children}
     </AppContext.Provider>
