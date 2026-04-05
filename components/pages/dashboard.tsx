@@ -22,6 +22,8 @@ import { ExpenseCard } from "@/components/widgets/expense-card";
 import { EditTransactionDialog, TransactionForEdit } from "@/components/edit-transaction-dialog";
 import { calculateDaysToPayday, WIDGET_TYPES } from "@/lib/widgets";
 import { EmptyState } from "@/components/empty-state";
+import { useCharacter } from "@/lib/use-character";
+import { CharacterImage } from "@/components/character-image";
 
 type UserType = "共同" | "れん" | "あかね";
 
@@ -71,6 +73,7 @@ interface WidgetSlot {
 
 export function Dashboard({ onNavigateToAnalysis, onNavigateToHistory }: DashboardProps) {
   const { selectedUser, theme, refreshTrigger, user, setIsSettingsOpen, setSettingsTab } = useApp();
+  const { assets: charAssets, isActive: charActive, themeColors: charColors } = useCharacter();
   const [isLoading, setIsLoading] = useState(true);
   const [monthlySpent, setMonthlySpent] = useState(0);
   const [income, setIncome] = useState(0);
@@ -437,7 +440,29 @@ export function Dashboard({ onNavigateToAnalysis, onNavigateToHistory }: Dashboa
   return (
     <div className="space-y-3 pb-24 pt-3">
       {/* サマリーカード */}
-      <div className="card-solid p-4">
+      <div className="card-solid p-4 relative overflow-hidden">
+        {/* キャラデコレーション */}
+        {charActive && charAssets && charColors && (
+          <>
+            <div
+              className="absolute inset-0 rounded-2xl pointer-events-none"
+              style={{
+                border: `1px solid ${charColors.navGlow}`,
+                boxShadow: `inset 0 0 20px ${charColors.cardAccent}`,
+              }}
+            />
+            <div className="absolute -right-2 -bottom-2 opacity-20 pointer-events-none">
+              <CharacterImage
+                src={charAssets.avatar}
+                alt=""
+                width={80}
+                height={80}
+                className="select-none"
+                fallback={null}
+              />
+            </div>
+          </>
+        )}
         {isLoading ? (
           <div className="animate-pulse space-y-4">
             <div className="h-24 bg-white/10 rounded-xl" />
@@ -483,10 +508,31 @@ export function Dashboard({ onNavigateToAnalysis, onNavigateToHistory }: Dashboa
       </div>
 
       {/* カテゴリー予算リスト */}
-      <div className="card-solid">
+      <div className="card-solid relative overflow-hidden">
+        {/* キャラデコレーション */}
+        {charActive && charAssets && charColors && (
+          <div
+            className="absolute inset-0 rounded-2xl pointer-events-none"
+            style={{
+              border: `1px solid ${charColors.navGlow}`,
+              boxShadow: `inset 0 0 20px ${charColors.cardAccent}`,
+            }}
+          />
+        )}
         <div className="p-4">
           <h3 className="text-lg font-semibold text-white flex items-center gap-2 mb-4">
-            <Wallet className="w-5 h-5" style={{ color: theme.secondary }} />
+            {charActive && charAssets ? (
+              <CharacterImage
+                src={charAssets.avatar}
+                alt=""
+                width={24}
+                height={24}
+                className="object-contain"
+                fallback={<Wallet className="w-5 h-5" style={{ color: theme.secondary }} />}
+              />
+            ) : (
+              <Wallet className="w-5 h-5" style={{ color: theme.secondary }} />
+            )}
             カテゴリー予算
             <button
               onClick={() => { setSettingsTab('budget'); setIsSettingsOpen(true); }}
@@ -527,7 +573,16 @@ export function Dashboard({ onNavigateToAnalysis, onNavigateToHistory }: Dashboa
       </div>
 
       {/* 日別支出リスト（メモ主役カード） */}
-      <div className="card-solid">
+      <div className="card-solid relative overflow-hidden">
+        {charActive && charColors && (
+          <div
+            className="absolute inset-0 rounded-2xl pointer-events-none"
+            style={{
+              border: `1px solid ${charColors.navGlow}`,
+              boxShadow: `inset 0 0 20px ${charColors.cardAccent}`,
+            }}
+          />
+        )}
         <div className="p-4">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold text-white flex items-center gap-2">

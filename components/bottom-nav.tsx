@@ -17,7 +17,7 @@ interface BottomNavProps {
 
 export function BottomNav({ currentPage, onPageChange, onRecordClick }: BottomNavProps) {
   const { theme } = useApp();
-  const { assets, isActive } = useCharacter();
+  const { assets, isActive: charIsActive, themeColors } = useCharacter();
 
   const navItems: { id: NavPage | "record"; icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>; label: string; isCenter?: boolean; assetKey?: keyof CharacterAssets }[] = [
     { id: "dashboard" as NavPage, icon: Home, label: "ホーム", assetKey: "navHome" },
@@ -27,6 +27,14 @@ export function BottomNav({ currentPage, onPageChange, onRecordClick }: BottomNa
     { id: "chat" as NavPage, icon: MessageCircle, label: "チャット", assetKey: "navChat" },
   ];
 
+  // キャラ専用ナビバーカラー
+  const navBgColor = charIsActive && themeColors
+    ? themeColors.navBg
+    : "rgba(0,0,0,0.35)";
+  const navBorderColor = charIsActive && themeColors
+    ? `1px solid ${themeColors.navGlow}`
+    : "1px solid rgba(255,255,255,0.1)";
+
   return (
     <nav
       className="fixed bottom-0 left-0 right-0 z-50"
@@ -34,20 +42,30 @@ export function BottomNav({ currentPage, onPageChange, onRecordClick }: BottomNa
     >
       <div className="relative mx-auto max-w-lg">
         {/* 背景 */}
-        <div 
+        <div
           className="absolute inset-0 backdrop-blur-xl shadow-2xl"
           style={{
-            backgroundColor: "rgba(0,0,0,0.35)",
-            borderTop: `1px solid rgba(255,255,255,0.1)`,
+            backgroundColor: navBgColor,
+            borderTop: navBorderColor,
           }}
         />
-        
+
+        {/* キャラ着せ替え時のグロー装飾 */}
+        {charIsActive && themeColors && (
+          <div
+            className="absolute inset-x-0 -top-px h-[2px] opacity-60"
+            style={{
+              background: `linear-gradient(90deg, transparent, ${themeColors.navGlow}, ${themeColors.cardAccent}, ${themeColors.navGlow}, transparent)`,
+            }}
+          />
+        )}
+
         {/* ナビゲーションアイテム */}
         <div className="relative flex items-center justify-around h-20 px-4">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = currentPage === item.id;
-            
+
             if (item.isCenter) {
               return (
                 <button
@@ -56,29 +74,29 @@ export function BottomNav({ currentPage, onPageChange, onRecordClick }: BottomNa
                   className="relative group -mt-8"
                 >
                   {/* グロー効果 */}
-                  <div 
+                  <div
                     className="absolute inset-0 rounded-full blur-xl opacity-50 group-hover:opacity-75 transition-opacity animate-pulse"
                     style={{ background: `linear-gradient(to right, ${theme.primary}, ${theme.secondary})` }}
                   />
-                  
+
                   {/* メインボタン */}
                   <div
-                    className="relative w-16 h-16 rounded-full flex items-center justify-center shadow-2xl transform transition-all duration-300 group-hover:scale-110 group-active:scale-95 overflow-hidden"
+                    className="relative w-[4.5rem] h-[4.5rem] rounded-full flex items-center justify-center shadow-2xl transform transition-all duration-300 group-hover:scale-110 group-active:scale-95 overflow-hidden"
                     style={{ background: `linear-gradient(135deg, ${theme.primary}, ${theme.secondary})` }}
                   >
                     {assets && item.assetKey && assets[item.assetKey] ? (
                       <CharacterImage
                         src={assets[item.assetKey]!}
                         alt={item.label}
-                        width={32}
-                        height={32}
+                        width={44}
+                        height={44}
                         className="object-contain"
-                        fallback={<Icon className="w-8 h-8 text-white" />}
+                        fallback={<Icon className="w-9 h-9 text-white" />}
                       />
                     ) : (
-                      <Icon className="w-8 h-8 text-white" />
+                      <Icon className="w-9 h-9 text-white" />
                     )}
-                    
+
                     {/* キラキラエフェクト */}
                     <div className="absolute inset-0 rounded-full overflow-hidden">
                       <div className="absolute top-0 -left-full w-1/2 h-full bg-gradient-to-r from-transparent via-white/30 to-transparent skew-x-12 group-hover:animate-shimmer" />
@@ -99,38 +117,42 @@ export function BottomNav({ currentPage, onPageChange, onRecordClick }: BottomNa
               >
                 <div
                   className="relative p-2 rounded-xl transition-all duration-300"
-                  style={isActive ? { background: `rgba(255,255,255,0.15)` } : {}}
+                  style={isActive ? {
+                    background: charIsActive && themeColors
+                      ? themeColors.cardAccent
+                      : "rgba(255,255,255,0.15)"
+                  } : {}}
                 >
                   {assets && item.assetKey && assets[item.assetKey] ? (
                     <CharacterImage
                       src={assets[item.assetKey]!}
                       alt={item.label}
-                      width={24}
-                      height={24}
-                      className="w-6 h-6 object-contain transition-opacity"
+                      width={32}
+                      height={32}
+                      className="w-8 h-8 object-contain transition-opacity"
                       fallback={
                         <Icon
-                          className="w-6 h-6 transition-colors"
+                          className="w-7 h-7 transition-colors"
                           style={{ color: isActive ? '#ffffff' : 'rgba(255,255,255,0.5)' }}
                         />
                       }
                     />
                   ) : (
                     <Icon
-                      className="w-6 h-6 transition-colors"
+                      className="w-7 h-7 transition-colors"
                       style={{ color: isActive ? '#ffffff' : 'rgba(255,255,255,0.5)' }}
                     />
                   )}
-                  
+
                   {/* アクティブインジケーター */}
                   {isActive && (
-                    <div 
+                    <div
                       className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full animate-pulse bg-white"
                     />
                   )}
                 </div>
-                
-                <span 
+
+                <span
                   className="text-xs font-medium transition-colors"
                   style={{ color: isActive ? '#ffffff' : 'rgba(255,255,255,0.5)' }}
                 >
@@ -145,7 +167,7 @@ export function BottomNav({ currentPage, onPageChange, onRecordClick }: BottomNa
         <div
           style={{
             paddingBottom: 'env(safe-area-inset-bottom)',
-            backgroundColor: 'rgba(0,0,0,0.35)',
+            backgroundColor: navBgColor,
           }}
         />
       </div>

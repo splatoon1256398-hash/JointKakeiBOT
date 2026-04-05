@@ -174,6 +174,93 @@
   .animate-pulse-glow {
     animation: pulse-glow 2s ease-in-out infinite;
   }
+
+  /* セリフ吹き出しポップイン */
+  @keyframes speech-pop {
+    0% {
+      opacity: 0;
+      transform: translateY(-50%) scale(0.5);
+    }
+    15% {
+      opacity: 1;
+      transform: translateY(-50%) scale(1.08);
+    }
+    25% {
+      transform: translateY(-50%) scale(1);
+    }
+    85% {
+      opacity: 1;
+      transform: translateY(-50%) scale(1);
+    }
+    100% {
+      opacity: 0;
+      transform: translateY(-50%) scale(0.9);
+    }
+  }
+
+  .animate-speech-pop {
+    animation: speech-pop 2.5s ease-out forwards;
+  }
+
+  /* 成功キャラ演出 */
+  @keyframes char-celebrate {
+    0% {
+      opacity: 0;
+      transform: scale(0.3) rotate(-10deg);
+    }
+    30% {
+      opacity: 1;
+      transform: scale(1.15) rotate(5deg);
+    }
+    50% {
+      transform: scale(1) rotate(0deg);
+    }
+    70% {
+      transform: scale(1.05) rotate(-2deg);
+    }
+    85% {
+      opacity: 1;
+      transform: scale(1) rotate(0deg);
+    }
+    100% {
+      opacity: 0;
+      transform: scale(1.1) rotate(0deg);
+    }
+  }
+
+  .animate-char-celebrate {
+    animation: char-celebrate 1.8s ease-out forwards;
+  }
+
+  /* 紙吹雪 */
+  @keyframes confetti-fall {
+    0% {
+      opacity: 1;
+      transform: translateY(-20px) rotate(0deg);
+    }
+    100% {
+      opacity: 0;
+      transform: translateY(100vh) rotate(720deg);
+    }
+  }
+
+  .animate-confetti {
+    animation: confetti-fall 2s ease-in forwards;
+  }
+
+  /* パターン背景スクロール */
+  @keyframes pattern-drift {
+    0% {
+      transform: translate(0, 0);
+    }
+    100% {
+      transform: translate(60px, 60px);
+    }
+  }
+
+  .animate-pattern-drift {
+    animation: pattern-drift 20s linear infinite;
+  }
   
   /* カレンダーラッパー: 内部カレンダーを中央配置 */
   .calendar-wrapper {

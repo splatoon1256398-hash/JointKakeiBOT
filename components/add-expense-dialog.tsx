@@ -70,6 +70,7 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
   const [isPdf, setIsPdf] = useState(false);
   const [continuousScan, setContinuousScan] = useState(false);
   const [scanCount, setScanCount] = useState(0);
+  const [showSuccess, setShowSuccess] = useState(false);
   const [date, setDate] = useState(getJSTDateString());
   const [items, setItems] = useState<ExpenseItem[]>([
     {
@@ -422,7 +423,16 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
       
       // フォームをリセット
       resetForm();
-      onOpenChange(false);
+      // キャラ着せ替え時は成功演出を表示
+      if (charActive && charAssets) {
+        setShowSuccess(true);
+        setTimeout(() => {
+          setShowSuccess(false);
+          onOpenChange(false);
+        }, 1800);
+      } else {
+        onOpenChange(false);
+      }
     } catch (error) {
       console.error('保存エラー:', error);
       alert('保存に失敗しました');
@@ -576,7 +586,7 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
         {isAnalyzing && (
           <div className="absolute inset-0 bg-black/80 backdrop-blur-sm z-10 flex items-center justify-center rounded-lg">
             <div className="text-center space-y-4 px-8">
-              <div className="relative mx-auto w-14 h-14">
+              <div className="relative mx-auto w-24 h-24">
                 <div className="absolute inset-0 rounded-full border-2 border-purple-500/20" />
                 <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-purple-400 animate-spin" style={{ animationDuration: '1s' }} />
                 <div className="absolute inset-0 flex items-center justify-center">
@@ -584,13 +594,13 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
                     <CharacterImage
                       src={charAssets.scanning}
                       alt="解析中"
-                      width={28}
-                      height={28}
+                      width={56}
+                      height={56}
                       className="animate-bounce"
-                      fallback={<Sparkles className="h-5 w-5 text-purple-300" />}
+                      fallback={<Sparkles className="h-6 w-6 text-purple-300" />}
                     />
                   ) : (
-                    <Sparkles className="h-5 w-5 text-purple-300" />
+                    <Sparkles className="h-6 w-6 text-purple-300" />
                   )}
                 </div>
               </div>
@@ -603,6 +613,38 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
                 </p>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* 保存成功キャラ演出 */}
+        {showSuccess && charActive && charAssets && (
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm z-20 flex items-center justify-center rounded-lg">
+            <div className="text-center space-y-3 animate-char-celebrate">
+              <CharacterImage
+                src={charAssets.success || charAssets.avatar}
+                alt="成功！"
+                width={100}
+                height={100}
+                className="mx-auto drop-shadow-2xl"
+                fallback={null}
+              />
+              <p className="text-lg font-bold text-white">記録できた！</p>
+              <p className="text-sm text-white/60">ナイス家計管理！</p>
+            </div>
+            {/* 紙吹雪エフェクト */}
+            {[...Array(12)].map((_, i) => (
+              <div
+                key={i}
+                className="absolute w-2 h-2 rounded-full animate-confetti"
+                style={{
+                  left: `${10 + Math.random() * 80}%`,
+                  top: '-10px',
+                  backgroundColor: ['#FFD700', '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7'][i % 6],
+                  animationDelay: `${Math.random() * 0.8}s`,
+                  animationDuration: `${1.2 + Math.random() * 1}s`,
+                }}
+              />
+            ))}
           </div>
         )}
 

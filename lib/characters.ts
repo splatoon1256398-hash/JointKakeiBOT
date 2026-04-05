@@ -19,12 +19,22 @@ export interface CharacterAssets {
   success?: string;
 }
 
+export interface CharacterThemeColors {
+  primary: string;
+  secondary: string;
+  navBg: string;        // ナビバー背景
+  navGlow: string;      // ナビバーグロー
+  cardAccent: string;   // カード装飾色
+}
+
 export interface CharacterConfig {
   id: CharacterId;
   name: string;
   description: string;
   previewImage: string;
   assets: CharacterAssets;
+  themeColors: CharacterThemeColors;
+  speeches: string[];   // キャラのセリフ集
 }
 
 const HACHIWARE_BASE = "/characters/hachiware";
@@ -52,6 +62,23 @@ export const CHARACTER_REGISTRY: Record<CharacterId, CharacterConfig | null> = {
       menuSavings: `${HACHIWARE_BASE}/menu-savings.png`,
       success: `${HACHIWARE_BASE}/success.png`,
     },
+    themeColors: {
+      primary: "#4A8FCA",
+      secondary: "#7DB5E8",
+      navBg: "rgba(74, 143, 202, 0.25)",
+      navGlow: "rgba(125, 181, 232, 0.3)",
+      cardAccent: "rgba(125, 181, 232, 0.15)",
+    },
+    speeches: [
+      "今日も節約がんばろ〜！",
+      "いい感じ！✨",
+      "家計簿つけてえらい！",
+      "一緒にがんばろ！💪",
+      "ヤッホー！🎉",
+      "ナイス記録！📝",
+      "コツコツが大事だよ〜",
+      "お金の管理、バッチリ！",
+    ],
   },
 };
 

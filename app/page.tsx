@@ -102,16 +102,17 @@ function AppContent() {
       className="min-h-screen min-h-[100dvh] transition-colors duration-500"
       style={{ backgroundColor: theme.background }}
     >
-      {/* 背景ウォーターマーク */}
+      {/* 背景パターン（キャラ着せ替え時） */}
       {charActive && charAssets && (
-        <div className="fixed inset-0 pointer-events-none z-0 flex items-center justify-center opacity-[0.08]">
-          <CharacterImage
-            src={charAssets.watermark}
-            alt=""
-            width={320}
-            height={320}
-            className="select-none"
-            fallback={null}
+        <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden opacity-[0.06]">
+          <div
+            className="absolute animate-pattern-drift"
+            style={{
+              inset: '-60px',
+              backgroundImage: `url(${charAssets.watermark})`,
+              backgroundSize: '120px 120px',
+              backgroundRepeat: 'repeat',
+            }}
           />
         </div>
       )}
