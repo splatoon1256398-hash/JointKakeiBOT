@@ -10,6 +10,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { PiggyBank, Loader2, Sparkles } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useApp } from "@/contexts/app-context";
+import { useCharacter } from "@/lib/use-character";
+import { CharacterImage } from "@/components/character-image";
 
 interface SavingGoal {
   id: string;
@@ -26,6 +28,7 @@ interface AddSavingDialogProps {
 
 export function AddSavingDialog({ open, onOpenChange }: AddSavingDialogProps) {
   const { selectedUser, triggerRefresh } = useApp();
+  const { assets: charAssets, isActive: charActive } = useCharacter();
   const [isSaving, setIsSaving] = useState(false);
   const [goals, setGoals] = useState<SavingGoal[]>([]);
   const [selectedGoalId, setSelectedGoalId] = useState<string>("");
@@ -126,7 +129,11 @@ export function AddSavingDialog({ open, onOpenChange }: AddSavingDialogProps) {
       <DialogContent className="max-w-lg bg-slate-900/95 backdrop-blur-xl border-slate-700">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-white">
-            <PiggyBank className="h-5 w-5 text-blue-400" />
+            {charActive && charAssets ? (
+              <CharacterImage src={charAssets.avatar} alt="" width={22} height={22} className="object-contain" fallback={<PiggyBank className="h-5 w-5 text-blue-400" />} />
+            ) : (
+              <PiggyBank className="h-5 w-5 text-blue-400" />
+            )}
             貯金に入金 - {selectedUser}
           </DialogTitle>
           <DialogDescription className="text-gray-400">

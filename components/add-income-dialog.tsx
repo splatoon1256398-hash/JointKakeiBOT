@@ -11,6 +11,8 @@ import { Label } from "@/components/ui/label";
 import { TrendingUp, Loader2, Sparkles, Camera, Upload, X, FileText, CalendarCheck, Briefcase } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useApp } from "@/contexts/app-context";
+import { useCharacter } from "@/lib/use-character";
+import { CharacterImage } from "@/components/character-image";
 
 interface AddIncomeDialogProps {
   open: boolean;
@@ -28,6 +30,7 @@ const INCOME_CATEGORIES = [
 
 export function AddIncomeDialog({ open, onOpenChange, selectedUser }: AddIncomeDialogProps) {
   const { triggerRefresh } = useApp();
+  const { assets: charAssets, isActive: charActive } = useCharacter();
   const [isSaving, setIsSaving] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
@@ -269,7 +272,11 @@ export function AddIncomeDialog({ open, onOpenChange, selectedUser }: AddIncomeD
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto overflow-x-hidden bg-slate-900/95 backdrop-blur-xl border-slate-700" style={{ overscrollBehavior: 'contain' }}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-white text-base">
-            <TrendingUp className="h-4 w-4 text-green-400" />
+            {charActive && charAssets ? (
+              <CharacterImage src={charAssets.avatar} alt="" width={20} height={20} className="object-contain" fallback={<TrendingUp className="h-4 w-4 text-green-400" />} />
+            ) : (
+              <TrendingUp className="h-4 w-4 text-green-400" />
+            )}
             収入を記録 - {selectedUser}
           </DialogTitle>
           <DialogDescription className="text-xs text-gray-400">
@@ -316,18 +323,42 @@ export function AddIncomeDialog({ open, onOpenChange, selectedUser }: AddIncomeD
           </div>
         )}
 
-        {/* 解析中 */}
-        {isAnalyzing && (
-          <div className="flex flex-col items-center justify-center py-6 space-y-3">
-            <div className="relative">
-              <Loader2 className="h-8 w-8 animate-spin text-green-400" />
-              <div className="absolute inset-0 h-8 w-8 animate-ping text-green-400/30">
-                <Sparkles className="h-8 w-8" />
-              </div>
+        {/* 解析中（フルスクリーン） */}
+        {isAnalyzing && createPortal(
+          <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-[100] flex items-center justify-center">
+            <div className="text-center space-y-6 px-8">
+              {charActive && charAssets ? (
+                <>
+                  <div className="relative mx-auto w-40 h-40">
+                    <div className="absolute inset-0 rounded-full border-4 border-white/10" />
+                    <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-green-400 animate-spin" style={{ animationDuration: '1.2s' }} />
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <CharacterImage src={charAssets.scanning} alt="解析中" width={100} height={100} className="animate-bounce" fallback={<Sparkles className="h-10 w-10 text-green-300" />} />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-lg font-bold text-white">給与明細をAI解析中...</p>
+                    <p className="text-sm text-white/50">総支給額・差引支給額を読み取っています</p>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="relative mx-auto w-24 h-24">
+                    <div className="absolute inset-0 rounded-full border-2 border-green-500/20" />
+                    <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-green-400 animate-spin" style={{ animationDuration: '1s' }} />
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <Sparkles className="h-8 w-8 text-green-300" />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-base font-bold text-white">給与明細をAI解析中...</p>
+                    <p className="text-sm text-white/40">総支給額・差引支給額を読み取っています</p>
+                  </div>
+                </>
+              )}
             </div>
-            <p className="text-sm text-green-300 font-medium">給与明細をAI解析中...</p>
-            <p className="text-xs text-gray-500">総支給額・差引支給額を読み取っています</p>
-          </div>
+          </div>,
+          document.body
         )}
 
         {/* スキャン済みプレビュー */}

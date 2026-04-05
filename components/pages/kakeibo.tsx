@@ -2,26 +2,34 @@
 
 import { BookOpen } from "lucide-react";
 import { useApp } from "@/contexts/app-context";
+import { useCharacter } from "@/lib/use-character";
+import { CharacterImage } from "@/components/character-image";
 import { History } from "./history";
 import { Analysis } from "./analysis";
 
 export function Kakeibo() {
   const { selectedUser, theme, kakeiboTab, setKakeiboTab } = useApp();
+  const { assets: charAssets, isActive: charActive, themeColors: charColors } = useCharacter();
 
   return (
     <div className="space-y-3 pb-24 pt-3">
       {/* ヘッダー（テーマカラーのボーダー） */}
-      <div 
+      <div
         className="relative overflow-hidden rounded-xl p-3 shadow-xl backdrop-blur-xl"
         style={{
           background: 'rgba(15, 23, 42, 0.6)',
-          border: `2px solid ${theme.primary}`
+          border: `2px solid ${theme.primary}`,
+          ...(charActive && charColors ? { boxShadow: `inset 0 0 20px ${charColors.cardAccent}` } : {}),
         }}
       >
         <div className="text-white">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <BookOpen className="h-4 w-4" style={{ color: theme.primary }} />
+              {charActive && charAssets ? (
+                <CharacterImage src={charAssets.avatar} alt="" width={20} height={20} className="object-contain" fallback={<BookOpen className="h-4 w-4" style={{ color: theme.primary }} />} />
+              ) : (
+                <BookOpen className="h-4 w-4" style={{ color: theme.primary }} />
+              )}
               <h1 className="text-base font-bold">家計簿 - {selectedUser}</h1>
             </div>
             {/* ピル型タブ（分析が左＝優先位置） */}

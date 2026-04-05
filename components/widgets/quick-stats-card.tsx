@@ -1,6 +1,7 @@
 "use client";
 
 import { LucideIcon } from "lucide-react";
+import { useCharacter } from "@/lib/use-character";
 
 interface QuickStatsCardProps {
   title: string;
@@ -11,9 +12,17 @@ interface QuickStatsCardProps {
 }
 
 export function QuickStatsCard({ title, value, icon: Icon, subtitle, colorClass = "from-purple-600 to-blue-600" }: QuickStatsCardProps) {
+  const { isActive: charActive, themeColors: charColors } = useCharacter();
+
   return (
     <div className="relative group cursor-pointer">
-      <div className="relative p-2.5 card-solid hover:shadow-xl transition-all hover:scale-[1.02]">
+      <div
+        className="relative p-2.5 card-solid hover:shadow-xl transition-all hover:scale-[1.02]"
+        style={charActive && charColors ? {
+          boxShadow: `inset 0 0 12px ${charColors.cardAccent}`,
+          borderColor: charColors.navGlow,
+        } : {}}
+      >
         <div className="flex items-center gap-2 mb-1">
           <div className={`p-1 rounded-md bg-gradient-to-br ${colorClass}`}>
             <Icon className="w-3 h-3 text-white" />

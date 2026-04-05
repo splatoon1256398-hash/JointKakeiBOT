@@ -574,7 +574,18 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base">
-            <Sparkles className="h-4 w-4 text-purple-600" />
+            {charActive && charAssets ? (
+              <CharacterImage
+                src={charAssets.avatar}
+                alt=""
+                width={20}
+                height={20}
+                className="object-contain"
+                fallback={<Sparkles className="h-4 w-4 text-purple-600" />}
+              />
+            ) : (
+              <Sparkles className="h-4 w-4 text-purple-600" />
+            )}
             支出を追加 - {selectedUser}
           </DialogTitle>
           <DialogDescription className="text-xs">
@@ -582,70 +593,90 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
           </DialogDescription>
         </DialogHeader>
 
-        {/* AI解析中のアニメーション */}
-        {isAnalyzing && (
-          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm z-10 flex items-center justify-center rounded-lg">
-            <div className="text-center space-y-4 px-8">
-              <div className="relative mx-auto w-24 h-24">
-                <div className="absolute inset-0 rounded-full border-2 border-purple-500/20" />
-                <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-purple-400 animate-spin" style={{ animationDuration: '1s' }} />
-                <div className="absolute inset-0 flex items-center justify-center">
-                  {charActive && charAssets ? (
-                    <CharacterImage
-                      src={charAssets.scanning}
-                      alt="解析中"
-                      width={56}
-                      height={56}
-                      className="animate-bounce"
-                      fallback={<Sparkles className="h-6 w-6 text-purple-300" />}
-                    />
-                  ) : (
-                    <Sparkles className="h-6 w-6 text-purple-300" />
-                  )}
-                </div>
-              </div>
-              <div className="space-y-1">
-                <p className="text-sm font-medium text-white/90">
-                  {analysisStage === 'uploading' ? '画像をアップロード中...' : 'レシートを解析中...'}
-                </p>
-                <p className="text-xs text-white/40">
-                  {analysisStage === 'uploading' ? 'しばらくお待ちください' : 'AIが項目を分類しています'}
-                </p>
-              </div>
+        {/* AI解析中のアニメーション（フルスクリーン） */}
+        {isAnalyzing && createPortal(
+          <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-[100] flex items-center justify-center">
+            <div className="text-center space-y-6 px-8">
+              {charActive && charAssets ? (
+                <>
+                  <div className="relative mx-auto w-40 h-40">
+                    <div className="absolute inset-0 rounded-full border-4 border-white/10" />
+                    <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-purple-400 animate-spin" style={{ animationDuration: '1.2s' }} />
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <CharacterImage
+                        src={charAssets.scanning}
+                        alt="解析中"
+                        width={100}
+                        height={100}
+                        className="animate-bounce"
+                        fallback={<Sparkles className="h-10 w-10 text-purple-300" />}
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-lg font-bold text-white">
+                      {analysisStage === 'uploading' ? '画像をアップロード中...' : 'レシートを解析中...'}
+                    </p>
+                    <p className="text-sm text-white/50">
+                      {analysisStage === 'uploading' ? 'しばらくお待ちください' : 'AIが項目を分類しています'}
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="relative mx-auto w-24 h-24">
+                    <div className="absolute inset-0 rounded-full border-2 border-purple-500/20" />
+                    <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-purple-400 animate-spin" style={{ animationDuration: '1s' }} />
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <Sparkles className="h-8 w-8 text-purple-300" />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-base font-bold text-white">
+                      {analysisStage === 'uploading' ? '画像をアップロード中...' : 'レシートを解析中...'}
+                    </p>
+                    <p className="text-sm text-white/40">
+                      {analysisStage === 'uploading' ? 'しばらくお待ちください' : 'AIが項目を分類しています'}
+                    </p>
+                  </div>
+                </>
+              )}
             </div>
-          </div>
+          </div>,
+          document.body
         )}
 
-        {/* 保存成功キャラ演出 */}
-        {showSuccess && charActive && charAssets && (
-          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm z-20 flex items-center justify-center rounded-lg">
-            <div className="text-center space-y-3 animate-char-celebrate">
+        {/* 保存成功キャラ演出（フルスクリーン） */}
+        {showSuccess && charActive && charAssets && createPortal(
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex items-center justify-center">
+            <div className="text-center space-y-4 animate-char-celebrate">
               <CharacterImage
                 src={charAssets.success || charAssets.avatar}
                 alt="成功！"
-                width={100}
-                height={100}
+                width={140}
+                height={140}
                 className="mx-auto drop-shadow-2xl"
                 fallback={null}
               />
-              <p className="text-lg font-bold text-white">記録できた！</p>
-              <p className="text-sm text-white/60">ナイス家計管理！</p>
+              <p className="text-2xl font-bold text-white">記録できた！</p>
+              <p className="text-base text-white/60">ナイス家計管理！</p>
             </div>
             {/* 紙吹雪エフェクト */}
-            {[...Array(12)].map((_, i) => (
+            {[...Array(18)].map((_, i) => (
               <div
                 key={i}
-                className="absolute w-2 h-2 rounded-full animate-confetti"
+                className="absolute w-3 h-3 rounded-full animate-confetti"
                 style={{
-                  left: `${10 + Math.random() * 80}%`,
+                  left: `${5 + Math.random() * 90}%`,
                   top: '-10px',
                   backgroundColor: ['#FFD700', '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7'][i % 6],
                   animationDelay: `${Math.random() * 0.8}s`,
-                  animationDuration: `${1.2 + Math.random() * 1}s`,
+                  animationDuration: `${1.5 + Math.random() * 1}s`,
                 }}
               />
             ))}
-          </div>
+          </div>,
+          document.body
         )}
 
         {/* カテゴリーポップアップピッカー（Portalで画面中央に固定表示） */}

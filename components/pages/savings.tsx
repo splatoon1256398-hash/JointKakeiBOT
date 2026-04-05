@@ -10,6 +10,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { PiggyBank, Plus, Trash2, Target, Calendar, TrendingUp, Pencil, MinusCircle, ChevronUp, ChevronDown } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useApp } from "@/contexts/app-context";
+import { useCharacter } from "@/lib/use-character";
+import { CharacterImage } from "@/components/character-image";
 import { EmptyState } from "@/components/empty-state";
 
 interface SavingGoal {
@@ -35,6 +37,7 @@ interface SavingLog {
 
 export function Savings() {
   const { selectedUser, theme, user } = useApp();
+  const { assets: charAssets, isActive: charActive, themeColors: charColors } = useCharacter();
   const [goals, setGoals] = useState<SavingGoal[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
@@ -306,17 +309,22 @@ export function Savings() {
   return (
     <div className="space-y-3 pb-24 pt-3">
       {/* ヘッダー */}
-      <div 
+      <div
         className="relative overflow-hidden rounded-xl p-3 shadow-xl backdrop-blur-xl"
         style={{
           background: 'rgba(15, 23, 42, 0.6)',
-          border: `2px solid ${theme.primary}`
+          border: `2px solid ${theme.primary}`,
+          ...(charActive && charColors ? { boxShadow: `inset 0 0 20px ${charColors.cardAccent}` } : {}),
         }}
       >
         <div className="text-white">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <PiggyBank className="h-4 w-4" style={{ color: theme.primary }} />
+              {charActive && charAssets ? (
+                <CharacterImage src={charAssets.avatar} alt="" width={20} height={20} className="object-contain" fallback={<PiggyBank className="h-4 w-4" style={{ color: theme.primary }} />} />
+              ) : (
+                <PiggyBank className="h-4 w-4" style={{ color: theme.primary }} />
+              )}
               <h1 className="text-base font-bold">目的別貯金 - {selectedUser}</h1>
             </div>
             <Button
