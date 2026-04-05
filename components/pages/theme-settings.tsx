@@ -4,7 +4,7 @@ import { useState, useCallback } from "react";
 import { Palette, Check, RotateCcw, Info, Users, User, Sparkles, Wallet } from "lucide-react";
 import { useApp } from "@/contexts/app-context";
 import { CHARACTER_LIST, CharacterId } from "@/lib/characters";
-import Image from "next/image";
+import { CharacterImage } from "@/components/character-image";
 
 const PRESET_COLORS = [
   { label: "パープル", hex: "#8b5cf6" },
@@ -161,16 +161,13 @@ export function ThemeSettings() {
                 </div>
               )}
               <div className="w-12 h-12 rounded-full overflow-hidden bg-white/10 flex items-center justify-center">
-                <Image
+                <CharacterImage
                   src={char.previewImage}
                   alt={char.name}
                   width={48}
                   height={48}
                   className="object-cover"
-                  onError={(e) => {
-                    const target = e.currentTarget;
-                    target.style.display = "none";
-                  }}
+                  fallback={<Sparkles className="h-6 w-6 text-white/40" />}
                 />
               </div>
               <span className="text-xs font-semibold text-white/80">{char.name}</span>

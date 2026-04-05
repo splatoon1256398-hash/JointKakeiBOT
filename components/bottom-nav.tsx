@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import { useApp } from "@/contexts/app-context";
 import { useCharacter } from "@/lib/use-character";
 import { CharacterAssets } from "@/lib/characters";
-import Image from "next/image";
+import { CharacterImage } from "@/components/character-image";
 
 export type NavPage = "dashboard" | "kakeibo" | "savings" | "chat";
 
@@ -66,8 +66,15 @@ export function BottomNav({ currentPage, onPageChange, onRecordClick }: BottomNa
                     className="relative w-16 h-16 rounded-full flex items-center justify-center shadow-2xl transform transition-all duration-300 group-hover:scale-110 group-active:scale-95 overflow-hidden"
                     style={{ background: `linear-gradient(135deg, ${theme.primary}, ${theme.secondary})` }}
                   >
-                    {isActive && assets && item.assetKey && assets[item.assetKey] ? (
-                      <Image src={assets[item.assetKey]!} alt={item.label} width={32} height={32} className="object-contain" />
+                    {assets && item.assetKey && assets[item.assetKey] ? (
+                      <CharacterImage
+                        src={assets[item.assetKey]!}
+                        alt={item.label}
+                        width={32}
+                        height={32}
+                        className="object-contain"
+                        fallback={<Icon className="w-8 h-8 text-white" />}
+                      />
                     ) : (
                       <Icon className="w-8 h-8 text-white" />
                     )}
@@ -95,13 +102,18 @@ export function BottomNav({ currentPage, onPageChange, onRecordClick }: BottomNa
                   style={isActive ? { background: `rgba(255,255,255,0.15)` } : {}}
                 >
                   {assets && item.assetKey && assets[item.assetKey] ? (
-                    <Image
+                    <CharacterImage
                       src={assets[item.assetKey]!}
                       alt={item.label}
                       width={24}
                       height={24}
                       className="w-6 h-6 object-contain transition-opacity"
-                      style={{ opacity: isActive ? 1 : 0.5 }}
+                      fallback={
+                        <Icon
+                          className="w-6 h-6 transition-colors"
+                          style={{ color: isActive ? '#ffffff' : 'rgba(255,255,255,0.5)' }}
+                        />
+                      }
                     />
                   ) : (
                     <Icon

@@ -16,7 +16,7 @@ import { AddExpenseDialog } from "@/components/add-expense-dialog";
 import { AddIncomeDialog } from "@/components/add-income-dialog";
 import { AddSavingDialog } from "@/components/add-saving-dialog";
 import { useCharacter } from "@/lib/use-character";
-import Image from "next/image";
+import { CharacterImage } from "@/components/character-image";
 
 function AppContent() {
   const { user, isAuthLoading, selectedUser, theme, setKakeiboTab } = useApp();
@@ -104,8 +104,15 @@ function AppContent() {
     >
       {/* 背景ウォーターマーク */}
       {charActive && charAssets && (
-        <div className="fixed inset-0 pointer-events-none z-0 flex items-center justify-center opacity-[0.04]">
-          <Image src={charAssets.watermark} alt="" width={300} height={300} className="select-none" draggable={false} />
+        <div className="fixed inset-0 pointer-events-none z-0 flex items-center justify-center opacity-[0.08]">
+          <CharacterImage
+            src={charAssets.watermark}
+            alt=""
+            width={320}
+            height={320}
+            className="select-none"
+            fallback={null}
+          />
         </div>
       )}
 

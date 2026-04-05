@@ -8,7 +8,7 @@ import { MessageCircle, Send, Sparkles, Loader2, Mic, MicOff } from "lucide-reac
 import { supabase } from "@/lib/supabase";
 import { useApp } from "@/contexts/app-context";
 import { useCharacter } from "@/lib/use-character";
-import Image from "next/image";
+import { CharacterImage } from "@/components/character-image";
 
 interface Message {
   id: string;
@@ -287,7 +287,14 @@ export function Chat() {
                 {message.role === "assistant" && (
                   <div className="flex items-center gap-2 mb-2">
                     {charActive && charAssets ? (
-                      <Image src={charAssets.avatar} alt={characterName || "AI"} width={20} height={20} className="rounded-full" />
+                      <CharacterImage
+                        src={charAssets.avatar}
+                        alt={characterName || "AI"}
+                        width={20}
+                        height={20}
+                        className="rounded-full"
+                        fallback={<Sparkles className="h-4 w-4 text-purple-400" />}
+                      />
                     ) : (
                       <Sparkles className="h-4 w-4 text-purple-400" />
                     )}
@@ -305,7 +312,14 @@ export function Chat() {
             <div className="flex justify-start">
               <div className="bg-slate-800/90 border border-white/10 rounded-2xl p-4">
                 {charActive && charAssets ? (
-                  <Image src={charAssets.avatar} alt="Loading" width={24} height={24} className="animate-bounce rounded-full" />
+                  <CharacterImage
+                    src={charAssets.avatar}
+                    alt="Loading"
+                    width={24}
+                    height={24}
+                    className="animate-bounce rounded-full"
+                    fallback={<Loader2 className="h-5 w-5 animate-spin text-purple-400" />}
+                  />
                 ) : (
                   <Loader2 className="h-5 w-5 animate-spin text-purple-400" />
                 )}

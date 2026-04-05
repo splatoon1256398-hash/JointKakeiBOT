@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Button } from "@/components/ui/button";
 import { TrendingDown, TrendingUp, PiggyBank } from "lucide-react";
 import { useCharacter } from "@/lib/use-character";
-import Image from "next/image";
+import { CharacterImage } from "@/components/character-image";
 
 interface RecordMenuDialogProps {
   open: boolean;
@@ -48,7 +48,7 @@ export function RecordMenuDialog({
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-lg bg-red-500/15 flex items-center justify-center overflow-hidden">
                 {charAssets?.menuExpense ? (
-                  <Image src={charAssets.menuExpense} alt="支出" width={22} height={22} className="object-contain" />
+                  <CharacterImage src={charAssets.menuExpense} alt="支出" width={22} height={22} className="object-contain" fallback={<TrendingDown className="h-5 w-5 text-red-400" />} />
                 ) : (
                   <TrendingDown className="h-5 w-5 text-red-400" />
                 )}
@@ -66,7 +66,7 @@ export function RecordMenuDialog({
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-lg bg-emerald-500/15 flex items-center justify-center overflow-hidden">
                 {charAssets?.menuIncome ? (
-                  <Image src={charAssets.menuIncome} alt="収入" width={22} height={22} className="object-contain" />
+                  <CharacterImage src={charAssets.menuIncome} alt="収入" width={22} height={22} className="object-contain" fallback={<TrendingUp className="h-5 w-5 text-emerald-400" />} />
                 ) : (
                   <TrendingUp className="h-5 w-5 text-emerald-400" />
                 )}
@@ -84,7 +84,7 @@ export function RecordMenuDialog({
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-lg bg-purple-500/15 flex items-center justify-center overflow-hidden">
                 {charAssets?.menuSavings ? (
-                  <Image src={charAssets.menuSavings} alt="貯金" width={22} height={22} className="object-contain" />
+                  <CharacterImage src={charAssets.menuSavings} alt="貯金" width={22} height={22} className="object-contain" fallback={<PiggyBank className="h-5 w-5 text-purple-400" />} />
                 ) : (
                   <PiggyBank className="h-5 w-5 text-purple-400" />
                 )}

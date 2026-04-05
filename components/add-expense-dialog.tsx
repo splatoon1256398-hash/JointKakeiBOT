@@ -13,6 +13,7 @@ import { type ReceiptAnalysisResult, type ExpenseItem } from "@/lib/gemini";
 import { supabase } from "@/lib/supabase";
 import { useApp } from "@/contexts/app-context";
 import { useCharacter } from "@/lib/use-character";
+import { CharacterImage } from "@/components/character-image";
 
 interface AddExpenseDialogProps {
   open: boolean;
@@ -580,7 +581,14 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
                 <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-purple-400 animate-spin" style={{ animationDuration: '1s' }} />
                 <div className="absolute inset-0 flex items-center justify-center">
                   {charActive && charAssets ? (
-                    <NextImage src={charAssets.scanning} alt="解析中" width={28} height={28} className="animate-bounce" />
+                    <CharacterImage
+                      src={charAssets.scanning}
+                      alt="解析中"
+                      width={28}
+                      height={28}
+                      className="animate-bounce"
+                      fallback={<Sparkles className="h-5 w-5 text-purple-300" />}
+                    />
                   ) : (
                     <Sparkles className="h-5 w-5 text-purple-300" />
                   )}
