@@ -4,7 +4,7 @@ import { createContext, useContext, useState, useEffect, useRef, ReactNode, useC
 import { supabase } from '@/lib/supabase';
 import { User } from '@supabase/supabase-js';
 import { processFixedExpenses } from '@/lib/fixed-expenses';
-import { CharacterId, isValidCharacterId, CHARACTER_REGISTRY } from '@/lib/characters';
+import { CharacterId, isValidCharacterId } from '@/lib/characters';
 
 export type UserType = "共同" | string;
 
@@ -139,12 +139,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const defaults = getDefaultPersonalColors(selectedUser);
     primary = customThemeColor || defaults.primary;
     secondary = customThemeColor ? generateSecondaryColor(customThemeColor) : defaults.secondary;
-  }
-  // キャラ着せ替え時はキャラ専用カラーで上書き
-  const charConfig = CHARACTER_REGISTRY[characterId];
-  if (charConfig?.themeColors) {
-    primary = charConfig.themeColors.primary;
-    secondary = charConfig.themeColors.secondary;
   }
   const theme = buildTheme(primary, secondary);
 
