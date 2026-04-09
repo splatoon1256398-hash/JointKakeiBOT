@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { TrendingUp, Loader2, Sparkles, Camera, Upload, X, FileText, CalendarCheck, Briefcase } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { showPerfToast, logPerf } from "@/lib/perf-toast";
 import { useApp } from "@/contexts/app-context";
 import { useCharacter } from "@/lib/use-character";
 import { CharacterImage } from "@/components/character-image";
@@ -142,6 +143,11 @@ export function AddIncomeDialog({ open, onOpenChange, selectedUser }: AddIncomeD
         console.error('収入解析APIエラー:', response.status, result);
         alert(`解析エラー (${response.status}): もう一度お試しください。`);
         return;
+      }
+
+      if (result._perf) {
+        logPerf('income-scan', result._perf);
+        showPerfToast('収入解析', result._perf.total);
       }
 
       if (result.date) setDate(result.date);

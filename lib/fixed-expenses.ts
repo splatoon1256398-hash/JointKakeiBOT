@@ -72,10 +72,22 @@ export async function processFixedExpenses(userId: string): Promise<{
 
     const existingMemos = new Set(existingTransactions?.map((t) => t.memo) || []);
 
-    // 各固定費を処理
+    // Phase 3-D: 単発 insert のループを bulk insert 1 回に置換
+    const todayStr = `${currentYear}-${String(currentMonth).padStart(2, "0")}-${String(currentDay).padStart(2, "0")}`;
+    const rowsToInsert: Array<{
+      user_id: string;
+      user_type: string;
+      type: "expense";
+      amount: number;
+      category_main: string;
+      category_sub: string;
+      memo: string;
+      date: string;
+    }> = [];
+    const insertedLabels: string[] = [];
+
     for (const expense of fixedExpenses as FixedExpense[]) {
       // 適用期間チェック: start_date/end_date の範囲外ならスキップ
-      const todayStr = `${currentYear}-${String(currentMonth).padStart(2, "0")}-${String(currentDay).padStart(2, "0")}`;
       if (expense.start_date && todayStr < expense.start_date) {
         result.skipped++;
         continue;
@@ -107,8 +119,7 @@ export async function processFixedExpenses(userId: string): Promise<{
       const actualPayDay = Math.min(expense.payment_day, lastDayOfMonth);
       const paymentDate = `${currentYear}-${String(currentMonth).padStart(2, "0")}-${String(actualPayDay).padStart(2, "0")}`;
 
-      // transactionsに追加
-      const { error: insertError } = await supabase.from("transactions").insert({
+      rowsToInsert.push({
         user_id: expense.user_id,
         user_type: expense.user_type,
         type: "expense",
@@ -118,12 +129,19 @@ export async function processFixedExpenses(userId: string): Promise<{
         memo: fixedExpenseMemo,
         date: paymentDate,
       });
+      insertedLabels.push(`${expense.category_main}/${expense.category_sub} ¥${expense.amount}`);
+    }
+
+    if (rowsToInsert.length > 0) {
+      const { error: insertError } = await supabase
+        .from("transactions")
+        .insert(rowsToInsert);
 
       if (insertError) {
-        result.errors.push(`固定費登録エラー (${expense.category_main}): ${insertError.message}`);
+        result.errors.push(`固定費 bulk 登録エラー: ${insertError.message}`);
       } else {
-        result.processed++;
-        console.log(`✅ 固定費を自動登録: ${expense.category_main}/${expense.category_sub} ¥${expense.amount}`);
+        result.processed = rowsToInsert.length;
+        console.log(`✅ 固定費を自動登録 (bulk): ${insertedLabels.join(", ")}`);
       }
     }
 

@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Camera, Loader2, Sparkles, Upload, X, Plus, Trash2, Calendar, FileText } from "lucide-react";
 import { type ReceiptAnalysisResult, type ExpenseItem } from "@/lib/gemini";
 import { supabase } from "@/lib/supabase";
+import { showPerfToast, logPerf } from "@/lib/perf-toast";
 import { useApp } from "@/contexts/app-context";
 import { useCharacter } from "@/lib/use-character";
 import { CharacterImage } from "@/components/character-image";
@@ -27,44 +28,20 @@ interface AddExpenseDialogProps {
 }
 
 export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpenseDialogProps) {
-  const { triggerRefresh } = useApp();
+  const { triggerRefresh, categories: dbCategories, getCategoryIcon, getSubcategories } = useApp();
   const { assets: charAssets, isActive: charActive } = useCharacter();
-  
-  // DBからカテゴリを常に最新で取得
-  const [dbCategories, setDbCategories] = useState<{ main: string; icon: string; subs: string[] }[]>([]);
-  
-  useEffect(() => {
-    if (open) {
-      supabase
-        .from('categories')
-        .select('main_category, icon, subcategories')
-        .order('sort_order')
-        .then(({ data }) => {
-          if (data) {
-            const cats = data.map(d => ({
-              main: d.main_category,
-              icon: d.icon || '📦',
-              subs: d.subcategories || ['その他'],
-            }));
-            setDbCategories(cats);
-            dbCategoriesRef.current = cats;
-          }
-        });
-    }
-  }, [open]);
-  
-  const getSubcategoriesFromDB = (mainCat: string): string[] => {
-    const found = dbCategories.find(c => c.main === mainCat);
-    return found?.subs || ["その他"];
-  };
-  
-  const getCategoryIconFromDB = (mainCat: string): string => {
-    const found = dbCategories.find(c => c.main === mainCat);
-    return found?.icon || "📦";
-  };
+
+  // dbCategories は AppContext から来るので fetch 不要
+  // 既存コードが参照していたヘルパー名を維持
+  const getSubcategoriesFromDB = getSubcategories;
+  const getCategoryIconFromDB = getCategoryIcon;
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisStage, setAnalysisStage] = useState<'uploading' | 'analyzing'>('uploading');
   const dbCategoriesRef = useRef<{ main: string; icon: string; subs: string[] }[]>([]);
+  // analyzeImage 内で最新の dbCategories を参照するための同期
+  useEffect(() => {
+    dbCategoriesRef.current = dbCategories;
+  }, [dbCategories]);
   const [isSaving, setIsSaving] = useState(false);
   // カテゴリーピッカー状態
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -176,6 +153,11 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
         console.error('API error:', response.status, result);
         alert(`解析エラー (${response.status}): もう一度お試しください。`);
         return;
+      }
+
+      if (result._perf) {
+        logPerf('receipt', result._perf);
+        showPerfToast('レシート解析', result._perf.total);
       }
 
       if (result.date) setDate(result.date);

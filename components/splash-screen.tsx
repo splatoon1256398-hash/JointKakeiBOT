@@ -7,9 +7,10 @@ import { CharacterImage } from "@/components/character-image";
 
 interface SplashScreenProps {
   fadeOut?: boolean;
+  onFadeOutEnd?: () => void;
 }
 
-export function SplashScreen({ fadeOut = false }: SplashScreenProps) {
+export function SplashScreen({ fadeOut = false, onFadeOutEnd }: SplashScreenProps) {
   const [charId, setCharId] = useState<CharacterId>("none");
 
   useEffect(() => {
@@ -27,6 +28,8 @@ export function SplashScreen({ fadeOut = false }: SplashScreenProps) {
       style={{
         background: "linear-gradient(135deg, #8b5cf6, #6d28d9, #4c1d95)",
       }}
+      onAnimationEnd={fadeOut ? onFadeOutEnd : undefined}
+      onTransitionEnd={fadeOut ? onFadeOutEnd : undefined}
     >
       <div className="flex flex-col items-center gap-6">
         {/* ロゴ */}

@@ -15,7 +15,9 @@ import {
   HandCoins,
   Settings,
 } from "lucide-react";
-import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
+// Phase 4-B: recharts を Dashboard の critical path から除去。
+// 自前 SVG ドーナツ (~50 行) で同じ見た目を再現。
+import { MiniDonut } from "@/components/widgets/mini-donut";
 import { supabase } from "@/lib/supabase";
 import { QuickStatsCard } from "@/components/widgets/quick-stats-card";
 import { ExpenseCard } from "@/components/widgets/expense-card";
@@ -72,14 +74,13 @@ interface WidgetSlot {
 }
 
 export function Dashboard({ onNavigateToAnalysis, onNavigateToHistory }: DashboardProps) {
-  const { selectedUser, theme, refreshTrigger, user, setIsSettingsOpen, setSettingsTab } = useApp();
+  const { selectedUser, theme, refreshTrigger, user, setIsSettingsOpen, setSettingsTab, categoryIcons } = useApp();
   const { assets: charAssets, isActive: charActive, themeColors: charColors } = useCharacter();
   const [isLoading, setIsLoading] = useState(true);
   const [monthlySpent, setMonthlySpent] = useState(0);
   const [income, setIncome] = useState(0);
   const [noMoneyDays, setNoMoneyDays] = useState(0);
   const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
-  const [categoryIcons, setCategoryIcons] = useState<Record<string, string>>({});
   const [categoryBudgets, setCategoryBudgets] = useState<CategoryBudget[]>([]);
   const [categoryBreakdown, setCategoryBreakdown] = useState<any[]>([]);
   const [editingTransaction, setEditingTransaction] = useState<TransactionForEdit | null>(null);
@@ -91,20 +92,6 @@ export function Dashboard({ onNavigateToAnalysis, onNavigateToHistory }: Dashboa
     { type: "payday", payday: 25, paydayShift: "before" },
   ]);
   const [savingGoals, setSavingGoals] = useState<{ id: string; goal_name: string; target_amount: number; current_amount: number }[]>([]);
-
-  const fetchCategoryIcons = useCallback(async () => {
-    const { data } = await supabase
-      .from('categories')
-      .select('main_category, icon');
-    
-    if (data) {
-      const icons: Record<string, string> = {};
-      data.forEach(cat => {
-        icons[cat.main_category] = cat.icon;
-      });
-      setCategoryIcons(icons);
-    }
-  }, []);
 
   const getMonthRange = () => {
     const now = new Date();
@@ -147,6 +134,8 @@ export function Dashboard({ onNavigateToAnalysis, onNavigateToHistory }: Dashboa
           .from('budgets')
           .select('category_main, monthly_budget')
           .eq('user_type', userType),
+        // Phase 3-A: 最近の取引は表示領域に見える 10 件だけ取得（転送量半減）
+        // items は明細表示に使うのでそのまま残す（lazy load はスキーマ変更が必要で別タスク）
         supabase
           .from('transactions')
           .select('id, date, category_main, category_sub, store_name, amount, memo, user_type, items, source')
@@ -154,7 +143,7 @@ export function Dashboard({ onNavigateToAnalysis, onNavigateToHistory }: Dashboa
           .eq('type', 'expense')
           .order('date', { ascending: false })
           .order('created_at', { ascending: false })
-          .limit(20),
+          .limit(10),
       ]);
 
       const total = monthlyData?.reduce((sum, t) => sum + t.amount, 0) || 0;
@@ -251,22 +240,20 @@ export function Dashboard({ onNavigateToAnalysis, onNavigateToHistory }: Dashboa
   }, [selectedUser]);
 
   useEffect(() => {
-    fetchCategoryIcons();
     fetchWidgetSettings();
-  }, [fetchCategoryIcons, fetchWidgetSettings]);
+  }, [fetchWidgetSettings]);
+
+  // categoryIcons は AppContext から来るので空判定は不要
+  useEffect(() => {
+    fetchData(selectedUser as UserType);
+    fetchSavingGoals();
+  }, [selectedUser, fetchData, fetchSavingGoals]);
 
   useEffect(() => {
-    if (Object.keys(categoryIcons).length > 0) {
-      fetchData(selectedUser as UserType);
-      fetchSavingGoals();
-    }
-  }, [selectedUser, categoryIcons, fetchData, fetchSavingGoals]);
-
-  useEffect(() => {
-    if (Object.keys(categoryIcons).length > 0 && refreshTrigger > 0) {
+    if (refreshTrigger > 0) {
       fetchData(selectedUser as UserType);
     }
-  }, [refreshTrigger, categoryIcons, fetchData, selectedUser]);
+  }, [refreshTrigger, fetchData, selectedUser]);
 
   const balance = income - monthlySpent;
 
@@ -423,22 +410,6 @@ export function Dashboard({ onNavigateToAnalysis, onNavigateToHistory }: Dashboa
     }
   };
 
-  const renderCustomLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, name }: {
-    cx: number; cy: number; midAngle: number; innerRadius: number; outerRadius: number; percent: number; name: string;
-  }) => {
-    if (percent < 0.08) return null;
-    const RADIAN = Math.PI / 180;
-    const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
-    const x = cx + radius * Math.cos(-midAngle * RADIAN);
-    const y = cy + radius * Math.sin(-midAngle * RADIAN);
-    
-    return (
-      <text x={x} y={y} fill="white" textAnchor="middle" dominantBaseline="central" fontSize="10" fontWeight="bold">
-        {name}
-      </text>
-    );
-  };
-
   return (
     <div className="space-y-3 pb-24 pt-3">
       {/* サマリーカード */}
@@ -488,16 +459,13 @@ export function Dashboard({ onNavigateToAnalysis, onNavigateToHistory }: Dashboa
               </div>
             </div>
 
-            <div className="w-32 h-32 cursor-pointer hover:scale-105 transition-transform" onClick={onNavigateToAnalysis}>
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={categoryBreakdown} cx="50%" cy="50%" innerRadius={30} outerRadius={55} paddingAngle={2} dataKey="value" startAngle={90} endAngle={-270} label={renderCustomLabel} labelLine={false}>
-                    {categoryBreakdown.map((_, index) => (
-                      <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
-                    ))}
-                  </Pie>
-                </PieChart>
-              </ResponsiveContainer>
+            <div className="w-32 h-32 cursor-pointer hover:scale-105 transition-transform">
+              <MiniDonut
+                data={categoryBreakdown}
+                colors={CHART_COLORS}
+                size={128}
+                onClick={onNavigateToAnalysis}
+              />
               <p className="text-center text-xs text-white/40 -mt-1">タップで詳細</p>
             </div>
           </div>

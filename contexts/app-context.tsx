@@ -19,6 +19,19 @@ export interface UserTheme {
   dark: string;
 }
 
+/**
+ * 全画面で共有する正規化済みカテゴリ。
+ * 各 useEffect で別々に fetch していたのを AppContext 1 本に集約する。
+ */
+export interface Category {
+  main: string;      // ← DB の main_category
+  icon: string;
+  subs: string[];    // ← DB の subcategories
+  sortOrder: number;
+}
+
+const CATEGORIES_CACHE_KEY = "categories-v1";
+
 interface AppContextType {
   user: User | null;
   isAuthLoading: boolean;
@@ -44,6 +57,13 @@ interface AppContextType {
   characterId: CharacterId;
   setCharacterId: (id: CharacterId) => void;
   saveCharacterId: (id: CharacterId) => Promise<void>;
+  // ===== 集約済みカテゴリ（Phase 2） =====
+  categories: Category[];
+  categoriesMap: Record<string, Category>;
+  categoryIcons: Record<string, string>;
+  getCategoryIcon: (main: string) => string;
+  getSubcategories: (main: string) => string[];
+  refreshCategories: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -121,26 +141,96 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
     return "none";
   });
+  // カテゴリ: localStorage から即座に hydrate（SWR 的挙動）→ 後で fetch で上書き
+  const [categories, setCategories] = useState<Category[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const cached = localStorage.getItem(CATEGORIES_CACHE_KEY);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) return parsed as Category[];
+      }
+    } catch {
+      // ignore
+    }
+    return [];
+  });
   const fixedExpensesProcessed = useRef(false);
 
   // ===== テーマ構築ロジック =====
   // 共同 → jointThemeColor > デフォルトパープル
   // 個人 → customThemeColor > デフォルト色
   // __pending__ → デフォルト色
-  let primary: string;
-  let secondary: string;
-  if (selectedUser === "共同") {
-    primary = jointThemeColor || JOINT_DEFAULT.primary;
-    secondary = jointThemeColor ? generateSecondaryColor(jointThemeColor) : JOINT_DEFAULT.secondary;
-  } else if (selectedUser === "__pending__") {
-    primary = "#022fe3";
-    secondary = "#2851f0";
-  } else {
+  const { primary, secondary } = useMemo(() => {
+    if (selectedUser === "共同") {
+      return {
+        primary: jointThemeColor || JOINT_DEFAULT.primary,
+        secondary: jointThemeColor
+          ? generateSecondaryColor(jointThemeColor)
+          : JOINT_DEFAULT.secondary,
+      };
+    }
+    if (selectedUser === "__pending__") {
+      return { primary: "#022fe3", secondary: "#2851f0" };
+    }
     const defaults = getDefaultPersonalColors(selectedUser);
-    primary = customThemeColor || defaults.primary;
-    secondary = customThemeColor ? generateSecondaryColor(customThemeColor) : defaults.secondary;
-  }
+    return {
+      primary: customThemeColor || defaults.primary,
+      secondary: customThemeColor
+        ? generateSecondaryColor(customThemeColor)
+        : defaults.secondary,
+    };
+  }, [selectedUser, jointThemeColor, customThemeColor]);
   const theme = useMemo(() => buildTheme(primary, secondary), [primary, secondary]);
+
+  // ===== 派生: カテゴリの Map / アイコン一覧 =====
+  const categoriesMap = useMemo<Record<string, Category>>(() => {
+    const map: Record<string, Category> = {};
+    for (const c of categories) map[c.main] = c;
+    return map;
+  }, [categories]);
+
+  const categoryIcons = useMemo<Record<string, string>>(() => {
+    const icons: Record<string, string> = {};
+    for (const c of categories) icons[c.main] = c.icon;
+    return icons;
+  }, [categories]);
+
+  const getCategoryIcon = useCallback(
+    (main: string) => categoriesMap[main]?.icon || "📦",
+    [categoriesMap]
+  );
+
+  const getSubcategories = useCallback(
+    (main: string) => categoriesMap[main]?.subs || ["その他"],
+    [categoriesMap]
+  );
+
+  // ===== カテゴリ取得: 1 回だけ起動時に fetch、settings CRUD 時に手動 refresh =====
+  const refreshCategories = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("categories")
+      .select("main_category, icon, subcategories, sort_order")
+      .order("sort_order");
+    if (error || !data) return;
+    const normalized: Category[] = data.map((row) => ({
+      main: row.main_category,
+      icon: row.icon || "📦",
+      subs: row.subcategories || ["その他"],
+      sortOrder: row.sort_order ?? 0,
+    }));
+    setCategories(normalized);
+    try {
+      localStorage.setItem(CATEGORIES_CACHE_KEY, JSON.stringify(normalized));
+    } catch {
+      // storage full / disabled -> ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    // 起動時 1 回だけ fetch（キャッシュは state の初期値で既に入っている）
+    refreshCategories();
+  }, [refreshCategories]);
 
   const triggerRefresh = useCallback(() => {
     setRefreshTrigger(prev => prev + 1);
@@ -287,7 +377,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!user) return;
-    // 本人のトランザクション + 共同トランザクションのみ監視
+    // Phase 6-D: ここで user_id フィルタで自分の書き込みを除外したくなるが、
+    // multi-device (PC + スマホ) で同じユーザーが使う場合にデバイス B 側で
+    // 同期が届かなくなる問題があるため、payload.new.user_id ベースの除外は
+    // 避け、元の「本人 transactions + 共同 transactions を監視」に留める。
+    // (真の重複除去は optimistic id の Set で行う必要があり別タスク)
     const channel = supabase
       .channel('transactions-realtime')
       .on(
@@ -340,6 +434,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       customThemeColor, setCustomThemeColor, saveCustomThemeColor,
       jointThemeColor, setJointThemeColor, saveJointThemeColor,
       characterId, setCharacterId, saveCharacterId,
+      // Phase 2: 集約済みカテゴリ
+      categories, categoriesMap, categoryIcons,
+      getCategoryIcon, getSubcategories, refreshCategories,
     }), [
       user,
       isAuthLoading,
@@ -358,6 +455,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       saveJointThemeColor,
       characterId,
       saveCharacterId,
+      categories,
+      categoriesMap,
+      categoryIcons,
+      getCategoryIcon,
+      getSubcategories,
+      refreshCategories,
     ]);
 
   return (

@@ -78,16 +78,17 @@ function AppContent() {
   const [showSplash, setShowSplash] = useState(true);
 
   // スプラッシュのフェードアウト管理
+  // fadeOut を true にすると .animate-splash-out (CSS transition) が走る。
+  // 150ms の固定 setTimeout をやめて、アニメーション完了時に showSplash=false にする。
   useEffect(() => {
     if (!isAuthLoading) {
-      // auth check 完了 -> フェードアウト開始
       setSplashFadeOut(true);
-      const timer = setTimeout(() => {
-        setShowSplash(false);
-      }, 150);
-      return () => clearTimeout(timer);
     }
   }, [isAuthLoading]);
+
+  const handleSplashAnimationEnd = () => {
+    if (splashFadeOut) setShowSplash(false);
+  };
 
   const handleRecordClick = () => {
     setIsRecordMenuOpen(true);
@@ -135,7 +136,7 @@ function AppContent() {
 
   // スプラッシュ表示中
   if (showSplash) {
-    return <SplashScreen fadeOut={splashFadeOut} />;
+    return <SplashScreen fadeOut={splashFadeOut} onFadeOutEnd={handleSplashAnimationEnd} />;
   }
 
   // 未認証

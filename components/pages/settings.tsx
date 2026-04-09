@@ -16,12 +16,14 @@ interface Category {
 }
 
 export function Settings() {
-  const { theme } = useApp();
+  const { theme, refreshCategories } = useApp();
   const [categories, setCategories] = useState<Category[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ main_category: '', icon: '', subcategories: '' });
 
+  // Settings ページは CRUD の主体なので、DB から直接 full row を取得する。
+  // CRUD 後に refreshCategories() を呼んで AppContext 側の他ページにも反映する。
   const fetchCategories = async () => {
     setIsLoading(true);
     try {
@@ -29,8 +31,10 @@ export function Settings() {
         .from('categories')
         .select('*')
         .order('sort_order');
-      
+
       setCategories(data || []);
+      // 他のページが参照する AppContext 側も最新化
+      refreshCategories();
     } catch (error) {
       console.error('カテゴリー取得エラー:', error);
     } finally {

@@ -20,7 +20,7 @@
 const CONTAINER_ID = "__perf_toast_container";
 const TOAST_DURATION_MS = 2200;
 
-type PerfRecord = Record<string, number>;
+type PerfRecord = Record<string, number | undefined>;
 
 function isEnabled(): boolean {
   if (typeof window === "undefined") return false;
@@ -96,6 +96,7 @@ export function showPerfToast(label: string, ms: number): void {
 export function logPerf(tag: string, perf: PerfRecord): void {
   if (typeof console === "undefined") return;
   const parts = Object.entries(perf)
+    .filter((entry): entry is [string, number] => typeof entry[1] === "number")
     .map(([k, v]) => `${k}=${formatMs(v)}`)
     .join(" ");
   console.log(`[perf] ${tag} ${parts}`);

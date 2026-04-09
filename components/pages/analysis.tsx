@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { ChevronRight, ChevronLeft, ChevronsLeft, ChevronsRight, TrendingUp, TrendingDown, Calendar as CalendarIcon, Banknote, Search, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useApp } from "@/contexts/app-context";
@@ -22,6 +22,7 @@ interface Transaction {
   type: string;
   items?: TransactionItem[] | null;
   source?: string;
+  target_month?: string | null;
 }
 
 interface CategoryDataItem {
@@ -45,12 +46,18 @@ type DrillLevel = 'overview' | 'subcategory' | 'detail' | 'income';
 
 const CHART_COLORS = ['#8b5cf6', '#ec4899', '#06b6d4', '#10b981', '#f59e0b', '#ef4444', '#a855f7', '#f97316'];
 
+// Phase 3-B: 月切替時のフェッチゼロ化
+// キー: `${userType}-${endYear}-${endMonth}` → 対応する 12 か月分のトランザクション配列
+// refreshTrigger 増加時・selectedUser 変更時・新規登録時に invalidate
+type MonthCache = Record<string, Transaction[]>;
+
 export function Analysis() {
-  const { selectedUser, refreshTrigger, theme } = useApp();
+  const { selectedUser, refreshTrigger, theme, categoryIcons } = useApp();
   const [isLoading, setIsLoading] = useState(true);
+  const cacheRef = useRef<MonthCache>({});
+  const lastRefreshRef = useRef<number>(0);
   const [yearlyData, setYearlyData] = useState<YearlyDataItem[]>([]);
   const [categoryData, setCategoryData] = useState<CategoryDataItem[]>([]);
-  const [categoryIcons, setCategoryIcons] = useState<Record<string, string>>({});
   const [subCategoryData, setSubCategoryData] = useState<Record<string, SubCategoryDataItem[]>>({});
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [monthIncome, setMonthIncome] = useState(0);
@@ -120,24 +127,22 @@ export function Analysis() {
       const prevMonth = ((selectedMonth - 12 - 1 + 12) % 12) + 1;
       const twelveMonthsAgoStr = `${prevYear}-${String(prevMonth).padStart(2, '0')}-01`;
 
-      const [{ data: categories }, { data: transactionsData }] = await Promise.all([
-        supabase
-          .from('categories')
-          .select('main_category, icon, subcategories'),
-        supabase
+      // ===== Phase 3-B: 月切替キャッシュ =====
+      const cacheKey = `${selectedUser}-${selectedYear}-${mm}`;
+      let transactionsData: Transaction[] | null = cacheRef.current[cacheKey] ?? null;
+
+      if (!transactionsData) {
+        // cache miss → categories は AppContext から取得するので transactions だけを fetch
+        const { data } = await supabase
           .from('transactions')
           .select('id, date, category_main, category_sub, store_name, amount, memo, type, items, source, target_month')
           .eq('user_type', selectedUser)
           .gte('date', twelveMonthsAgoStr)
           .lte('date', lastDayStr)
-          .order('date', { ascending: true }),
-      ]);
-
-      const icons: Record<string, string> = {};
-      categories?.forEach(cat => {
-        icons[cat.main_category] = cat.icon;
-      });
-      setCategoryIcons(icons);
+          .order('date', { ascending: true });
+        transactionsData = (data as Transaction[] | null) || [];
+        cacheRef.current[cacheKey] = transactionsData;
+      }
 
       setTransactions(transactionsData || []);
 
@@ -179,7 +184,7 @@ export function Analysis() {
         });
 
       const categoryArray = Object.entries(categoryMap)
-        .map(([name, value]) => ({ name, value, icon: icons[name] || '📦' }))
+        .map(([name, value]) => ({ name, value, icon: categoryIcons[name] || '📦' }))
         .sort((a, b) => b.value - a.value);
       setCategoryData(categoryArray);
 
@@ -231,17 +236,22 @@ export function Analysis() {
     } finally {
       setIsLoading(false);
     }
-  }, [selectedUser, selectedYear, selectedMonth]);
+  }, [selectedUser, selectedYear, selectedMonth, categoryIcons]);
 
+  // Phase 3-B/3-C: 月切替は cache hit で fetch ゼロ、refreshTrigger 変化で cache 全クリア
+  // 以前は useEffect が 2 本あり初回マウント時に refreshTrigger=0 でも再実行されるパターンがあった。
+  // 1 本に統合 + refreshTrigger 変化検知だけ個別に扱う。
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
-
-  useEffect(() => {
-    if (refreshTrigger > 0) {
-      fetchData();
+    if (refreshTrigger !== lastRefreshRef.current) {
+      // 新しい登録・編集があった → cache 全クリアして強制再 fetch
+      cacheRef.current = {};
+      lastRefreshRef.current = refreshTrigger;
     }
-  }, [refreshTrigger, fetchData]);
+    fetchData();
+  }, [fetchData, refreshTrigger]);
+
+  // selectedUser 変更時は他ユーザーのキャッシュも残しておきたいが、表示は即切替したい。
+  // → cache はユーザー別キーなので何もしない（fetchData が自動的に正しいキーを見る）
 
   const totalExpense = categoryData.reduce((sum, c) => sum + c.value, 0);
   const normalizedQuery = searchQuery.trim().toLowerCase();

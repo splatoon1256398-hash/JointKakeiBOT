@@ -1,16 +1,23 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getJSTDateString } from "@/lib/date";
 import {
+  blobToInlinePart,
   buildPromptWithUploadedFile,
   deleteGeminiFile,
   extractFirstJsonObject,
   geminiClient,
+  INLINE_LIMIT_BYTES,
   uploadGeminiFile,
   withGeminiRetry,
 } from "@/lib/server/gemini";
+import { createTimer } from "@/lib/server/perf";
+import { verifyAccessToken } from "@/lib/server/auth";
+import type { Part } from "@google/genai";
 
 export const runtime = "nodejs";
+export const maxDuration = 30;
+export const preferredRegion = ["hnd1"];
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -88,6 +95,7 @@ async function resolveInputSource(
 }
 
 export async function POST(request: NextRequest) {
+  const timer = createTimer();
   let sourceCleanup: (() => Promise<void>) | undefined;
   let geminiFileName: string | null = null;
 
@@ -97,70 +105,100 @@ export async function POST(request: NextRequest) {
     if (!token) {
       return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
     }
-    const {
-      data: { user },
-      error: authError,
-    } = await supabaseAdmin.auth.getUser(token);
-    if (authError || !user) {
+    // Phase 6-B: jose でローカル検証 (RTT 削除)
+    const user = await verifyAccessToken(token);
+    if (!user) {
       return NextResponse.json({ error: "認証に失敗しました" }, { status: 401 });
     }
+    timer.mark("auth");
 
     const source = await resolveInputSource(request, user.id);
     sourceCleanup = source.cleanup;
+    timer.mark("prepare");
 
-    const prompt = `この給与明細・収入書類の画像/PDFを解析して、以下のJSON形式で情報を抽出してください。
+    // 短縮プロンプト (responseMimeType=JSON で形式強制、要点のみ)
+    const prompt = `給与明細/収入書類を解析し JSON のみで返答。
 
-【抽出ルール】
-1. **差引支給額（手取り）** を "net_amount" として取得 → これが家計簿に記録する「収入額」
-2. **総支給額（額面）** を "gross_amount" として取得
-3. 会社名、〇月分給与などの情報を "memo" に記載
-4. 支給日付を "date" に記載（見つからなければ今月1日）
-5. 収入源（会社名など）を "source" に記載
+【取得項目】
+- net_amount: 差引支給額（手取り）= 家計簿に記録する収入額
+- gross_amount: 総支給額（額面）
+- date: 支給日（なければ当月1日）
+- source: 会社名など収入源
+- memo: 「○月分給与」など
+- category_main: 給与時は「給与・賞与」、副業/フリーランス時は「副業」
+- category_sub: 基本「給与」、賞与時は「賞与」
 
 【出力形式】
-{
-  "date": "YYYY-MM-DD",
-  "net_amount": 290740,
-  "gross_amount": 362248,
-  "source": "株式会社〇〇",
-  "memo": "2月分給与",
-  "category_main": "給与・賞与",
-  "category_sub": "給与"
-}
+{"date":"YYYY-MM-DD","net_amount":290740,"gross_amount":362248,"source":"株式会社〇〇","memo":"2月分給与","category_main":"給与・賞与","category_sub":"給与"}
 
-- 賞与の場合は category_sub を "賞与" にしてください
-- 副業やフリーランスの場合は category_main を "副業" にしてください
-- 金額が読み取れない場合は 0 にしてください。捏造は禁止です
-- 日付が読み取れない場合は "${getJSTDateString()}" を使用してください
-- 必ずJSON形式のみで返答してください`;
+- 金額が読めなければ 0（捏造禁止）
+- 日付不明時は "${getJSTDateString()}"`;
 
-    const uploadedFile = await uploadGeminiFile(
-      source.blob,
-      source.mimeType,
-      source.fileName
-    );
-    geminiFileName = uploadedFile.name || null;
+    // === inline 優先経路 ===
+    const useInline =
+      source.blob.size <= INLINE_LIMIT_BYTES &&
+      source.mimeType !== "application/pdf";
+
+    let parts: Part[];
+    if (useInline) {
+      parts = [
+        { text: prompt },
+        await blobToInlinePart(source.blob, source.mimeType),
+      ];
+      timer.mark("upload");
+    } else {
+      const uploadedFile = await uploadGeminiFile(
+        source.blob,
+        source.mimeType,
+        source.fileName
+      );
+      geminiFileName = uploadedFile.name || null;
+      parts = buildPromptWithUploadedFile(prompt, uploadedFile);
+      timer.mark("upload");
+    }
 
     const result = await withGeminiRetry(() =>
       geminiClient.models.generateContent({
         model: "gemini-3-flash-preview",
-        contents: [
-          {
-            role: "user",
-            parts: buildPromptWithUploadedFile(prompt, uploadedFile),
-          },
-        ],
+        contents: [{ role: "user", parts }],
+        config: {
+          temperature: 0,
+          responseMimeType: "application/json",
+          maxOutputTokens: 1024,
+        },
       })
     );
     const text = result.text ?? "";
+    timer.mark("inference");
 
     console.log("Income scan Gemini response:", text);
 
     const incomeData = JSON.parse(extractFirstJsonObject(text));
 
-    return NextResponse.json(incomeData);
+    // クリーンアップは after() でバックグラウンド
+    const pendingCleanup = { sourceCleanup, geminiFileName };
+    sourceCleanup = undefined;
+    geminiFileName = null;
+    after(async () => {
+      const cleanupTimer = createTimer();
+      await Promise.allSettled([
+        pendingCleanup.sourceCleanup?.(),
+        deleteGeminiFile(pendingCleanup.geminiFileName),
+      ]);
+      console.log(`[income-scan] cleanup done in ${cleanupTimer.elapsed().toFixed(0)}ms`);
+    });
+    timer.mark("cleanup_enqueued");
+
+    incomeData._perf = timer.toRecord();
+    return NextResponse.json(incomeData, {
+      headers: { "Server-Timing": timer.toServerTiming() },
+    });
   } catch (error) {
     console.error("Income scan error:", error);
+    await Promise.allSettled([
+      sourceCleanup?.(),
+      deleteGeminiFile(geminiFileName),
+    ]);
     const message =
       error instanceof Error ? error.message : "収入書類の解析に失敗しました。";
     const status =
@@ -174,10 +212,5 @@ export async function POST(request: NextRequest) {
       { error: status === 500 ? "収入書類の解析に失敗しました。再度お試しください。" : message },
       { status }
     );
-  } finally {
-    await Promise.allSettled([
-      sourceCleanup?.(),
-      deleteGeminiFile(geminiFileName),
-    ]);
   }
 }

@@ -33,47 +33,21 @@ interface FixedExpense {
 }
 
 export function FixedExpenses() {
-  const { user, selectedUser, theme } = useApp();
+  const { user, selectedUser, theme, categories: dbCategories, getCategoryIcon, getSubcategories } = useApp();
   const [expenses, setExpenses] = useState<FixedExpense[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [dbCategories, setDbCategories] = useState<{ main: string; icon: string; subs: string[] }[]>([]);
 
   // カテゴリーピッカー状態
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerStep, setPickerStep] = useState<'main' | 'sub'>('main');
   const [pickerTempMain, setPickerTempMain] = useState('');
 
-  // DBからカテゴリ取得
-  useEffect(() => {
-    supabase
-      .from("categories")
-      .select("main_category, icon, subcategories")
-      .order("sort_order")
-      .then(({ data }) => {
-        if (data) {
-          setDbCategories(
-            data.map((d) => ({
-              main: d.main_category,
-              icon: d.icon || "📦",
-              subs: d.subcategories || ["その他"],
-            }))
-          );
-        }
-      });
-  }, []);
-
-  const getSubcategoriesFromDB = (mainCat: string): string[] => {
-    const found = dbCategories.find((c) => c.main === mainCat);
-    return found?.subs || ["その他"];
-  };
-
-  const getCategoryIconFromDB = (mainCat: string): string => {
-    const found = dbCategories.find((c) => c.main === mainCat);
-    return found?.icon || "📦";
-  };
+  // dbCategories は AppContext から取得
+  const getSubcategoriesFromDB = getSubcategories;
+  const getCategoryIconFromDB = getCategoryIcon;
 
   // フォーム状態
   const [categoryMain, setCategoryMain] = useState("");

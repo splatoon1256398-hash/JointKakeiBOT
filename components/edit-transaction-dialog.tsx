@@ -40,7 +40,7 @@ interface EditTransactionDialogProps {
 }
 
 export function EditTransactionDialog({ open, onOpenChange, transaction }: EditTransactionDialogProps) {
-  const { triggerRefresh, theme, displayName } = useApp();
+  const { triggerRefresh, theme, displayName, categories: dbCategories } = useApp();
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -74,27 +74,7 @@ export function EditTransactionDialog({ open, onOpenChange, transaction }: EditT
   const [pickerTempMain, setPickerTempMain] = useState('');
   const [pickerTarget, setPickerTarget] = useState<'single' | number>('single'); // 'single' = 単一品目, number = items[idx]
 
-  // DBから最新のカテゴリを常に取得
-  const [dbCategories, setDbCategories] = useState<{ main: string; icon: string; subs: string[] }[]>([]);
-
-  useEffect(() => {
-    if (open) {
-      // ダイアログが開くたびにDBから最新カテゴリを取得
-      supabase
-        .from('categories')
-        .select('main_category, icon, subcategories')
-        .order('sort_order')
-        .then(({ data }) => {
-          if (data) {
-            setDbCategories(data.map(d => ({
-              main: d.main_category,
-              icon: d.icon || '📦',
-              subs: d.subcategories || ['その他'],
-            })));
-          }
-        });
-    }
-  }, [open]);
+  // dbCategories は AppContext から来るので useEffect fetch 不要
 
   // transaction が変わったら初期値をセット
   useEffect(() => {

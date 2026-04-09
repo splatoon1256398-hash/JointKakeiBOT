@@ -13,7 +13,7 @@ interface CategoryWithBudget {
 }
 
 export function BudgetSettings() {
-  const { selectedUser, user, theme } = useApp();
+  const { selectedUser, user, theme, categories: dbCategories } = useApp();
   const [categories, setCategories] = useState<CategoryWithBudget[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -22,11 +22,7 @@ export function BudgetSettings() {
   const fetchData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const { data: categoriesData } = await supabase
-        .from('categories')
-        .select('main_category, icon')
-        .order('sort_order');
-
+      // カテゴリは AppContext から取得し、予算だけ fetch
       const { data: budgetsData } = await supabase
         .from('budgets')
         .select('*')
@@ -37,11 +33,11 @@ export function BudgetSettings() {
         budgetMap[b.category_main] = b.monthly_budget;
       });
 
-      const merged = categoriesData?.map(cat => ({
-        main_category: cat.main_category,
+      const merged = dbCategories.map(cat => ({
+        main_category: cat.main,
         icon: cat.icon,
-        current_budget: budgetMap[cat.main_category] || 0,
-      })) || [];
+        current_budget: budgetMap[cat.main] || 0,
+      }));
 
       setCategories(merged);
       setBudgets(budgetMap);
@@ -50,7 +46,7 @@ export function BudgetSettings() {
     } finally {
       setIsLoading(false);
     }
-  }, [selectedUser]);
+  }, [selectedUser, dbCategories]);
 
   useEffect(() => {
     fetchData();

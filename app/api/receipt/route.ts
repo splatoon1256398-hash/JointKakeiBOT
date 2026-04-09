@@ -1,16 +1,23 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getJSTDateString } from "@/lib/date";
 import {
+  blobToInlinePart,
   buildPromptWithUploadedFile,
   deleteGeminiFile,
   extractFirstJsonObject,
   geminiClient,
+  INLINE_LIMIT_BYTES,
   uploadGeminiFile,
   withGeminiRetry,
 } from "@/lib/server/gemini";
+import { createTimer } from "@/lib/server/perf";
+import { verifyAccessToken } from "@/lib/server/auth";
+import type { Part } from "@google/genai";
 
 export const runtime = "nodejs";
+export const maxDuration = 30;
+export const preferredRegion = ["hnd1"]; // 東京リージョン (Supabase と同一に)
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -129,6 +136,7 @@ async function resolveInputSource(
 }
 
 export async function POST(request: NextRequest) {
+  const timer = createTimer();
   let sourceCleanup: (() => Promise<void>) | undefined;
   let geminiFileName: string | null = null;
 
@@ -139,21 +147,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
     }
 
-    const {
-      data: { user },
-      error: authError,
-    } = await supabaseAdmin.auth.getUser(token);
-
-    if (authError || !user) {
+    // Phase 6-B: jose でローカル検証 (RTT 削除)
+    const user = await verifyAccessToken(token);
+    if (!user) {
       return NextResponse.json(
         { error: "認証に失敗しました" },
         { status: 401 }
       );
     }
+    timer.mark("auth");
 
     const source = await resolveInputSource(request, user.id);
     sourceCleanup = source.cleanup;
     const catData = await getCachedCategories();
+    timer.mark("prepare");
 
     const categoryList =
       catData
@@ -163,75 +170,67 @@ export async function POST(request: NextRequest) {
         )
         .join("\n") || "- その他: その他";
 
-    const prompt = `このレシート画像/PDFを解析して、以下のJSON形式で情報を抽出してください：
+    // 短縮プロンプト (責務を responseMimeType=JSON + generationConfig 側に寄せて 50→20 行)
+    // 核: totalAmount 優先 / 割引・税金・小計を item にしない / カテゴリは既定リストから / カタカナ略称は自然日本語化
+    const prompt = `レシート画像を解析し JSON のみで返答。
 
-【最重要: totalAmountの絶対視】
-- レシートの「合計」「お支払い」「税込合計」を totalAmount として取得。これが絶対の正解。
+【最優先】
+- 「合計/お支払/税込合計」を totalAmount に。これが真実。
+- 価格は印字のまま（税抜でも税込でも変換禁止）。items 合計と不一致OK（サーバー側で按分）。
 
-【品目抽出ルール】
-1. 各品目の価格はレシート印字のまま返せ（税抜きなら税抜き、税込みなら税込み）
-2. 自分で税率を掛けたり割ったりして金額を変換するな
-3. 品目合計とtotalAmountが一致しなくてOK（プログラム側で自動按分する）
+【item に入れるな】
+- 割引/値引/クーポン/%引/マイナス金額 → 直前商品の価格から差し引いた値だけ出力
+- 消費税/内税/外税/小計/合計/お釣り/預かり → 一切出力禁止
 
-【❗絶対禁止: 以下を独立した品目として出力するな】
-- 「割引」「値引き」「クーポン」「○%引」「-○円」→ 該当商品の価格から差し引いてから出力せよ
-- 「消費税」「内税」「外税」→ 絶対に品目として出力するな
-- 「小計」「合計」「お釣り」「預かり」→ 品目として出力するな
-
-具体例:
-レシートに「鶏肉 497円」「割引 -99円」とある場合 → itemsには { "memo": "鶏肉", "amount": 398 } の1件のみ出力。割引行は絶対に出力しない。
-
-【カテゴリー選択】
-- 必ず以下のリストから選択（他のカテゴリーは使用禁止）
-- 判断に迷う場合は「その他」を使用
-
-【使用可能なカテゴリー一覧】
+【カテゴリー】次から選択（他禁止、迷ったら「その他」）:
 ${categoryList}
 
-【カタカナ略称・品名の自然な日本語翻訳】
-レシート特有のカタカナ略称や半角カナを自然な日本語に翻訳してmemoに書け。
-例: ヨウニンジン→葉ニンジン, ブナシメジ→ぶなしめじ, ﾓﾔｼ→もやし, タマゴ→卵, トリムネ→鶏むね肉, ギュウニュウ→牛乳
-ブランド名・固有名詞はそのまま維持。不明瞭な場合は半角→全角カナ変換のみ。
+【memo】カタカナ略称・半角カナは自然な日本語に（例: ﾓﾔｼ→もやし, トリムネ→鶏むね肉）。ブランド名は維持。
 
 【出力形式】
-{
-  "date": "YYYY-MM-DD",
-  "items": [
-    {
-      "categoryMain": "食費",
-      "categorySub": "食料品",
-      "storeName": "店名",
-      "amount": 254,
-      "memo": "卵"
+{"date":"YYYY-MM-DD","items":[{"categoryMain":"食費","categorySub":"食料品","storeName":"店名","amount":254,"memo":"卵"}],"totalAmount":9522}
+
+- 1 商品 = 1 item（「野菜、肉など」のようにまとめない）
+- 日付不明時は ${getJSTDateString()}`;
+
+    // === inline 優先経路 ===
+    // ≤ INLINE_LIMIT_BYTES かつ PDF 以外なら Files API (upload + polling + delete) を丸ごとスキップ
+    // PDF または大きい画像は従来通り Files API 経由
+    const useInline =
+      source.blob.size <= INLINE_LIMIT_BYTES &&
+      source.mimeType !== "application/pdf";
+
+    let parts: Part[];
+    if (useInline) {
+      parts = [
+        { text: prompt },
+        await blobToInlinePart(source.blob, source.mimeType),
+      ];
+      timer.mark("upload"); // inline 化のみ (base64 変換時間)
+    } else {
+      const uploadedFile = await uploadGeminiFile(
+        source.blob,
+        source.mimeType,
+        source.fileName
+      );
+      geminiFileName = uploadedFile.name || null;
+      parts = buildPromptWithUploadedFile(prompt, uploadedFile);
+      timer.mark("upload"); // Files API 経由 (upload + polling)
     }
-  ],
-  "totalAmount": 9522
-}
-
-- 各itemのmemoは個別商品名を書け（「野菜、肉など」のようにまとめるな）
-- 同じカテゴリーの商品でもまとめずに1品1itemで出力せよ
-- 日付が読み取れない場合は、今日の日付（${getJSTDateString()}）を使用してください
-- 必ずJSON形式のみで返答してください（他の文字は含めないでください）`;
-
-    const uploadedFile = await uploadGeminiFile(
-      source.blob,
-      source.mimeType,
-      source.fileName
-    );
-    geminiFileName = uploadedFile.name || null;
 
     const result = await withGeminiRetry(() =>
       geminiClient.models.generateContent({
         model: "gemini-3-flash-preview",
-        contents: [
-          {
-            role: "user",
-            parts: buildPromptWithUploadedFile(prompt, uploadedFile),
-          },
-        ],
+        contents: [{ role: "user", parts }],
+        config: {
+          temperature: 0,
+          responseMimeType: "application/json",
+          maxOutputTokens: 2048,
+        },
       })
     );
     const text = result.text ?? "";
+    timer.mark("inference");
 
     console.log("Receipt API Gemini Response:", text);
 
@@ -346,10 +345,34 @@ ${categoryList}
         };
       }
     );
+    timer.mark("postprocess");
 
-    return NextResponse.json(receiptData);
+    // クリーンアップ (Storage / Files API) はレスポンス返却後にバックグラウンドで実行
+    // → ユーザーには即レスポンスを返せる
+    const pendingCleanup = { sourceCleanup, geminiFileName };
+    sourceCleanup = undefined;
+    geminiFileName = null;
+    after(async () => {
+      const cleanupTimer = createTimer();
+      await Promise.allSettled([
+        pendingCleanup.sourceCleanup?.(),
+        deleteGeminiFile(pendingCleanup.geminiFileName),
+      ]);
+      console.log(`[receipt] cleanup done in ${cleanupTimer.elapsed().toFixed(0)}ms`);
+    });
+    timer.mark("cleanup_enqueued");
+
+    receiptData._perf = timer.toRecord();
+    return NextResponse.json(receiptData, {
+      headers: { "Server-Timing": timer.toServerTiming() },
+    });
   } catch (error) {
     console.error("Receipt analysis error:", error);
+    // エラー時は同期クリーンアップ（responseを返せないため after() 意味なし）
+    await Promise.allSettled([
+      sourceCleanup?.(),
+      deleteGeminiFile(geminiFileName),
+    ]);
     const message =
       error instanceof Error ? error.message : "レシート解析に失敗しました。";
     const status =
@@ -363,10 +386,5 @@ ${categoryList}
       { error: status === 500 ? "レシート解析に失敗しました。再度お試しください。" : message },
       { status }
     );
-  } finally {
-    await Promise.allSettled([
-      sourceCleanup?.(),
-      deleteGeminiFile(geminiFileName),
-    ]);
   }
 }

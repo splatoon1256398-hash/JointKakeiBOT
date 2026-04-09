@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import dynamic from "next/dynamic";
 import { History as HistoryIcon, Calendar as CalendarIcon, List, Search, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useApp } from "@/contexts/app-context";
@@ -8,8 +9,18 @@ import { ExpenseCard } from "@/components/widgets/expense-card";
 import { EditTransactionDialog, TransactionForEdit } from "@/components/edit-transaction-dialog";
 import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/empty-state";
-import Calendar from 'react-calendar';
-import 'react-calendar/dist/Calendar.css';
+
+// Phase 4-A: react-calendar + その CSS をカレンダーモードを開くまで読み込まない
+// components/lazy-calendar.tsx に side-effect import を置くことで
+// Calendar.css も初期バンドルから完全に除外される
+const Calendar = dynamic(() => import("@/components/lazy-calendar"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex items-center justify-center py-10 text-sm text-white/40">
+      カレンダーを読み込み中...
+    </div>
+  ),
+});
 
 type UserType = "共同" | "れん" | "あかね";
 
@@ -40,10 +51,9 @@ interface HistoryProps {
 }
 
 export function History({ isCompact = false }: HistoryProps) {
-  const { selectedUser, theme, refreshTrigger } = useApp();
+  const { selectedUser, theme, refreshTrigger, categoryIcons } = useApp();
   const [isLoading, setIsLoading] = useState(true);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [categoryIcons, setCategoryIcons] = useState<Record<string, string>>({});
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [editingTransaction, setEditingTransaction] = useState<TransactionForEdit | null>(null);
@@ -51,20 +61,6 @@ export function History({ isCompact = false }: HistoryProps) {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [targetTxId, setTargetTxId] = useState<string | null>(null);
-
-  const fetchCategoryIcons = async () => {
-    const { data } = await supabase
-      .from('categories')
-      .select('main_category, icon');
-    
-    if (data) {
-      const icons: Record<string, string> = {};
-      data.forEach(cat => {
-        icons[cat.main_category] = cat.icon;
-      });
-      setCategoryIcons(icons);
-    }
-  };
 
   const fetchTransactions = async (userType: UserType) => {
     setIsLoading(true);
@@ -84,10 +80,6 @@ export function History({ isCompact = false }: HistoryProps) {
       setIsLoading(false);
     }
   };
-
-  useEffect(() => {
-    fetchCategoryIcons();
-  }, []);
 
   useEffect(() => {
     fetchTransactions(selectedUser as UserType);

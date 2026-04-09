@@ -11,6 +11,29 @@ const geminiApiKey = process.env.GEMINI_API_KEY || "";
 
 export const geminiClient = new GoogleGenAI({ apiKey: geminiApiKey });
 
+/**
+ * Gemini に inline data として直接埋め込める最大サイズ。
+ * これ以下なら Files API (upload → polling → delete) を経由せず、
+ * 1 回の generateContent 呼び出しに画像を base64 で含められる。
+ *
+ * Google の仕様上の上限は 20MB だが、リクエストサイズ / base64 膨張 /
+ * Route Handler のバッファを考慮して安全側で 4MB に設定する。
+ */
+export const INLINE_LIMIT_BYTES = 4_000_000;
+
+/**
+ * Blob を Gemini の inlineData Part に変換する。
+ * Files API と違って upload/polling が不要なので、小さい画像ではこちらを使うと
+ * 数秒単位で速くなる。
+ */
+export async function blobToInlinePart(
+  blob: Blob,
+  mimeType: string
+): Promise<Part> {
+  const buf = Buffer.from(await blob.arrayBuffer());
+  return { inlineData: { mimeType, data: buf.toString("base64") } };
+}
+
 export async function withGeminiRetry<T>(
   fn: () => Promise<T>,
   maxRetries = 2
