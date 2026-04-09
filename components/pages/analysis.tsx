@@ -109,16 +109,6 @@ export function Analysis() {
   const fetchData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const { data: categories } = await supabase
-        .from('categories')
-        .select('main_category, icon, subcategories');
-      
-      const icons: Record<string, string> = {};
-      categories?.forEach(cat => {
-        icons[cat.main_category] = cat.icon;
-      });
-      setCategoryIcons(icons);
-
       // 選択月の範囲（toISOStringはUTC変換でずれるので直接文字列を構築）
       const lastDay = new Date(selectedYear, selectedMonth, 0); // 正確な末日
       const mm = String(selectedMonth).padStart(2, '0');
@@ -130,13 +120,24 @@ export function Analysis() {
       const prevMonth = ((selectedMonth - 12 - 1 + 12) % 12) + 1;
       const twelveMonthsAgoStr = `${prevYear}-${String(prevMonth).padStart(2, '0')}-01`;
 
-      const { data: transactionsData } = await supabase
-        .from('transactions')
-        .select('*')
-        .eq('user_type', selectedUser)
-        .gte('date', twelveMonthsAgoStr)
-        .lte('date', lastDayStr)
-        .order('date', { ascending: true });
+      const [{ data: categories }, { data: transactionsData }] = await Promise.all([
+        supabase
+          .from('categories')
+          .select('main_category, icon, subcategories'),
+        supabase
+          .from('transactions')
+          .select('id, date, category_main, category_sub, store_name, amount, memo, type, items, source, target_month')
+          .eq('user_type', selectedUser)
+          .gte('date', twelveMonthsAgoStr)
+          .lte('date', lastDayStr)
+          .order('date', { ascending: true }),
+      ]);
+
+      const icons: Record<string, string> = {};
+      categories?.forEach(cat => {
+        icons[cat.main_category] = cat.icon;
+      });
+      setCategoryIcons(icons);
 
       setTransactions(transactionsData || []);
 

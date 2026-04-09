@@ -123,14 +123,39 @@ export function Dashboard({ onNavigateToAnalysis, onNavigateToHistory }: Dashboa
     setIsLoading(true);
     try {
       const { start, end } = getMonthRange();
+      const currentMonth = start.substring(0, 7);
 
-      const { data: monthlyData } = await supabase
-        .from('transactions')
-        .select('amount, category_main, items, date')
-        .eq('user_type', userType)
-        .eq('type', 'expense')
-        .gte('date', start)
-        .lte('date', end);
+      const [
+        { data: monthlyData },
+        { data: incomeData },
+        { data: budgetsData },
+        { data: recentData },
+      ] = await Promise.all([
+        supabase
+          .from('transactions')
+          .select('amount, category_main, items, date')
+          .eq('user_type', userType)
+          .eq('type', 'expense')
+          .gte('date', start)
+          .lte('date', end),
+        supabase
+          .from('transactions')
+          .select('amount, date, target_month')
+          .eq('type', 'income')
+          .eq('user_type', userType),
+        supabase
+          .from('budgets')
+          .select('category_main, monthly_budget')
+          .eq('user_type', userType),
+        supabase
+          .from('transactions')
+          .select('id, date, category_main, category_sub, store_name, amount, memo, user_type, items, source')
+          .eq('user_type', userType)
+          .eq('type', 'expense')
+          .order('date', { ascending: false })
+          .order('created_at', { ascending: false })
+          .limit(20),
+      ]);
 
       const total = monthlyData?.reduce((sum, t) => sum + t.amount, 0) || 0;
       setMonthlySpent(total);
@@ -145,15 +170,6 @@ export function Dashboard({ onNavigateToAnalysis, onNavigateToHistory }: Dashboa
       }
       setNoMoneyDays(noMoneyCount);
 
-      // 収入: target_month があればそれを基準、なければ date を基準に月別集計
-      const currentMonth = start.substring(0, 7); // "YYYY-MM"
-
-      let incomeQuery = supabase
-        .from('transactions')
-        .select('amount, date, target_month')
-        .eq('type', 'income');
-
-      const { data: incomeData } = await incomeQuery.eq('user_type', userType);
       const filtered = incomeData?.filter(t => {
         const effectiveMonth = t.target_month ? t.target_month.substring(0, 7) : t.date.substring(0, 7);
         return effectiveMonth === currentMonth;
@@ -178,11 +194,6 @@ export function Dashboard({ onNavigateToAnalysis, onNavigateToHistory }: Dashboa
       }));
       setCategoryBreakdown(breakdown);
 
-      const { data: budgetsData } = await supabase
-        .from('budgets')
-        .select('*')
-        .eq('user_type', userType);
-
       const budgetMap: Record<string, number> = {};
       budgetsData?.forEach(b => {
         budgetMap[b.category_main] = b.monthly_budget;
@@ -204,15 +215,6 @@ export function Dashboard({ onNavigateToAnalysis, onNavigateToHistory }: Dashboa
           };
         });
       setCategoryBudgets(budgets);
-
-      const { data: recentData } = await supabase
-        .from('transactions')
-        .select('*')
-        .eq('user_type', userType)
-        .eq('type', 'expense')
-        .order('date', { ascending: false })
-        .order('created_at', { ascending: false })
-        .limit(20);
 
       setRecentTransactions(recentData || []);
     } catch (error) {

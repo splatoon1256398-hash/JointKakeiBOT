@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, useEffect, useRef, ReactNode, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, ReactNode, useCallback, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { User } from '@supabase/supabase-js';
 import { processFixedExpenses } from '@/lib/fixed-expenses';
@@ -140,11 +140,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     primary = customThemeColor || defaults.primary;
     secondary = customThemeColor ? generateSecondaryColor(customThemeColor) : defaults.secondary;
   }
-  const theme = buildTheme(primary, secondary);
+  const theme = useMemo(() => buildTheme(primary, secondary), [primary, secondary]);
 
-  const triggerRefresh = () => {
+  const triggerRefresh = useCallback(() => {
     setRefreshTrigger(prev => prev + 1);
-  };
+  }, []);
 
   // DB からカスタムテーマカラーを安全に読み込み
   const loadThemeColors = useCallback(async (userId: string) => {
@@ -303,7 +303,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [user]);
+  }, [triggerRefresh, user]);
 
   useEffect(() => {
     if (user && !fixedExpensesProcessed.current) {
@@ -318,9 +318,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
       });
     }
-  }, [user]);
+  }, [triggerRefresh, user]);
 
-  const signOut = async () => {
+  const signOut = useCallback(async () => {
     await supabase.auth.signOut();
     setUser(null);
     setDisplayName("");
@@ -328,10 +328,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setJointThemeColor(null);
     setCharacterId("none");
     localStorage.removeItem("characterId");
-  };
+  }, []);
 
-  return (
-    <AppContext.Provider value={{
+  const contextValue = useMemo(() => ({
       user, isAuthLoading, displayName,
       selectedUser, setSelectedUser,
       isSettingsOpen, setIsSettingsOpen,
@@ -341,7 +340,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
       customThemeColor, setCustomThemeColor, saveCustomThemeColor,
       jointThemeColor, setJointThemeColor, saveJointThemeColor,
       characterId, setCharacterId, saveCharacterId,
-    }}>
+    }), [
+      user,
+      isAuthLoading,
+      displayName,
+      selectedUser,
+      isSettingsOpen,
+      settingsTab,
+      kakeiboTab,
+      signOut,
+      theme,
+      refreshTrigger,
+      triggerRefresh,
+      customThemeColor,
+      saveCustomThemeColor,
+      jointThemeColor,
+      saveJointThemeColor,
+      characterId,
+      saveCharacterId,
+    ]);
+
+  return (
+    <AppContext.Provider value={contextValue}>
       {children}
     </AppContext.Provider>
   );

@@ -20,6 +20,10 @@ CREATE TABLE IF NOT EXISTS transactions (
 CREATE INDEX IF NOT EXISTS idx_transactions_user_type ON transactions(user_type);
 CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date);
 CREATE INDEX IF NOT EXISTS idx_transactions_category_main ON transactions(category_main);
+CREATE INDEX IF NOT EXISTS idx_transactions_user_type_type_date_created_at
+  ON transactions(user_type, type, date DESC, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_transactions_user_id_date
+  ON transactions(user_id, date DESC);
 
 -- RLS (Row Level Security) の有効化
 ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
@@ -182,6 +186,9 @@ BEGIN
     CREATE INDEX IF NOT EXISTS idx_transactions_type ON transactions(type);
   END IF;
 END $$;
+
+CREATE INDEX IF NOT EXISTS idx_transactions_user_type_target_month
+  ON transactions(user_type, target_month);
 
 COMMENT ON COLUMN transactions.type IS '種別（expense: 支出, income: 収入）';
 
@@ -393,6 +400,9 @@ CREATE TABLE IF NOT EXISTS budget_alert_logs (
   created_at TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE(user_id, user_type, category_main, alert_type, alert_month)
 );
+
+CREATE INDEX IF NOT EXISTS idx_budget_alert_logs_user_month
+  ON budget_alert_logs(user_id, user_type, alert_month);
 
 ALTER TABLE budget_alert_logs ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users can manage own alert logs" ON budget_alert_logs

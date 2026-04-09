@@ -1,11 +1,32 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { BookOpen } from "lucide-react";
 import { useApp } from "@/contexts/app-context";
 import { useCharacter } from "@/lib/use-character";
 import { CharacterImage } from "@/components/character-image";
-import { History } from "./history";
-import { Analysis } from "./analysis";
+
+const History = dynamic(
+  () => import("./history").then((module) => module.History),
+  {
+    loading: () => (
+      <div className="flex min-h-[30vh] items-center justify-center text-sm text-white/60">
+        履歴を読み込み中...
+      </div>
+    ),
+  }
+);
+
+const Analysis = dynamic(
+  () => import("./analysis").then((module) => module.Analysis),
+  {
+    loading: () => (
+      <div className="flex min-h-[30vh] items-center justify-center text-sm text-white/60">
+        分析を読み込み中...
+      </div>
+    ),
+  }
+);
 
 export function Kakeibo() {
   const { selectedUser, theme, kakeiboTab, setKakeiboTab } = useApp();

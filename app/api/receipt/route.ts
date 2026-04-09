@@ -1,51 +1,149 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { GoogleGenAI } from "@google/genai";
 import { getJSTDateString } from "@/lib/date";
+import {
+  buildPromptWithUploadedFile,
+  deleteGeminiFile,
+  extractFirstJsonObject,
+  geminiClient,
+  uploadGeminiFile,
+  withGeminiRetry,
+} from "@/lib/server/gemini";
+
+export const runtime = "nodejs";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+type InputSource = {
+  blob: Blob;
+  mimeType: string;
+  fileName: string;
+  cleanup?: () => Promise<void>;
+};
 
-async function withRetry<T>(fn: () => Promise<T>, maxRetries = 2): Promise<T> {
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      return await fn();
-    } catch (error: unknown) {
-      const isRetryable = error instanceof Error && (
-        error.message?.includes('503') ||
-        error.message?.includes('429') ||
-        error.message?.includes('RESOURCE_EXHAUSTED') ||
-        error.message?.includes('UNAVAILABLE') ||
-        error.message?.includes('DEADLINE_EXCEEDED')
-      );
-      if (attempt < maxRetries && isRetryable) {
-        const delay = Math.pow(2, attempt) * 1000;
-        console.log(`Gemini retry ${attempt + 1}/${maxRetries} after ${delay}ms`);
-        await new Promise(r => setTimeout(r, delay));
-        continue;
-      }
-      throw error;
+type CategoryRow = {
+  main_category: string;
+  subcategories: string[];
+};
+
+let cachedCategories:
+  | {
+      data: CategoryRow[];
+      expiresAt: number;
     }
+  | null = null;
+
+async function getCachedCategories(): Promise<CategoryRow[]> {
+  if (cachedCategories && cachedCategories.expiresAt > Date.now()) {
+    return cachedCategories.data;
   }
-  throw new Error('Unreachable');
+
+  const { data } = await supabaseAdmin
+    .from("categories")
+    .select("main_category, subcategories")
+    .order("sort_order");
+
+  const normalized = (data || []).map((category) => ({
+    main_category: category.main_category,
+    subcategories: category.subcategories || [],
+  }));
+
+  cachedCategories = {
+    data: normalized,
+    expiresAt: Date.now() + 60_000,
+  };
+
+  return normalized;
+}
+
+async function resolveInputSource(
+  request: NextRequest,
+  userId: string
+): Promise<InputSource> {
+  const contentType = request.headers.get("content-type") || "";
+
+  if (contentType.includes("multipart/form-data")) {
+    const formData = await request.formData();
+    const fileEntry = formData.get("file");
+    const mimeTypeEntry = formData.get("mimeType");
+
+    if (!(fileEntry instanceof Blob)) {
+      throw new Error("画像ファイルが必要です");
+    }
+
+    const file = fileEntry as File;
+    const mimeType =
+      (typeof mimeTypeEntry === "string" && mimeTypeEntry) ||
+      file.type ||
+      "image/jpeg";
+
+    return {
+      blob: file,
+      mimeType,
+      fileName: file.name || `receipt-${Date.now()}`,
+    };
+  }
+
+  const { storagePath, mimeType } = await request.json();
+
+  if (!storagePath) {
+    throw new Error("画像パスが必要です");
+  }
+
+  if (!storagePath.startsWith(`${userId}/`)) {
+    throw new Error("アクセス権限がありません");
+  }
+
+  const { data: fileData, error: downloadError } = await supabaseAdmin.storage
+    .from("receipt-images")
+    .download(storagePath);
+
+  if (downloadError || !fileData) {
+    console.error("Storage download error:", downloadError);
+    throw new Error("画像の取得に失敗しました");
+  }
+
+  console.log(
+    `Storage画像取得: ${storagePath} (${(fileData.size / 1024 / 1024).toFixed(2)}MB)`
+  );
+
+  return {
+    blob: fileData,
+    mimeType: mimeType || fileData.type || "image/jpeg",
+    fileName: storagePath.split("/").pop() || `receipt-${Date.now()}`,
+    cleanup: async () => {
+      const { error } = await supabaseAdmin.storage
+        .from("receipt-images")
+        .remove([storagePath]);
+
+      if (error) {
+        console.warn("Storage削除エラー:", error);
+      } else {
+        console.log("Storage画像削除完了:", storagePath);
+      }
+    },
+  };
 }
 
 export async function POST(request: NextRequest) {
+  let sourceCleanup: (() => Promise<void>) | undefined;
+  let geminiFileName: string | null = null;
+
   try {
-    // 認証チェック
     const authHeader = request.headers.get("authorization");
     const token = authHeader?.replace("Bearer ", "");
     if (!token) {
       return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
     }
+
     const {
       data: { user },
       error: authError,
     } = await supabaseAdmin.auth.getUser(token);
+
     if (authError || !user) {
       return NextResponse.json(
         { error: "認証に失敗しました" },
@@ -53,56 +151,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { storagePath, mimeType } = await request.json();
-
-    if (!storagePath) {
-      return NextResponse.json(
-        { error: "画像パスが必要です" },
-        { status: 400 }
-      );
-    }
-
-    // storagePath が本人のディレクトリ配下かを検証
-    if (!storagePath.startsWith(`${user.id}/`)) {
-      return NextResponse.json(
-        { error: "アクセス権限がありません" },
-        { status: 403 }
-      );
-    }
-
-    // Supabase Storageから画像をダウンロード
-    const { data: fileData, error: downloadError } = await supabaseAdmin.storage
-      .from("receipt-images")
-      .download(storagePath);
-
-    if (downloadError || !fileData) {
-      console.error("Storage download error:", downloadError);
-      return NextResponse.json(
-        { error: "画像の取得に失敗しました" },
-        { status: 500 }
-      );
-    }
-
-    // Blobをbase64に変換（Gemini APIに渡すため）
-    const arrayBuffer = await fileData.arrayBuffer();
-    const base64Data = Buffer.from(arrayBuffer).toString("base64");
-
-    console.log(`Storage画像取得: ${storagePath} (${(arrayBuffer.byteLength / 1024 / 1024).toFixed(2)}MB)`);
-
-    // 処理後にStorageから削除（非同期・エラーでも継続）
-    supabaseAdmin.storage
-      .from("receipt-images")
-      .remove([storagePath])
-      .then(({ error: delErr }) => {
-        if (delErr) console.warn("Storage削除エラー:", delErr);
-        else console.log("Storage画像削除完了:", storagePath);
-      });
-
-    // DBからカテゴリーリストを取得
-    const { data: catData } = await supabaseAdmin
-      .from("categories")
-      .select("main_category, subcategories")
-      .order("sort_order");
+    const source = await resolveInputSource(request, user.id);
+    sourceCleanup = source.cleanup;
+    const catData = await getCachedCategories();
 
     const categoryList =
       catData
@@ -111,13 +162,6 @@ export async function POST(request: NextRequest) {
             `- ${cat.main_category}: ${cat.subcategories.join(", ")}`
         )
         .join("\n") || "- その他: その他";
-
-    const imagePart = {
-      inlineData: {
-        data: base64Data,
-        mimeType: mimeType || "image/jpeg",
-      },
-    };
 
     const prompt = `このレシート画像/PDFを解析して、以下のJSON形式で情報を抽出してください：
 
@@ -169,21 +213,29 @@ ${categoryList}
 - 日付が読み取れない場合は、今日の日付（${getJSTDateString()}）を使用してください
 - 必ずJSON形式のみで返答してください（他の文字は含めないでください）`;
 
-    const result = await withRetry(() => ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: [{ role: "user", parts: [{ text: prompt }, imagePart] }],
-    }));
+    const uploadedFile = await uploadGeminiFile(
+      source.blob,
+      source.mimeType,
+      source.fileName
+    );
+    geminiFileName = uploadedFile.name || null;
+
+    const result = await withGeminiRetry(() =>
+      geminiClient.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: [
+          {
+            role: "user",
+            parts: buildPromptWithUploadedFile(prompt, uploadedFile),
+          },
+        ],
+      })
+    );
     const text = result.text ?? "";
 
     console.log("Receipt API Gemini Response:", text);
 
-    // JSONを抽出（マークダウンのコードブロックを除去）
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error("JSONが見つかりませんでした");
-    }
-
-    const receiptData = JSON.parse(jsonMatch[0]);
+    const receiptData = JSON.parse(extractFirstJsonObject(text));
 
     if (!receiptData.items || receiptData.items.length === 0) {
       throw new Error("項目が見つかりませんでした");
@@ -298,9 +350,23 @@ ${categoryList}
     return NextResponse.json(receiptData);
   } catch (error) {
     console.error("Receipt analysis error:", error);
+    const message =
+      error instanceof Error ? error.message : "レシート解析に失敗しました。";
+    const status =
+      message === "画像パスが必要です" || message === "画像ファイルが必要です"
+        ? 400
+        : message === "アクセス権限がありません"
+          ? 403
+          : 500;
+
     return NextResponse.json(
-      { error: "レシート解析に失敗しました。再度お試しください。" },
-      { status: 500 }
+      { error: status === 500 ? "レシート解析に失敗しました。再度お試しください。" : message },
+      { status }
     );
+  } finally {
+    await Promise.allSettled([
+      sourceCleanup?.(),
+      deleteGeminiFile(geminiFileName),
+    ]);
   }
 }

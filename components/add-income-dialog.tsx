@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import NextImage from "next/image";
 import { getJSTDateString } from "@/lib/date";
@@ -13,6 +13,11 @@ import { supabase } from "@/lib/supabase";
 import { useApp } from "@/contexts/app-context";
 import { useCharacter } from "@/lib/use-character";
 import { CharacterImage } from "@/components/character-image";
+import {
+  compressScannableFile,
+  detectUploadMimeType,
+  shouldUseDirectAnalysisUpload,
+} from "@/lib/scan-upload";
 
 interface AddIncomeDialogProps {
   open: boolean;
@@ -62,18 +67,6 @@ export function AddIncomeDialog({ open, onOpenChange, selectedUser }: AddIncomeD
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
-  // ファイル拡張子からMIMEタイプを推定
-  const detectMimeType = (file: File): string => {
-    if (file.type && file.type !== 'application/octet-stream') return file.type;
-    const ext = file.name.split('.').pop()?.toLowerCase();
-    const mimeMap: Record<string, string> = {
-      jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
-      webp: 'image/webp', heic: 'image/heic', heif: 'image/heif',
-      pdf: 'application/pdf',
-    };
-    return mimeMap[ext || ''] || 'image/jpeg';
-  };
-
   // Supabase Storageに画像をアップロード
   const uploadToStorage = async (file: File): Promise<{ path: string; mimeType: string }> => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -82,7 +75,7 @@ export function AddIncomeDialog({ open, onOpenChange, selectedUser }: AddIncomeD
     const userId = session.user.id;
     const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
     const fileName = `${userId}/${Date.now()}.${ext}`;
-    const contentType = detectMimeType(file);
+    const contentType = detectUploadMimeType(file);
 
     const { error } = await supabase.storage
       .from('receipt-images')
@@ -97,60 +90,43 @@ export function AddIncomeDialog({ open, onOpenChange, selectedUser }: AddIncomeD
     cameraInputRef.current?.click();
   };
 
-  // カメラ撮影結果の処理
-  const handleCameraChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    e.target.value = '';
+  useEffect(() => {
+    return () => {
+      if (capturedImage?.startsWith('blob:')) {
+        URL.revokeObjectURL(capturedImage);
+      }
+    };
+  }, [capturedImage]);
 
-    setCapturedImage(URL.createObjectURL(file));
-    setIsPdf(false);
-
-    try {
-      const { path, mimeType } = await uploadToStorage(file);
-      await analyzeIncome(path, mimeType);
-    } catch (err) {
-      console.error('カメラ処理エラー:', err);
-      alert('画像の処理に失敗しました。');
-      setIsAnalyzing(false);
-    }
-  };
-
-  // ファイルから画像/PDFを読み込み
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    e.target.value = '';
-
-    const isFilePdf = file.type === 'application/pdf';
-    setCapturedImage(URL.createObjectURL(file));
-    setIsPdf(isFilePdf);
-
-    try {
-      const { path, mimeType } = await uploadToStorage(file);
-      await analyzeIncome(path, mimeType);
-    } catch (err) {
-      console.error('ファイル処理エラー:', err);
-      alert('ファイルの処理に失敗しました。');
-      setIsAnalyzing(false);
-    }
-  };
-
-  // 給与明細AI解析（Storageパスのみ送信）
-  const analyzeIncome = async (storagePath: string, mimeType: string) => {
+  const analyzeIncome = async (params: { file?: File; storagePath?: string; mimeType: string }) => {
     setIsAnalyzing(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
 
-      const response = await fetch('/api/income-scan', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({ storagePath, mimeType }),
-      });
+      let response: Response;
+      if (params.file) {
+        const formData = new FormData();
+        formData.append('file', params.file, params.file.name);
+        formData.append('mimeType', params.mimeType);
+
+        response = await fetch('/api/income-scan', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+          body: formData,
+        });
+      } else {
+        response = await fetch('/api/income-scan', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify({ storagePath: params.storagePath, mimeType: params.mimeType }),
+        });
+      }
 
       const text = await response.text();
       let result;
@@ -162,7 +138,12 @@ export function AddIncomeDialog({ open, onOpenChange, selectedUser }: AddIncomeD
         return;
       }
 
-      // 解析結果をフォームに反映
+      if (!response.ok) {
+        console.error('収入解析APIエラー:', response.status, result);
+        alert(`解析エラー (${response.status}): もう一度お試しください。`);
+        return;
+      }
+
       if (result.date) setDate(result.date);
       if (result.net_amount) setAmount(String(result.net_amount));
       if (result.gross_amount) setGrossAmount(String(result.gross_amount));
@@ -176,6 +157,48 @@ export function AddIncomeDialog({ open, onOpenChange, selectedUser }: AddIncomeD
     } finally {
       setIsAnalyzing(false);
     }
+  };
+
+  const processSelectedFile = async (file: File, previewUrl: string, pdf: boolean) => {
+    setCapturedImage(previewUrl);
+    setIsPdf(pdf);
+    setIsAnalyzing(true);
+
+    try {
+      const prepared = await compressScannableFile(file);
+      const mimeType = detectUploadMimeType(prepared);
+
+      if (shouldUseDirectAnalysisUpload(prepared)) {
+        await analyzeIncome({ file: prepared, mimeType });
+        return;
+      }
+
+      const { path, mimeType: uploadedMimeType } = await uploadToStorage(prepared);
+      await analyzeIncome({ storagePath: path, mimeType: uploadedMimeType });
+    } catch (err) {
+      console.error('ファイル処理エラー:', err);
+      alert('ファイルの処理に失敗しました。');
+      setIsAnalyzing(false);
+    }
+  };
+
+  // カメラ撮影結果の処理
+  const handleCameraChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+
+    await processSelectedFile(file, URL.createObjectURL(file), false);
+  };
+
+  // ファイルから画像/PDFを読み込み
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+
+    const isFilePdf = file.type === 'application/pdf';
+    await processSelectedFile(file, URL.createObjectURL(file), isFilePdf);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {

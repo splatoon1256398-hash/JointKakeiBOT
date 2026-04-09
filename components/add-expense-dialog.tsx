@@ -14,6 +14,11 @@ import { supabase } from "@/lib/supabase";
 import { useApp } from "@/contexts/app-context";
 import { useCharacter } from "@/lib/use-character";
 import { CharacterImage } from "@/components/character-image";
+import {
+  compressScannableFile,
+  detectUploadMimeType,
+  shouldUseDirectAnalysisUpload,
+} from "@/lib/scan-upload";
 
 interface AddExpenseDialogProps {
   open: boolean;
@@ -85,44 +90,6 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
-  // ファイル拡張子からMIMEタイプを推定（HEIC等ブラウザが認識しない形式対応）
-  const detectMimeType = (file: File): string => {
-    if (file.type && file.type !== 'application/octet-stream') return file.type;
-    const ext = file.name.split('.').pop()?.toLowerCase();
-    const mimeMap: Record<string, string> = {
-      jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
-      webp: 'image/webp', heic: 'image/heic', heif: 'image/heif',
-      pdf: 'application/pdf',
-    };
-    return mimeMap[ext || ''] || 'image/jpeg';
-  };
-
-  // 画像をCanvas APIでリサイズ・圧縮してアップロード時間を短縮（PDFはそのまま）
-  const compressImage = async (file: File): Promise<File> => {
-    if (file.type === 'application/pdf' || file.type.includes('heic') || file.type.includes('heif')) return file;
-    return new Promise((resolve) => {
-      const img = new Image();
-      const url = URL.createObjectURL(file);
-      img.onload = () => {
-        URL.revokeObjectURL(url);
-        const MAX = 1200;
-        const scale = Math.min(1, MAX / Math.max(img.width, img.height));
-        const canvas = document.createElement('canvas');
-        canvas.width = Math.round(img.width * scale);
-        canvas.height = Math.round(img.height * scale);
-        const ctx = canvas.getContext('2d');
-        if (!ctx) { resolve(file); return; }
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        canvas.toBlob((blob) => {
-          if (!blob) { resolve(file); return; }
-          resolve(new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' }));
-        }, 'image/jpeg', 0.82);
-      };
-      img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
-      img.src = url;
-    });
-  };
-
   // Supabase Storageに画像をアップロードし、パスを返す
   // → Vercelの4.5MB制限を完全回避（APIにはパスのみ送信）
   const uploadToStorage = async (file: File): Promise<{ path: string; mimeType: string }> => {
@@ -132,7 +99,7 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
     const userId = session.user.id;
     const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
     const fileName = `${userId}/${Date.now()}.${ext}`;
-    const contentType = detectMimeType(file);
+    const contentType = detectUploadMimeType(file);
 
     console.log(`Storageアップロード開始: ${(file.size / 1024 / 1024).toFixed(2)}MB (${contentType})`);
 
@@ -158,71 +125,43 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
     cameraInputRef.current?.click();
   };
 
-  // カメラ撮影結果の処理
-  const handleCameraChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    e.target.value = '';
+  useEffect(() => {
+    return () => {
+      if (capturedImage?.startsWith('blob:')) {
+        URL.revokeObjectURL(capturedImage);
+      }
+    };
+  }, [capturedImage]);
 
-    const previewUrl = URL.createObjectURL(file);
-    setCapturedImage(previewUrl);
-    setIsPdf(false);
-    setIsAnalyzing(true);
-    setAnalysisStage('uploading');
-
-    try {
-      const compressed = await compressImage(file);
-      const { path, mimeType } = await uploadToStorage(compressed);
-      setAnalysisStage('analyzing');
-      await analyzeImage(path, mimeType);
-    } catch (err) {
-      console.error('カメラ処理エラー:', err);
-      alert('画像の処理に失敗しました。もう一度お試しください。');
-      setIsAnalyzing(false);
-    }
-  };
-
-  // ファイルから画像/PDFを読み込み
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    e.target.value = '';
-
-    const isFilePdf = file.type === 'application/pdf';
-    const previewUrl = URL.createObjectURL(file);
-    setCapturedImage(previewUrl);
-    setIsPdf(isFilePdf);
-    setIsAnalyzing(true);
-    setAnalysisStage('uploading');
-
-    try {
-      const compressed = await compressImage(file);
-      const { path, mimeType } = await uploadToStorage(compressed);
-      setAnalysisStage('analyzing');
-      await analyzeImage(path, mimeType);
-    } catch (err) {
-      console.error('ファイル処理エラー:', err);
-      alert('ファイルの処理に失敗しました。もう一度お試しください。');
-      setIsAnalyzing(false);
-    }
-  };
-
-  // サーバーサイドAPIでレシート解析（Storageパスのみ送信 → 413エラー原理的に不可能）
-  const analyzeImage = async (storagePath: string, mimeType: string) => {
+  const analyzeImage = async (params: { file?: File; storagePath?: string; mimeType: string }) => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
 
-      const response = await fetch('/api/receipt', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({ storagePath, mimeType }),
-      });
+      let response: Response;
+      if (params.file) {
+        const formData = new FormData();
+        formData.append('file', params.file, params.file.name);
+        formData.append('mimeType', params.mimeType);
 
-      // レスポンスボディを安全にパース
+        response = await fetch('/api/receipt', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+          body: formData,
+        });
+      } else {
+        response = await fetch('/api/receipt', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify({ storagePath: params.storagePath, mimeType: params.mimeType }),
+        });
+      }
+
       const text = await response.text();
       let result: ReceiptAnalysisResult;
       try {
@@ -239,7 +178,6 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
         return;
       }
 
-      // 解析結果をフォームに反映（部分的な結果でも受け入れる）
       if (result.date) setDate(result.date);
       if (result.items && result.items.length > 0) {
         const cats = dbCategoriesRef.current;
@@ -266,6 +204,53 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
     } finally {
       setIsAnalyzing(false);
     }
+  };
+
+  const processSelectedFile = async (file: File, previewUrl: string, pdf: boolean) => {
+    setCapturedImage(previewUrl);
+    setIsPdf(pdf);
+    setIsAnalyzing(true);
+    setAnalysisStage('uploading');
+
+    try {
+      const prepared = await compressScannableFile(file);
+      const mimeType = detectUploadMimeType(prepared);
+
+      if (shouldUseDirectAnalysisUpload(prepared)) {
+        setAnalysisStage('analyzing');
+        await analyzeImage({ file: prepared, mimeType });
+        return;
+      }
+
+      const { path, mimeType: uploadedMimeType } = await uploadToStorage(prepared);
+      setAnalysisStage('analyzing');
+      await analyzeImage({ storagePath: path, mimeType: uploadedMimeType });
+    } catch (err) {
+      console.error('ファイル処理エラー:', err);
+      alert('ファイルの処理に失敗しました。もう一度お試しください。');
+      setIsAnalyzing(false);
+    }
+  };
+
+  // カメラ撮影結果の処理
+  const handleCameraChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+
+    const previewUrl = URL.createObjectURL(file);
+    await processSelectedFile(file, previewUrl, false);
+  };
+
+  // ファイルから画像/PDFを読み込み
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+
+    const isFilePdf = file.type === 'application/pdf';
+    const previewUrl = URL.createObjectURL(file);
+    await processSelectedFile(file, previewUrl, isFilePdf);
   };
 
   const itemsEndRef = useRef<HTMLDivElement>(null);
