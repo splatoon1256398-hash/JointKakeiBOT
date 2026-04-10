@@ -4,7 +4,7 @@ import { createContext, useContext, useState, useEffect, useRef, ReactNode, useC
 import { supabase } from '@/lib/supabase';
 import { User } from '@supabase/supabase-js';
 import { processFixedExpenses } from '@/lib/fixed-expenses';
-import { CharacterId, isValidCharacterId } from '@/lib/characters';
+import { CharacterId, isValidCharacterId, CHARACTER_REGISTRY } from '@/lib/characters';
 
 export type UserType = "共同" | string;
 
@@ -231,6 +231,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // 起動時 1 回だけ fetch（キャッシュは state の初期値で既に入っている）
     refreshCategories();
   }, [refreshCategories]);
+
+  // ===== キャラクター画像の事前 preload =====
+  // ハチワレ等のキャラクターを使っている場合、scanning / success などの
+  // 「使う直前に表示される」画像をブラウザキャッシュに先読みしておく。
+  // → ダイアログを開いた瞬間にハチワレが即表示される
+  useEffect(() => {
+    if (characterId === "none" || typeof window === "undefined") return;
+    const config = CHARACTER_REGISTRY[characterId];
+    if (!config) return;
+    const urlsToPreload: string[] = [
+      config.assets.scanning,
+      config.assets.success || "",
+      config.assets.empty,
+    ].filter(Boolean);
+    for (const url of urlsToPreload) {
+      const img = new window.Image();
+      img.src = url;
+    }
+  }, [characterId]);
 
   const triggerRefresh = useCallback(() => {
     setRefreshTrigger(prev => prev + 1);
