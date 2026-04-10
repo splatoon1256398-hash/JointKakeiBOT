@@ -134,6 +134,35 @@ function AppContent() {
     }
   }, [setKakeiboTab]);
 
+  // ===== ページチャンクの事前 preload =====
+  // 初回タブ切替時に「家計簿を読み込み中...」が数秒出るのを防ぐため、
+  // ユーザーがログイン済みになった後、バックグラウンドで全ページの JS chunk を fetch。
+  // ネットワークに少しだけ追加負荷がかかるが、UX の体感は大幅改善。
+  // requestIdleCallback があればアイドル時間に実行 (他の処理を邪魔しない)。
+  useEffect(() => {
+    if (!user || typeof window === "undefined") return;
+    const preloadAll = () => {
+      // dynamic import の Promise を発行するだけで chunk が fetch される
+      import("@/components/pages/dashboard").catch(() => {});
+      import("@/components/pages/kakeibo").catch(() => {});
+      import("@/components/pages/savings").catch(() => {});
+      import("@/components/pages/chat").catch(() => {});
+      // よく使うダイアログも先読み
+      import("@/components/record-menu-dialog").catch(() => {});
+      import("@/components/add-expense-dialog").catch(() => {});
+      import("@/components/add-income-dialog").catch(() => {});
+    };
+    const w = window as Window & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+    };
+    if (typeof w.requestIdleCallback === "function") {
+      w.requestIdleCallback(preloadAll, { timeout: 2000 });
+    } else {
+      // Safari など requestIdleCallback 非対応環境では setTimeout で代替
+      setTimeout(preloadAll, 500);
+    }
+  }, [user]);
+
   // スプラッシュ表示中
   if (showSplash) {
     return <SplashScreen fadeOut={splashFadeOut} onFadeOutEnd={handleSplashAnimationEnd} />;
