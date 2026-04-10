@@ -164,7 +164,8 @@ export async function POST(request: NextRequest) {
         config: {
           temperature: 0,
           responseMimeType: "application/json",
-          maxOutputTokens: 1024,
+          // 給与明細は項目少ないが念のため広めに
+          maxOutputTokens: 2048,
         },
       })
     );
@@ -194,7 +195,9 @@ export async function POST(request: NextRequest) {
       headers: { "Server-Timing": timer.toServerTiming() },
     });
   } catch (error) {
-    console.error("Income scan error:", error);
+    const errMsg = error instanceof Error ? error.message : String(error);
+    const errStack = error instanceof Error ? error.stack : undefined;
+    console.error("[income-scan] FAILED:", errMsg, "|", errStack?.split("\n").slice(0, 5).join(" || "));
     await Promise.allSettled([
       sourceCleanup?.(),
       deleteGeminiFile(geminiFileName),

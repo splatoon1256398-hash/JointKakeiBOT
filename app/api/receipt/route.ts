@@ -225,16 +225,23 @@ ${categoryList}
         config: {
           temperature: 0,
           responseMimeType: "application/json",
-          maxOutputTokens: 2048,
+          // 長いレシート (20+ 品目) でも切れないように広めに確保
+          maxOutputTokens: 8192,
         },
       })
     );
     const text = result.text ?? "";
     timer.mark("inference");
 
-    console.log("Receipt API Gemini Response:", text);
+    console.log("Receipt API Gemini Response length:", text.length, "head:", text.slice(0, 200), "tail:", text.slice(-200));
 
-    const receiptData = JSON.parse(extractFirstJsonObject(text));
+    let receiptData;
+    try {
+      receiptData = JSON.parse(extractFirstJsonObject(text));
+    } catch (parseErr) {
+      console.error("[receipt] JSON parse failed. text length:", text.length, "finishReason:", result.candidates?.[0]?.finishReason, "text tail:", text.slice(-500), "err:", (parseErr as Error).message);
+      throw new Error(`レシートの解析結果が不正な形式でした (finish=${result.candidates?.[0]?.finishReason || "?"}, len=${text.length})`);
+    }
 
     if (!receiptData.items || receiptData.items.length === 0) {
       throw new Error("項目が見つかりませんでした");
@@ -367,7 +374,10 @@ ${categoryList}
       headers: { "Server-Timing": timer.toServerTiming() },
     });
   } catch (error) {
-    console.error("Receipt analysis error:", error);
+    // Vercel ログで確実に見えるように stack を含めて 1 行で出す
+    const errMsg = error instanceof Error ? error.message : String(error);
+    const errStack = error instanceof Error ? error.stack : undefined;
+    console.error("[receipt] FAILED:", errMsg, "|", errStack?.split("\n").slice(0, 5).join(" || "));
     // エラー時は同期クリーンアップ（responseを返せないため after() 意味なし）
     await Promise.allSettled([
       sourceCleanup?.(),
