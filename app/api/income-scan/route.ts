@@ -157,12 +157,14 @@ export async function POST(request: NextRequest) {
       timer.mark("upload");
     }
 
+    // モデル: gemini-2.0-flash (GA、最速)
     const result = await withGeminiRetry(() =>
       geminiClient.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: "gemini-2.0-flash",
         contents: [{ role: "user", parts }],
         config: {
           temperature: 0,
+          maxOutputTokens: 4096,
         },
       })
     );

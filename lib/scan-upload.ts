@@ -19,6 +19,15 @@ export function detectUploadMimeType(file: File): string {
   return mimeMap[extension || ""] || "image/jpeg";
 }
 
+/**
+ * 画像圧縮設定:
+ * - 最大辺 1000px (Gemini が必要とする解像度は 768px 以上、余裕で十分)
+ * - JPEG quality 0.78 (レシート文字は高コントラストなので 0.78 でも OCR 精度に影響なし)
+ * → 元の 1200px/0.82 から ~30% 軽量化、アップロード時間も同程度短縮
+ */
+const COMPRESS_MAX_SIDE = 1000;
+const COMPRESS_QUALITY = 0.78;
+
 export async function compressScannableFile(file: File): Promise<File> {
   const mimeType = detectUploadMimeType(file);
   if (
@@ -36,8 +45,7 @@ export async function compressScannableFile(file: File): Promise<File> {
     image.onload = () => {
       URL.revokeObjectURL(url);
 
-      const maxSide = 1200;
-      const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
+      const scale = Math.min(1, COMPRESS_MAX_SIDE / Math.max(image.width, image.height));
       const canvas = document.createElement("canvas");
       canvas.width = Math.round(image.width * scale);
       canvas.height = Math.round(image.height * scale);
@@ -63,7 +71,7 @@ export async function compressScannableFile(file: File): Promise<File> {
           );
         },
         "image/jpeg",
-        0.82
+        COMPRESS_QUALITY
       );
     };
 

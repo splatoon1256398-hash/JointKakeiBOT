@@ -36,16 +36,19 @@ type CategoryRow = {
   subcategories: string[];
 };
 
+// データ + 事前ビルド済みプロンプト用文字列をまとめてキャッシュ
+// → 毎リクエストの string 構築コストを削減
 let cachedCategories:
   | {
       data: CategoryRow[];
+      categoryList: string;
       expiresAt: number;
     }
   | null = null;
 
-async function getCachedCategories(): Promise<CategoryRow[]> {
+async function getCachedCategories(): Promise<{ data: CategoryRow[]; categoryList: string }> {
   if (cachedCategories && cachedCategories.expiresAt > Date.now()) {
-    return cachedCategories.data;
+    return { data: cachedCategories.data, categoryList: cachedCategories.categoryList };
   }
 
   const { data } = await supabaseAdmin
@@ -58,12 +61,18 @@ async function getCachedCategories(): Promise<CategoryRow[]> {
     subcategories: category.subcategories || [],
   }));
 
+  const categoryList =
+    normalized
+      .map((cat) => `- ${cat.main_category}: ${cat.subcategories.join(", ")}`)
+      .join("\n") || "- その他: その他";
+
   cachedCategories = {
     data: normalized,
+    categoryList,
     expiresAt: Date.now() + 60_000,
   };
 
-  return normalized;
+  return { data: normalized, categoryList };
 }
 
 async function resolveInputSource(
@@ -159,18 +168,11 @@ export async function POST(request: NextRequest) {
 
     const source = await resolveInputSource(request, user.id);
     sourceCleanup = source.cleanup;
-    const catData = await getCachedCategories();
+    // 事前ビルド済みの categoryList を取得 (per-request 文字列構築を回避)
+    const { data: catData, categoryList } = await getCachedCategories();
     timer.mark("prepare");
 
-    const categoryList =
-      catData
-        ?.map(
-          (cat) =>
-            `- ${cat.main_category}: ${cat.subcategories.join(", ")}`
-        )
-        .join("\n") || "- その他: その他";
-
-    // 短縮プロンプト (責務を responseMimeType=JSON + generationConfig 側に寄せて 50→20 行)
+    // 短縮プロンプト
     // 核: totalAmount 優先 / 割引・税金・小計を item にしない / カテゴリは既定リストから / カタカナ略称は自然日本語化
     const prompt = `レシート画像を解析し JSON のみで返答。
 
@@ -218,16 +220,16 @@ ${categoryList}
       timer.mark("upload"); // Files API 経由 (upload + polling)
     }
 
-    // generationConfig は最小限に。
-    // 過去テストで responseMimeType=application/json + preview model の組合せで
-    // Gemini が長いレシートを途中で切断する事象が再現したため除去。
-    // temperature=0 だけ残し、トークン制限はモデルのデフォルトに任せる。
+    // モデル: gemini-2.0-flash (GA、最速、レシート OCR には十分)
+    // generationConfig: responseMimeType を付けない (preview model で切断不具合経験)
+    // maxOutputTokens: 8192 (長いレシート対応 + 暴走防止の保険)
     const result = await withGeminiRetry(() =>
       geminiClient.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: "gemini-2.0-flash",
         contents: [{ role: "user", parts }],
         config: {
           temperature: 0,
+          maxOutputTokens: 8192,
         },
       })
     );
