@@ -157,15 +157,11 @@ export async function POST(request: NextRequest) {
       timer.mark("upload");
     }
 
-    // モデル: gemini-flash-latest (Google 公式 latest エイリアス、将来安全)
+    // モデル: gemini-3-flash-preview (元コードと同じ、動作実績あり)
     const result = await withGeminiRetry(() =>
       geminiClient.models.generateContent({
-        model: "gemini-flash-latest",
+        model: "gemini-3-flash-preview",
         contents: [{ role: "user", parts }],
-        config: {
-          temperature: 0,
-          maxOutputTokens: 4096,
-        },
       })
     );
     const text = result.text ?? "";

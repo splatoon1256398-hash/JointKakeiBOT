@@ -220,21 +220,17 @@ ${categoryList}
       timer.mark("upload"); // Files API 経由 (upload + polling)
     }
 
-    // モデル: gemini-flash-latest (Google 公式の "latest GA Flash" エイリアス)
-    // 将来安全: 新しい Flash GA がリリースされたら自動追従、deprecation で 404 にならない
-    // 過去の経緯:
-    //   - gemini-3-flash-preview: preview のため JSON モードで切断不具合経験
-    //   - gemini-2.0-flash: 2026 時点で新規ユーザー向け 404
-    //   - gemini-2.5-flash: 30秒超のタイムアウト発生 (重い)
-    // → latest エイリアスが運用上最も安全
+    // モデル: gemini-3-flash-preview (元コードと同じ、動作実績あり)
+    // 経緯メモ:
+    //   - gemini-2.0-flash → 新規ユーザー 404
+    //   - gemini-2.5-flash → 30秒タイムアウト (重い)
+    //   - gemini-flash-latest → thinking tokens で MAX_TOKENS 切断
+    //   → 元コード踏襲が最も安定
+    // generationConfig は付けない: responseMimeType=json + preview model で過去切断経験あり
     const result = await withGeminiRetry(() =>
       geminiClient.models.generateContent({
-        model: "gemini-flash-latest",
+        model: "gemini-3-flash-preview",
         contents: [{ role: "user", parts }],
-        config: {
-          temperature: 0,
-          maxOutputTokens: 8192,
-        },
       })
     );
     const text = result.text ?? "";
