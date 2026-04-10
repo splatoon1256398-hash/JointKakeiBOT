@@ -418,19 +418,40 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => { supabase.removeChannel(channel); };
   }, [triggerRefresh, user]);
 
+  // Phase 6-C: 固定費の自動反映は Vercel Cron (毎日 00:00 JST) に移行済み。
+  // 起動時のクライアント側処理は、Cron が失敗した場合のフォールバックとして残す。
+  // ただし localStorage で「最後に成功した日付」を記録し、同じ日に既に走っていれば skip して
+  // 起動時のフェッチ/処理コストをゼロにする。
   useEffect(() => {
-    if (user && !fixedExpensesProcessed.current) {
-      fixedExpensesProcessed.current = true;
-      processFixedExpenses(user.id).then((result) => {
-        if (result.processed > 0) {
-          console.log(`固定費自動反映: ${result.processed}件処理、${result.skipped}件スキップ`);
-          triggerRefresh();
-        }
-        if (result.errors.length > 0) {
-          console.error("固定費処理エラー:", JSON.stringify(result.errors, null, 2));
-        }
-      });
+    if (!user || fixedExpensesProcessed.current) return;
+    fixedExpensesProcessed.current = true;
+
+    const STORAGE_KEY = `fixed-expenses-last-run:${user.id}`;
+    const todayJST = new Date(Date.now() + 9 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10); // YYYY-MM-DD (JST)
+
+    if (typeof window !== "undefined") {
+      const lastRun = localStorage.getItem(STORAGE_KEY);
+      if (lastRun === todayJST) {
+        // 今日すでに処理済み (Cron か client いずれか) → skip
+        return;
+      }
     }
+
+    processFixedExpenses(user.id).then((result) => {
+      if (result.processed > 0) {
+        console.log(`固定費自動反映 (client fallback): ${result.processed}件処理、${result.skipped}件スキップ`);
+        triggerRefresh();
+      }
+      if (result.errors.length > 0) {
+        console.error("固定費処理エラー:", JSON.stringify(result.errors, null, 2));
+        return; // エラー時は localStorage 更新せず次回再試行
+      }
+      if (typeof window !== "undefined") {
+        localStorage.setItem(STORAGE_KEY, todayJST);
+      }
+    });
   }, [triggerRefresh, user]);
 
   const signOut = useCallback(async () => {

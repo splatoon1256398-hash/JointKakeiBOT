@@ -3,6 +3,10 @@
     {
       "path": "/api/gmail/renew",
       "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/cron/fixed-expenses",
+      "schedule": "0 15 * * *"
     }
   ]
 }

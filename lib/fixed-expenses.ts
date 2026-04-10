@@ -1,4 +1,5 @@
-import { supabase } from "./supabase";
+import { supabase as defaultClient } from "./supabase";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 interface FixedExpense {
   id: string;
@@ -17,8 +18,15 @@ interface FixedExpense {
  * 固定費の自動反映処理
  * - 今月の引き落とし日が過ぎている固定費を確認
  * - まだ今月分が登録されていなければ、transactionsに追加
+ *
+ * @param userId 処理対象ユーザー ID
+ * @param client 任意の Supabase クライアント (未指定時はクライアント側 anon を使う)
+ *               cron 経由で全ユーザーを処理する場合は supabaseAdmin (service role) を渡す
  */
-export async function processFixedExpenses(userId: string): Promise<{
+export async function processFixedExpenses(
+  userId: string,
+  client: SupabaseClient = defaultClient
+): Promise<{
   processed: number;
   skipped: number;
   errors: string[];
@@ -36,7 +44,7 @@ export async function processFixedExpenses(userId: string): Promise<{
     const currentDay = today.getDate();
 
     // 有効な固定費をすべて取得
-    const { data: fixedExpenses, error: fetchError } = await supabase
+    const { data: fixedExpenses, error: fetchError } = await client
       .from("fixed_expenses")
       .select("*")
       .eq("user_id", userId)
@@ -57,7 +65,7 @@ export async function processFixedExpenses(userId: string): Promise<{
     const monthStart = `${currentYear}-${String(currentMonth).padStart(2, "0")}-01`;
     const monthEnd = `${currentYear}-${String(currentMonth).padStart(2, "0")}-${String(lastDayOfMonth).padStart(2, "0")}`;
 
-    const { data: existingTransactions, error: txError } = await supabase
+    const { data: existingTransactions, error: txError } = await client
       .from("transactions")
       .select("memo")
       .eq("user_id", userId)
@@ -133,7 +141,7 @@ export async function processFixedExpenses(userId: string): Promise<{
     }
 
     if (rowsToInsert.length > 0) {
-      const { error: insertError } = await supabase
+      const { error: insertError } = await client
         .from("transactions")
         .insert(rowsToInsert);
 
