@@ -220,12 +220,13 @@ ${categoryList}
       timer.mark("upload"); // Files API 経由 (upload + polling)
     }
 
-    // モデル: gemini-2.0-flash (GA、最速、レシート OCR には十分)
-    // generationConfig: responseMimeType を付けない (preview model で切断不具合経験)
-    // maxOutputTokens: 8192 (長いレシート対応 + 暴走防止の保険)
+    // モデル: gemini-2.5-flash (GA, 現行最速の安定モデル)
+    // 元の gemini-3-flash-preview は preview のため Java JSON モードで切断不具合経験
+    // gemini-2.0-flash は 2026 時点で新規利用不可になっていた (404)
+    // → gemini-2.5-flash が最も妥当
     const result = await withGeminiRetry(() =>
       geminiClient.models.generateContent({
-        model: "gemini-2.0-flash",
+        model: "gemini-2.5-flash",
         contents: [{ role: "user", parts }],
         config: {
           temperature: 0,
