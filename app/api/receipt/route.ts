@@ -16,8 +16,8 @@ import { verifyAccessToken } from "@/lib/server/auth";
 import type { Part } from "@google/genai";
 
 export const runtime = "nodejs";
-export const maxDuration = 30;
-export const preferredRegion = ["hnd1"]; // 東京リージョン (Supabase と同一に)
+export const maxDuration = 60; // Hobby プランの上限。Gemini 推論が長引いてもタイムアウトしないように
+export const preferredRegion = ["hnd1"]; // Vercel Dashboard 側で kix1 (Osaka) 設定済み、ここは保険
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -220,13 +220,16 @@ ${categoryList}
       timer.mark("upload"); // Files API 経由 (upload + polling)
     }
 
-    // モデル: gemini-2.5-flash (GA, 現行最速の安定モデル)
-    // 元の gemini-3-flash-preview は preview のため Java JSON モードで切断不具合経験
-    // gemini-2.0-flash は 2026 時点で新規利用不可になっていた (404)
-    // → gemini-2.5-flash が最も妥当
+    // モデル: gemini-flash-latest (Google 公式の "latest GA Flash" エイリアス)
+    // 将来安全: 新しい Flash GA がリリースされたら自動追従、deprecation で 404 にならない
+    // 過去の経緯:
+    //   - gemini-3-flash-preview: preview のため JSON モードで切断不具合経験
+    //   - gemini-2.0-flash: 2026 時点で新規ユーザー向け 404
+    //   - gemini-2.5-flash: 30秒超のタイムアウト発生 (重い)
+    // → latest エイリアスが運用上最も安全
     const result = await withGeminiRetry(() =>
       geminiClient.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: "gemini-flash-latest",
         contents: [{ role: "user", parts }],
         config: {
           temperature: 0,

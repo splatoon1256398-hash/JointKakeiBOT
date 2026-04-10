@@ -16,7 +16,7 @@ import { verifyAccessToken } from "@/lib/server/auth";
 import type { Part } from "@google/genai";
 
 export const runtime = "nodejs";
-export const maxDuration = 30;
+export const maxDuration = 60;
 export const preferredRegion = ["hnd1"];
 
 const supabaseAdmin = createClient(
@@ -157,10 +157,10 @@ export async function POST(request: NextRequest) {
       timer.mark("upload");
     }
 
-    // モデル: gemini-2.5-flash (GA)
+    // モデル: gemini-flash-latest (Google 公式 latest エイリアス、将来安全)
     const result = await withGeminiRetry(() =>
       geminiClient.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: "gemini-flash-latest",
         contents: [{ role: "user", parts }],
         config: {
           temperature: 0,
