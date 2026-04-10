@@ -189,10 +189,19 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
   };
 
   const processSelectedFile = async (file: File, previewUrl: string, pdf: boolean) => {
-    setCapturedImage(previewUrl);
+    // 先に解析画面を表示（capturedImage の重い HEIC デコードより前に出す）
     setIsPdf(pdf);
     setIsAnalyzing(true);
     setAnalysisStage('uploading');
+
+    // React に commit + paint させてから重い処理 (canvas 圧縮) を始める
+    // → 解析画面が即時表示される
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+    );
+
+    // 解析画面が出た後に preview 画像を設定（裏で decode される）
+    setCapturedImage(previewUrl);
 
     try {
       const prepared = await compressScannableFile(file);

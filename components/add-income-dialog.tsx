@@ -166,9 +166,16 @@ export function AddIncomeDialog({ open, onOpenChange, selectedUser }: AddIncomeD
   };
 
   const processSelectedFile = async (file: File, previewUrl: string, pdf: boolean) => {
-    setCapturedImage(previewUrl);
+    // 解析画面を即時表示
     setIsPdf(pdf);
     setIsAnalyzing(true);
+
+    // React に paint させてから重い処理 (canvas 圧縮 / HEIC decode) を始める
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+    );
+
+    setCapturedImage(previewUrl);
 
     try {
       const prepared = await compressScannableFile(file);
