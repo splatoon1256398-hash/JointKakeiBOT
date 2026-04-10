@@ -57,10 +57,6 @@ export const CHARACTER_REGISTRY: Record<CharacterId, CharacterConfig | null> = {
       navRecord: `${HACHIWARE_BASE}/nav-record.png`,
       navSavings: `${HACHIWARE_BASE}/nav-savings.png`,
       navChat: `${HACHIWARE_BASE}/nav-chat.png`,
-      menuExpense: `${HACHIWARE_BASE}/menu-expense.png`,
-      menuIncome: `${HACHIWARE_BASE}/menu-income.png`,
-      menuSavings: `${HACHIWARE_BASE}/menu-savings.png`,
-      success: `${HACHIWARE_BASE}/success.png`,
     },
     themeColors: {
       primary: "#4A8FCA",

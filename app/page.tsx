@@ -3,46 +3,19 @@
 import dynamic from "next/dynamic";
 import { useState, useEffect } from "react";
 import { AppProvider, useApp } from "@/contexts/app-context";
+import { Login } from "@/components/auth/login";
 import { SplashScreen } from "@/components/splash-screen";
 import { CommonHeader } from "@/components/common-header";
 import { BottomNav, type NavPage } from "@/components/bottom-nav";
+import { Dashboard } from "@/components/pages/dashboard";
+import { Kakeibo } from "@/components/pages/kakeibo";
+import { Savings } from "@/components/pages/savings";
+import { Chat } from "@/components/pages/chat";
+import { RecordMenuDialog } from "@/components/record-menu-dialog";
 import { useCharacter } from "@/lib/use-character";
 import { CharacterImage } from "@/components/character-image";
-
-function PageLoading({ label = "読み込み中..." }: { label?: string }) {
-  return (
-    <div className="flex min-h-[30vh] items-center justify-center text-sm text-white/60">
-      {label}
-    </div>
-  );
-}
-
-const Login = dynamic(
-  () => import("@/components/auth/login").then((module) => module.Login),
-  { loading: () => <PageLoading label="ログイン画面を読み込み中..." /> }
-);
-const Dashboard = dynamic(
-  () => import("@/components/pages/dashboard").then((module) => module.Dashboard),
-  { loading: () => <PageLoading label="ダッシュボードを読み込み中..." /> }
-);
-const Kakeibo = dynamic(
-  () => import("@/components/pages/kakeibo").then((module) => module.Kakeibo),
-  { loading: () => <PageLoading label="家計簿を読み込み中..." /> }
-);
-const Savings = dynamic(
-  () => import("@/components/pages/savings").then((module) => module.Savings),
-  { loading: () => <PageLoading label="貯金ページを読み込み中..." /> }
-);
-const Chat = dynamic(
-  () => import("@/components/pages/chat").then((module) => module.Chat),
-  { loading: () => <PageLoading label="チャットを読み込み中..." /> }
-);
 const SettingsModal = dynamic(
   () => import("@/components/settings-modal").then((module) => module.SettingsModal),
-  { loading: () => null }
-);
-const RecordMenuDialog = dynamic(
-  () => import("@/components/record-menu-dialog").then((module) => module.RecordMenuDialog),
   { loading: () => null }
 );
 const AddExpenseDialog = dynamic(
@@ -76,6 +49,7 @@ function AppContent() {
   const [loginKey, setLoginKey] = useState(0);
   const [splashFadeOut, setSplashFadeOut] = useState(false);
   const [showSplash, setShowSplash] = useState(true);
+  const [loadedPages, setLoadedPages] = useState<NavPage[]>(["dashboard"]);
 
   // スプラッシュのフェードアウト管理
   // fadeOut を true にすると .animate-splash-out (CSS transition) が走る。
@@ -134,34 +108,32 @@ function AppContent() {
     }
   }, [setKakeiboTab]);
 
-  // ===== ページチャンクの事前 preload =====
-  // 初回タブ切替時に「家計簿を読み込み中...」が数秒出るのを防ぐため、
-  // ユーザーがログイン済みになった後、バックグラウンドで全ページの JS chunk を fetch。
-  // ネットワークに少しだけ追加負荷がかかるが、UX の体感は大幅改善。
-  // requestIdleCallback があればアイドル時間に実行 (他の処理を邪魔しない)。
   useEffect(() => {
-    if (!user || typeof window === "undefined") return;
-    const preloadAll = () => {
-      // dynamic import の Promise を発行するだけで chunk が fetch される
-      import("@/components/pages/dashboard").catch(() => {});
-      import("@/components/pages/kakeibo").catch(() => {});
-      import("@/components/pages/savings").catch(() => {});
-      import("@/components/pages/chat").catch(() => {});
-      // よく使うダイアログも先読み
-      import("@/components/record-menu-dialog").catch(() => {});
+    setLoadedPages((prev) => (prev.includes(currentPage) ? prev : [...prev, currentPage]));
+  }, [currentPage]);
+
+  // 補助ダイアログと家計簿サブ画面はアイドル時間に先読みしておく。
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const preloadOptionalChunks = () => {
+      import("@/components/pages/analysis").catch(() => {});
+      import("@/components/pages/history").catch(() => {});
+      import("@/components/settings-modal").catch(() => {});
       import("@/components/add-expense-dialog").catch(() => {});
       import("@/components/add-income-dialog").catch(() => {});
+      import("@/components/add-saving-dialog").catch(() => {});
     };
+
     const w = window as Window & {
       requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
     };
     if (typeof w.requestIdleCallback === "function") {
-      w.requestIdleCallback(preloadAll, { timeout: 2000 });
+      w.requestIdleCallback(preloadOptionalChunks, { timeout: 1500 });
     } else {
-      // Safari など requestIdleCallback 非対応環境では setTimeout で代替
-      setTimeout(preloadAll, 500);
+      setTimeout(preloadOptionalChunks, 300);
     }
-  }, [user]);
+  }, []);
 
   // スプラッシュ表示中
   if (showSplash) {
@@ -198,10 +170,23 @@ function AppContent() {
 
       {/* メインコンテンツ */}
       <main className="container mx-auto px-3 pt-0 pb-6 max-w-lg">
-        {currentPage === "dashboard" && <Dashboard onNavigateToAnalysis={handleNavigateToAnalysis} onNavigateToHistory={handleNavigateToHistory} />}
-        {currentPage === "kakeibo" && <Kakeibo />}
-        {currentPage === "savings" && <Savings />}
-        {currentPage === "chat" && <Chat />}
+        <section className={currentPage === "dashboard" ? "block" : "hidden"} aria-hidden={currentPage !== "dashboard"}>
+          {loadedPages.includes("dashboard") && (
+            <Dashboard
+              onNavigateToAnalysis={handleNavigateToAnalysis}
+              onNavigateToHistory={handleNavigateToHistory}
+            />
+          )}
+        </section>
+        <section className={currentPage === "kakeibo" ? "block" : "hidden"} aria-hidden={currentPage !== "kakeibo"}>
+          {loadedPages.includes("kakeibo") && <Kakeibo />}
+        </section>
+        <section className={currentPage === "savings" ? "block" : "hidden"} aria-hidden={currentPage !== "savings"}>
+          {loadedPages.includes("savings") && <Savings />}
+        </section>
+        <section className={currentPage === "chat" ? "block" : "hidden"} aria-hidden={currentPage !== "chat"}>
+          {loadedPages.includes("chat") && <Chat />}
+        </section>
       </main>
 
       {/* Bottom Navigation */}

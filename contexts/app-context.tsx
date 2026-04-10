@@ -240,11 +240,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (characterId === "none" || typeof window === "undefined") return;
     const config = CHARACTER_REGISTRY[characterId];
     if (!config) return;
-    const urlsToPreload: string[] = [
-      config.assets.scanning,
-      config.assets.success || "",
-      config.assets.empty,
-    ].filter(Boolean);
+    const urlsToPreload = Array.from(
+      new Set(
+        Object.values(config.assets).filter(
+          (value): value is string => typeof value === "string" && value.length > 0
+        )
+      )
+    );
     for (const url of urlsToPreload) {
       const img = new window.Image();
       img.src = url;

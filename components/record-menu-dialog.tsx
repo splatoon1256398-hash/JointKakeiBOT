@@ -48,6 +48,8 @@ export function RecordMenuDialog({
                 width={90}
                 height={90}
                 className="select-none"
+                loading="eager"
+                sizes="90px"
                 fallback={null}
               />
             </div>

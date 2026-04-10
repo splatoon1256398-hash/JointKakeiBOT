@@ -91,6 +91,8 @@ export function BottomNav({ currentPage, onPageChange, onRecordClick }: BottomNa
                         width={44}
                         height={44}
                         className="object-contain"
+                        loading="eager"
+                        sizes="44px"
                         fallback={<Icon className="w-9 h-9 text-white" />}
                       />
                     ) : (
@@ -130,6 +132,8 @@ export function BottomNav({ currentPage, onPageChange, onRecordClick }: BottomNa
                       width={32}
                       height={32}
                       className="w-8 h-8 object-contain transition-opacity"
+                      loading="eager"
+                      sizes="32px"
                       fallback={
                         <Icon
                           className="w-7 h-7 transition-colors"

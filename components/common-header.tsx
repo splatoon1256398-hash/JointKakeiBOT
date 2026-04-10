@@ -51,6 +51,8 @@ export function CommonHeader() {
                   width={36}
                   height={36}
                   className="object-cover"
+                  loading="eager"
+                  sizes="36px"
                   fallback={null}
                 />
               </button>
