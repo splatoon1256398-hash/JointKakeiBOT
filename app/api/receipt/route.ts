@@ -218,23 +218,29 @@ ${categoryList}
       timer.mark("upload"); // Files API 経由 (upload + polling)
     }
 
+    // generationConfig は最小限に。
+    // 過去テストで responseMimeType=application/json + preview model の組合せで
+    // Gemini が長いレシートを途中で切断する事象が再現したため除去。
+    // temperature=0 だけ残し、トークン制限はモデルのデフォルトに任せる。
     const result = await withGeminiRetry(() =>
       geminiClient.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: [{ role: "user", parts }],
         config: {
           temperature: 0,
-          responseMimeType: "application/json",
-          // 長いレシート対応 + 生成時間短縮の妥協点
-          // 4096 トークン = 最大 ~50 品目までカバー (1 品目 = 80 token 弱)
-          maxOutputTokens: 4096,
         },
       })
     );
     const text = result.text ?? "";
+    const finishReason = result.candidates?.[0]?.finishReason;
     timer.mark("inference");
 
-    console.log("Receipt API Gemini Response length:", text.length, "head:", text.slice(0, 200), "tail:", text.slice(-200));
+    console.log(
+      "Receipt API Gemini Response length:", text.length,
+      "finishReason:", finishReason,
+      "head:", text.slice(0, 150),
+      "tail:", text.slice(-150)
+    );
 
     let receiptData;
     try {

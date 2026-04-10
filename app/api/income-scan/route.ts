@@ -163,16 +163,14 @@ export async function POST(request: NextRequest) {
         contents: [{ role: "user", parts }],
         config: {
           temperature: 0,
-          responseMimeType: "application/json",
-          // 給与明細は項目少ないが念のため広めに
-          maxOutputTokens: 2048,
         },
       })
     );
     const text = result.text ?? "";
+    const finishReason = result.candidates?.[0]?.finishReason;
     timer.mark("inference");
 
-    console.log("Income scan Gemini response:", text);
+    console.log("Income scan Gemini response length:", text.length, "finishReason:", finishReason);
 
     const incomeData = JSON.parse(extractFirstJsonObject(text));
 
