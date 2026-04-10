@@ -191,6 +191,7 @@ export async function POST(request: NextRequest) {
     timer.mark("cleanup_enqueued");
 
     incomeData._perf = timer.toRecord();
+    console.log("[income-scan] perf:", JSON.stringify(incomeData._perf), "useInline:", useInline, "blobSize:", source.blob.size);
     return NextResponse.json(incomeData, {
       headers: { "Server-Timing": timer.toServerTiming() },
     });

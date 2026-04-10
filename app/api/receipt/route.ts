@@ -225,8 +225,9 @@ ${categoryList}
         config: {
           temperature: 0,
           responseMimeType: "application/json",
-          // 長いレシート (20+ 品目) でも切れないように広めに確保
-          maxOutputTokens: 8192,
+          // 長いレシート対応 + 生成時間短縮の妥協点
+          // 4096 トークン = 最大 ~50 品目までカバー (1 品目 = 80 token 弱)
+          maxOutputTokens: 4096,
         },
       })
     );
@@ -370,6 +371,8 @@ ${categoryList}
     timer.mark("cleanup_enqueued");
 
     receiptData._perf = timer.toRecord();
+    // Vercel logs で各ステップ ms を見えるように
+    console.log("[receipt] perf:", JSON.stringify(receiptData._perf), "useInline:", useInline, "blobSize:", source.blob.size);
     return NextResponse.json(receiptData, {
       headers: { "Server-Timing": timer.toServerTiming() },
     });
