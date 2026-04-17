@@ -13,6 +13,7 @@ import {
 } from "@/lib/server/gemini";
 import { createTimer } from "@/lib/server/perf";
 import { verifyAccessToken } from "@/lib/server/auth";
+import { assertSafeUserScopedPath } from "@/lib/server/storage-path";
 import type { Part } from "@google/genai";
 
 export const runtime = "nodejs";
@@ -60,14 +61,7 @@ async function resolveInputSource(
   }
 
   const { storagePath, mimeType } = await request.json();
-
-  if (!storagePath) {
-    throw new Error("画像パスが必要です");
-  }
-
-  if (!storagePath.startsWith(`${userId}/`)) {
-    throw new Error("アクセス権限がありません");
-  }
+  assertSafeUserScopedPath(storagePath, userId);
 
   const { data: fileData, error: downloadError } = await supabaseAdmin.storage
     .from("receipt-images")

@@ -6,19 +6,10 @@ import { createClient } from '@supabase/supabase-js';
 // ※ 既存コードの null 許容差分が大きいため createClient<Database> は一旦見送り、
 //    Phase 6 (ESLint 復活) 時に段階的に型付けを強化する。
 import type { Database as GeneratedDatabase } from './database.types';
+import { clientEnv } from './env';
 
-// 環境変数からSupabaseの設定を取得
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error(
-    'Supabaseの環境変数が設定されていません。.env.localファイルを確認してください。'
-  );
-}
-
-// Supabaseクライアント
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Supabaseクライアント (env アクセサが欠落時に明示 throw する)
+export const supabase = createClient(clientEnv.supabaseUrl, clientEnv.supabaseAnonKey);
 
 // 生成済みの完全な型を Database として公開
 export type Database = GeneratedDatabase;
