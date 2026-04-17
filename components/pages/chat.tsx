@@ -54,7 +54,7 @@ interface BrowserSpeechWindow extends Window {
 }
 
 export function Chat() {
-  const { selectedUser, user, theme, displayName, triggerRefresh } = useApp();
+  const { selectedUser, theme, triggerRefresh } = useApp();
   const { assets: charAssets, isActive: charActive, characterName } = useCharacter();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");

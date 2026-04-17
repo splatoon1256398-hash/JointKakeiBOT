@@ -1,7 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Button } from "@/components/ui/button";
+import { useState, useEffect, useCallback } from "react";
 import { Input } from "@/components/ui/input";
 import { Plus, Pencil, Trash2, Save, X, Tag, ChevronUp, ChevronDown } from "lucide-react";
 import { supabase } from "@/lib/supabase";
@@ -24,7 +23,7 @@ export function Settings() {
 
   // Settings ページは CRUD の主体なので、DB から直接 full row を取得する。
   // CRUD 後に refreshCategories() を呼んで AppContext 側の他ページにも反映する。
-  const fetchCategories = async () => {
+  const fetchCategories = useCallback(async () => {
     setIsLoading(true);
     try {
       const { data } = await supabase
@@ -40,11 +39,11 @@ export function Settings() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [refreshCategories]);
 
   useEffect(() => {
     fetchCategories();
-  }, []);
+  }, [fetchCategories]);
 
   const startEdit = (category: Category) => {
     setEditingId(category.id);

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import dynamic from "next/dynamic";
-import { History as HistoryIcon, Calendar as CalendarIcon, List, Search, X } from "lucide-react";
+import { Calendar as CalendarIcon, List, Search, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useApp } from "@/contexts/app-context";
 import { ExpenseCard } from "@/components/widgets/expense-card";

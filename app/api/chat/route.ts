@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI, Type, type Content, type Part, type Tool } from "@google/genai";
 import { validateSelectedUser } from "@/lib/auth";
 import { getJSTDateString, getJSTMonthRange, getJSTPrevMonthRange } from "@/lib/date";
 
@@ -276,7 +276,7 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
 - 複数件登録時は各件を箇条書きで並べる。絶対にテーブルを使わないこと`;
 
     // ===== Gemini ツール定義 =====
-    const tools: any[] = [
+    const tools: Tool[] = [
       {
         functionDeclarations: [
             {
@@ -432,7 +432,7 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
       ];
 
     // ===== チャット履歴構築 =====
-    const chatHistory: Array<{ role: "user" | "model"; parts: any[] }> = [
+    const chatHistory: Content[] = [
       { role: "user", parts: [{ text: systemPrompt }] },
       { role: "model", parts: [{ text: "はい、承知しました。家計簿アシスタントとして対応します。" }] },
     ];
@@ -752,13 +752,19 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
       // すべての関数結果をまとめてAIに返して最終応答を生成
       try {
         const modelTurn = response.candidates?.[0]?.content;
-        const finalContents: any[] = [
+        const functionResponseParts: Part[] = executedFunctionCalls.map(
+          (fc) => ({
+            functionResponse: {
+              name: fc.name,
+              response: fc.result as Record<string, unknown>,
+            },
+          }),
+        );
+        const finalContents: Content[] = [
           ...chatHistory,
           { role: "user", parts: [{ text: message }] },
           ...(modelTurn ? [modelTurn] : []),
-          { role: "user", parts: executedFunctionCalls.map(fc => ({
-            functionResponse: { name: fc.name, response: fc.result as object },
-          })) },
+          { role: "user", parts: functionResponseParts },
         ];
         const finalResult = await withRetry(() => ai.models.generateContent({
           model: "gemini-3-flash-preview",
