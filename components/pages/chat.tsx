@@ -18,39 +18,28 @@ interface Message {
   functionCalls?: Array<{ name: string; args: Record<string, unknown>; result: { success: boolean; message: string } }>;
 }
 
-interface BrowserSpeechRecognitionResult {
-  isFinal: boolean;
-  [index: number]: {
-    transcript: string;
-  };
-}
+// 録音の最長秒数 (保険)。手動停止 or この時間経過で自動停止する
+const MAX_RECORDING_MS = 60_000;
 
-interface BrowserSpeechRecognitionEvent {
-  results: ArrayLike<BrowserSpeechRecognitionResult>;
-}
-
-interface BrowserSpeechRecognitionErrorEvent {
-  error: string;
-}
-
-interface BrowserSpeechRecognition {
-  lang: string;
-  interimResults: boolean;
-  maxAlternatives: number;
-  continuous: boolean;
-  start: () => void;
-  stop: () => void;
-  onstart: (() => void) | null;
-  onend: (() => void) | null;
-  onerror: ((event: BrowserSpeechRecognitionErrorEvent) => void) | null;
-  onresult: ((event: BrowserSpeechRecognitionEvent) => void) | null;
-}
-
-type BrowserSpeechRecognitionConstructor = new () => BrowserSpeechRecognition;
-
-interface BrowserSpeechWindow extends Window {
-  SpeechRecognition?: BrowserSpeechRecognitionConstructor;
-  webkitSpeechRecognition?: BrowserSpeechRecognitionConstructor;
+/**
+ * MediaRecorder が吐ける mimeType をブラウザごとに探す。
+ * - iOS Safari (PWA含む): audio/mp4 のみ
+ * - Android/Chrome: audio/webm;codecs=opus が最良
+ */
+function pickRecorderMime(): string | undefined {
+  if (typeof MediaRecorder === "undefined") return undefined;
+  const candidates = [
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/mp4",
+    "audio/mpeg",
+    "audio/ogg;codecs=opus",
+  ];
+  for (const m of candidates) {
+    if (MediaRecorder.isTypeSupported?.(m)) return m;
+  }
+  // isTypeSupported が false を返しても実際は録音できる iOS 系の挙動に備えて undefined を返す
+  return undefined;
 }
 
 export function Chat() {
@@ -60,89 +49,151 @@ export function Chat() {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
   const [speechSupported, setSpeechSupported] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const lastRecordedIdRef = useRef<string | null>(null);
   const sendingRef = useRef(false);
-  const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const recordedChunksRef = useRef<Blob[]>([]);
+  const recordingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Web Speech APIが存在しないブラウザではマイクボタンを非表示
+  // MediaRecorder / getUserMedia が無いブラウザではマイクボタンを非表示
   useEffect(() => {
-    const w = window as BrowserSpeechWindow;
-    const SpeechRecognitionAPI = w.SpeechRecognition || w.webkitSpeechRecognition;
-    if (!SpeechRecognitionAPI) {
+    if (typeof navigator === "undefined") return;
+    const hasUserMedia = !!navigator.mediaDevices?.getUserMedia;
+    const hasRecorder = typeof MediaRecorder !== "undefined";
+    if (!hasUserMedia || !hasRecorder) {
       setSpeechSupported(false);
     }
   }, []);
 
-  const startVoiceInput = () => {
-    const w = window as BrowserSpeechWindow;
-    const SpeechRecognitionAPI = w.SpeechRecognition || w.webkitSpeechRecognition;
-    if (!SpeechRecognitionAPI) {
+  // アンマウント時: 録音中なら強制停止してストリーム解放
+  useEffect(() => {
+    return () => {
+      if (recordingTimeoutRef.current) clearTimeout(recordingTimeoutRef.current);
+      try { mediaRecorderRef.current?.stop(); } catch {}
+      mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
+    };
+  }, []);
+
+  const stopMediaStream = () => {
+    mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
+    mediaStreamRef.current = null;
+  };
+
+  const transcribeAudio = async (blob: Blob) => {
+    setIsTranscribing(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) throw new Error("認証セッションが見つかりません");
+
+      const form = new FormData();
+      form.append("audio", blob, `speech.${blob.type.includes("mp4") ? "m4a" : "webm"}`);
+
+      const res = await fetch("/api/stt", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || `STT API error: ${res.status}`);
+
+      const text = (data.text || "").trim();
+      if (text) {
+        setInput((prev) => (prev ? prev + " " + text : text));
+      }
+    } catch (err) {
+      console.error("音声書き起こしエラー:", err);
+      const msg = err instanceof Error ? err.message : "音声の書き起こしに失敗しました";
+      alert(`音声認識に失敗しました: ${msg}`);
+    } finally {
+      setIsTranscribing(false);
+    }
+  };
+
+  const startVoiceInput = async () => {
+    // 録音中にもう一度押されたら停止
+    if (isRecording) {
+      try { mediaRecorderRef.current?.stop(); } catch {}
+      return;
+    }
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
       setSpeechSupported(false);
       return;
     }
-    if (isRecording) {
-      recognitionRef.current?.stop();
+
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (err) {
+      const name = (err as Error & { name?: string })?.name;
+      if (name === "NotAllowedError" || name === "SecurityError") {
+        alert("マイクへのアクセスが許可されていません。ブラウザ/OSの設定からマイクを許可してください。");
+      } else if (name === "NotFoundError") {
+        alert("マイクが見つかりませんでした。");
+      } else {
+        alert("マイクを起動できませんでした。");
+      }
       return;
     }
-    const recognition = new SpeechRecognitionAPI();
-    recognition.lang = 'ja-JP';
-    recognition.interimResults = true;
-    recognition.maxAlternatives = 1;
-    recognition.continuous = false;
-    recognitionRef.current = recognition;
 
-    // onendが発火しない場合のフォールバック用タイマー
-    let endTimeout: ReturnType<typeof setTimeout> | null = null;
-    const forceEnd = () => {
+    mediaStreamRef.current = stream;
+    const mime = pickRecorderMime();
+    let recorder: MediaRecorder;
+    try {
+      recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+    } catch {
+      stopMediaStream();
+      setSpeechSupported(false);
+      return;
+    }
+    mediaRecorderRef.current = recorder;
+    recordedChunksRef.current = [];
+
+    recorder.ondataavailable = (e) => {
+      if (e.data && e.data.size > 0) recordedChunksRef.current.push(e.data);
+    };
+    recorder.onstop = () => {
+      if (recordingTimeoutRef.current) {
+        clearTimeout(recordingTimeoutRef.current);
+        recordingTimeoutRef.current = null;
+      }
       setIsRecording(false);
-      recognitionRef.current = null;
-      if (endTimeout) clearTimeout(endTimeout);
-    };
+      const type = recorder.mimeType || mime || "audio/webm";
+      const chunks = recordedChunksRef.current;
+      recordedChunksRef.current = [];
+      stopMediaStream();
+      mediaRecorderRef.current = null;
 
-    recognition.onstart = () => {
-      setIsRecording(true);
-      // 安全策: 最大15秒でリセット（onendが発火しなかった場合のフォールバック）
-      endTimeout = setTimeout(() => {
-        if (recognitionRef.current) {
-          try { recognitionRef.current.stop(); } catch {}
-          forceEnd();
-        }
-      }, 15000);
+      if (chunks.length === 0) return;
+      const blob = new Blob(chunks, { type });
+      if (blob.size === 0) return;
+      void transcribeAudio(blob);
     };
-    recognition.onend = () => {
-      forceEnd();
-    };
-    recognition.onerror = (event: BrowserSpeechRecognitionErrorEvent) => {
-      forceEnd();
-      if (event.error === 'not-allowed') {
-        alert('マイクへのアクセスが許可されていません。ブラウザの設定からマイクを許可してください。');
-      } else if (event.error === 'no-speech') {
-        // 音声が検出されなかった場合は静かに終了
-      } else if (event.error === 'network') {
-        alert('音声認識サービスに接続できません。ネットワーク接続を確認してください。');
-      }
-    };
-    recognition.onresult = (event: BrowserSpeechRecognitionEvent) => {
-      let finalTranscript = '';
-      for (let i = 0; i < event.results.length; i++) {
-        if (event.results[i].isFinal) {
-          finalTranscript += event.results[i][0].transcript;
-        }
-      }
-      if (finalTranscript) {
-        setInput((prev: string) => prev ? prev + ' ' + finalTranscript : finalTranscript);
-        // final結果を受け取ったら明示的に停止（onendの確実な発火を促す）
-        try { recognition.stop(); } catch {}
+    recorder.onerror = () => {
+      setIsRecording(false);
+      stopMediaStream();
+      mediaRecorderRef.current = null;
+      if (recordingTimeoutRef.current) {
+        clearTimeout(recordingTimeoutRef.current);
+        recordingTimeoutRef.current = null;
       }
     };
 
     try {
-      recognition.start();
+      recorder.start();
+      setIsRecording(true);
+      // 保険: 最大 MAX_RECORDING_MS で自動停止
+      recordingTimeoutRef.current = setTimeout(() => {
+        try { recorder.stop(); } catch {}
+      }, MAX_RECORDING_MS);
     } catch {
+      stopMediaStream();
+      mediaRecorderRef.current = null;
       setIsRecording(false);
-      setSpeechSupported(false);
     }
   };
 
@@ -344,14 +395,16 @@ export function Chat() {
               <Button
                 type="button"
                 onClick={startVoiceInput}
-                disabled={isLoading}
+                disabled={isLoading || isTranscribing}
                 variant="outline"
                 className={`border-slate-600 bg-slate-700/50 hover:bg-slate-600/50 px-3 ${isRecording ? 'border-red-500 bg-red-500/10' : ''}`}
-                title={isRecording ? '録音中（タップで停止）' : '音声入力'}
+                title={isRecording ? '録音中（タップで停止）' : isTranscribing ? '書き起こし中' : '音声入力'}
               >
-                {isRecording
-                  ? <MicOff className="h-5 w-5 text-red-400 animate-pulse" />
-                  : <Mic className="h-5 w-5 text-slate-300" />}
+                {isTranscribing
+                  ? <Loader2 className="h-5 w-5 text-slate-300 animate-spin" />
+                  : isRecording
+                    ? <MicOff className="h-5 w-5 text-red-400 animate-pulse" />
+                    : <Mic className="h-5 w-5 text-slate-300" />}
               </Button>
             )}
             <Button
