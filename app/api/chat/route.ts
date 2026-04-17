@@ -3,6 +3,8 @@ import { createClient } from "@supabase/supabase-js";
 import { GoogleGenAI, Type, type Content, type Part, type Tool } from "@google/genai";
 import { validateSelectedUser } from "@/lib/auth";
 import { getJSTDateString, getJSTMonthRange, getJSTPrevMonthRange } from "@/lib/date";
+import { ChatRequestSchema, parseBody } from "@/lib/server/schemas";
+import { AppError, reportError, toErrorPayload } from "@/lib/errors";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -38,51 +40,34 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries = 2): Promise<T> {
   throw new Error('Unreachable');
 }
 
-interface ChatHistoryItem {
-  role: "user" | "assistant";
-  content: string;
-  functionCalls?: Array<{ name: string; args: Record<string, unknown>; result: { success: boolean; message: string } }>;
-}
-
-interface ChatRequest {
-  message: string;
-  selectedUser: string;
-  history: ChatHistoryItem[];
-  lastRecordedId: string | null;
-}
-
-
 export async function POST(request: NextRequest) {
   try {
     // 認証チェック
     const authHeader = request.headers.get("authorization");
     const token = authHeader?.replace("Bearer ", "");
     if (!token) {
-      return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
+      throw new AppError("auth_required", 401, "認証が必要です");
     }
     const {
       data: { user },
       error: authError,
     } = await supabaseAdmin.auth.getUser(token);
     if (authError || !user) {
-      return NextResponse.json(
-        { error: "認証に失敗しました" },
-        { status: 401 }
-      );
+      throw new AppError("auth_invalid", 401, "認証に失敗しました");
     }
 
-    const body: ChatRequest = await request.json();
-    const { message, selectedUser, history, lastRecordedId } = body;
+    const rawBody = await request.json().catch(() => null);
+    const { message, selectedUser, history, lastRecordedId } = parseBody(
+      ChatRequestSchema,
+      rawBody
+    );
     const authDisplayName = typeof user.user_metadata?.display_name === "string"
       ? user.user_metadata.display_name.trim()
       : (user.email?.split("@")[0] ?? "");
 
     // ===== selectedUser の認可チェック =====
     if (!validateSelectedUser(selectedUser, authDisplayName)) {
-      return NextResponse.json(
-        { error: "許可されていないユーザー区分です" },
-        { status: 403 }
-      );
+      throw new AppError("forbidden", 403, "許可されていないユーザー区分です");
     }
 
     // ===== コンテキスト取得 =====
@@ -811,12 +796,8 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
       ...(executedFunctionCalls.length > 0 && { functionCalls: executedFunctionCalls }),
     });
   } catch (error) {
-    const errMsg = error instanceof Error ? error.message : String(error);
-    const errStack = error instanceof Error ? error.stack?.substring(0, 500) : '';
-    console.error("Chat API error:", errMsg, "\nStack:", errStack);
-    return NextResponse.json(
-      { error: `エラーが発生しました: ${errMsg.substring(0, 200)}` },
-      { status: 500 }
-    );
+    reportError("chat", error);
+    const { status, body } = toErrorPayload(error);
+    return NextResponse.json(body, { status });
   }
 }

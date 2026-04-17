@@ -14,6 +14,7 @@ import {
 import { createTimer } from "@/lib/server/perf";
 import { verifyAccessToken } from "@/lib/server/auth";
 import { assertSafeUserScopedPath } from "@/lib/server/storage-path";
+import { parseBody, StorageScanRequestSchema } from "@/lib/server/schemas";
 import type { Part } from "@google/genai";
 
 export const runtime = "nodejs";
@@ -60,7 +61,8 @@ async function resolveInputSource(
     };
   }
 
-  const { storagePath, mimeType } = await request.json();
+  const rawBody = await request.json().catch(() => null);
+  const { storagePath, mimeType } = parseBody(StorageScanRequestSchema, rawBody);
   assertSafeUserScopedPath(storagePath, userId);
 
   const { data: fileData, error: downloadError } = await supabaseAdmin.storage
