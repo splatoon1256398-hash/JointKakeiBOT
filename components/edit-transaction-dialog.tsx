@@ -1,15 +1,19 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import { createPortal } from "react-dom";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2, Save, Trash2, Users, User, Plus, X } from "lucide-react";
-/* Select removed — replaced by icon picker */
 import { supabase } from "@/lib/supabase";
 import { useApp } from "@/contexts/app-context";
+import { CategoryPicker } from "@/components/scan/category-picker";
 
 interface ExpenseItem {
   categoryMain: string;
@@ -39,8 +43,27 @@ interface EditTransactionDialogProps {
   transaction: TransactionForEdit | null;
 }
 
-export function EditTransactionDialog({ open, onOpenChange, transaction }: EditTransactionDialogProps) {
-  const { triggerRefresh, theme, displayName, categories: dbCategories } = useApp();
+const DEFAULT_EXTRA_ITEM: ExpenseItem = {
+  categoryMain: "食費",
+  categorySub: "食料品",
+  storeName: "",
+  amount: 0,
+  memo: "",
+};
+
+type PickerTarget = "single" | number;
+
+export function EditTransactionDialog({
+  open,
+  onOpenChange,
+  transaction,
+}: EditTransactionDialogProps) {
+  const {
+    triggerRefresh,
+    theme,
+    displayName,
+    categories: dbCategories,
+  } = useApp();
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -60,9 +83,15 @@ export function EditTransactionDialog({ open, onOpenChange, transaction }: EditT
 
   // 項目追加時に末尾へスクロール
   useEffect(() => {
-    if (items.length > prevItemsLengthRef.current && prevItemsLengthRef.current > 0) {
+    if (
+      items.length > prevItemsLengthRef.current &&
+      prevItemsLengthRef.current > 0
+    ) {
       setTimeout(() => {
-        itemsEndRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        itemsEndRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "nearest",
+        });
       }, 100);
     }
     prevItemsLengthRef.current = items.length;
@@ -70,73 +99,107 @@ export function EditTransactionDialog({ open, onOpenChange, transaction }: EditT
 
   // カテゴリーピッカー状態
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [pickerStep, setPickerStep] = useState<'main' | 'sub'>('main');
-  const [pickerTempMain, setPickerTempMain] = useState('');
-  const [pickerTarget, setPickerTarget] = useState<'single' | number>('single'); // 'single' = 単一品目, number = items[idx]
-
-  // dbCategories は AppContext から来るので useEffect fetch 不要
+  const [pickerTarget, setPickerTarget] = useState<PickerTarget>("single");
 
   // transaction が変わったら初期値をセット
   useEffect(() => {
-    if (transaction) {
-      setDate(transaction.date);
-      setCategoryMain(transaction.category_main);
-      setCategorySub(transaction.category_sub);
-      setStoreName(transaction.store_name || "");
-      setAmount(transaction.amount);
-      setMemo(transaction.memo || "");
-      setUserType(transaction.user_type);
-      setTransactionType(transaction.type || "expense");
-      setItems(transaction.items && Array.isArray(transaction.items) && transaction.items.length > 1
+    if (!transaction) return;
+    setDate(transaction.date);
+    setCategoryMain(transaction.category_main);
+    setCategorySub(transaction.category_sub);
+    setStoreName(transaction.store_name || "");
+    setAmount(transaction.amount);
+    setMemo(transaction.memo || "");
+    setUserType(transaction.user_type);
+    setTransactionType(transaction.type || "expense");
+    setItems(
+      transaction.items &&
+        Array.isArray(transaction.items) &&
+        transaction.items.length > 1
         ? transaction.items
-        : []);
-      const meta = typeof transaction.metadata === 'string'
+        : [],
+    );
+    const meta =
+      typeof transaction.metadata === "string"
         ? JSON.parse(transaction.metadata)
         : transaction.metadata;
-      setGrossAmount(meta?.gross_amount || 0);
-    }
+    setGrossAmount(meta?.gross_amount || 0);
   }, [transaction]);
 
-  const getSubcategoriesFromDB = (mainCat: string): string[] => {
-    const found = dbCategories.find(c => c.main === mainCat);
-    return found?.subs || ["その他"];
-  };
+  const getCategoryIcon = useCallback(
+    (main: string): string =>
+      dbCategories.find((c) => c.main === main)?.icon || "📦",
+    [dbCategories],
+  );
 
-  const getCategoryIconFromDB = (mainCat: string): string => {
-    const found = dbCategories.find(c => c.main === mainCat);
-    return found?.icon || "📦";
-  };
-
-  const openPicker = (target: 'single' | number, currentMain: string) => {
+  const openPicker = useCallback((target: PickerTarget) => {
     setPickerTarget(target);
-    setPickerTempMain(currentMain);
-    setPickerStep('main');
     setPickerOpen(true);
-  };
+  }, []);
 
-  const handlePickerSelectSub = (sub: string) => {
-    if (pickerTarget === 'single') {
-      setCategoryMain(pickerTempMain);
-      setCategorySub(sub);
-    } else {
-      setItems(prev => {
-        const newItems = [...prev];
-        newItems[pickerTarget] = {
-          ...newItems[pickerTarget],
-          categoryMain: pickerTempMain,
-          categorySub: sub,
-        };
-        return newItems;
-      });
+  const handlePickerSelect = useCallback(
+    (main: string, sub: string) => {
+      if (pickerTarget === "single") {
+        setCategoryMain(main);
+        setCategorySub(sub);
+      } else {
+        setItems((prev) => {
+          const next = [...prev];
+          next[pickerTarget] = {
+            ...next[pickerTarget],
+            categoryMain: main,
+            categorySub: sub,
+          };
+          return next;
+        });
+      }
+      setPickerOpen(false);
+    },
+    [pickerTarget],
+  );
+
+  const totalItemsAmount = useMemo(
+    () => items.reduce((sum, item) => sum + item.amount, 0),
+    [items],
+  );
+
+  // Current main/sub for picker highlighting
+  const pickerCurrent = useMemo(() => {
+    if (pickerTarget === "single") {
+      return { main: categoryMain, sub: categorySub };
     }
-    setPickerOpen(false);
-  };
+    const item = items[pickerTarget];
+    return {
+      main: item?.categoryMain || "",
+      sub: item?.categorySub || "",
+    };
+  }, [pickerTarget, categoryMain, categorySub, items]);
 
-  const handleCategoryMainChange = (value: string) => {
-    setCategoryMain(value);
-    const subs = getSubcategoriesFromDB(value);
-    setCategorySub(subs[0] || "その他");
-  };
+  const handleAddItem = useCallback(() => {
+    setItems((prev) => [...prev, { ...DEFAULT_EXTRA_ITEM }]);
+  }, []);
+
+  const handleConvertToMultiItems = useCallback(() => {
+    setItems([
+      { categoryMain, categorySub, storeName, amount, memo },
+      { ...DEFAULT_EXTRA_ITEM },
+    ]);
+  }, [categoryMain, categorySub, storeName, amount, memo]);
+
+  const handleRemoveItem = useCallback((idx: number) => {
+    setItems((prev) => prev.filter((_, i) => i !== idx));
+  }, []);
+
+  const handleItemFieldChange = useCallback(
+    (idx: number, field: keyof ExpenseItem, value: string | number) => {
+      setItems((prev) => {
+        const next = [...prev];
+        next[idx] = { ...next[idx], [field]: value };
+        return next;
+      });
+    },
+    [],
+  );
 
   const handleSave = async () => {
     if (!transaction) return;
@@ -144,24 +207,24 @@ export function EditTransactionDialog({ open, onOpenChange, transaction }: EditT
 
     try {
       const hasItems = items.length > 1;
-      const finalAmount = hasItems
-        ? items.reduce((sum, item) => sum + item.amount, 0)
-        : amount;
+      const finalAmount = hasItems ? totalItemsAmount : amount;
 
       const updateData: Record<string, unknown> = {
         date,
         category_main: hasItems ? items[0].categoryMain : categoryMain,
         category_sub: hasItems ? items[0].categorySub : categorySub,
-        store_name: hasItems ? (items[0].storeName || storeName || null) : (storeName || null),
+        store_name: hasItems
+          ? items[0].storeName || storeName || null
+          : storeName || null,
         amount: finalAmount,
         memo: hasItems
-          ? items.map(i => i.memo || i.categorySub).join(', ')
-          : (memo || null),
+          ? items.map((i) => i.memo || i.categorySub).join(", ")
+          : memo || null,
         user_type: userType,
       };
 
       if (hasItems) {
-        updateData.items = items.map(item => ({
+        updateData.items = items.map((item) => ({
           categoryMain: item.categoryMain,
           categorySub: item.categorySub,
           storeName: item.storeName,
@@ -170,7 +233,7 @@ export function EditTransactionDialog({ open, onOpenChange, transaction }: EditT
         }));
       }
 
-      if (transactionType === 'income' && grossAmount > 0) {
+      if (transactionType === "income" && grossAmount > 0) {
         updateData.metadata = { gross_amount: grossAmount };
       }
 
@@ -224,6 +287,8 @@ export function EditTransactionDialog({ open, onOpenChange, transaction }: EditT
 
   if (!transaction) return null;
 
+  const isIncome = transactionType === "income";
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
@@ -233,7 +298,7 @@ export function EditTransactionDialog({ open, onOpenChange, transaction }: EditT
         <DialogHeader>
           <DialogTitle className="text-white flex items-center gap-2 text-base">
             <Save className="h-4 w-4" style={{ color: theme.primary }} />
-            {transactionType === 'income' ? '収入を編集' : '取引を編集'}
+            {isIncome ? "収入を編集" : "取引を編集"}
           </DialogTitle>
         </DialogHeader>
 
@@ -244,20 +309,34 @@ export function EditTransactionDialog({ open, onOpenChange, transaction }: EditT
             <div className="flex rounded-lg overflow-hidden border border-white/10">
               <button
                 type="button"
-                onClick={(e) => { e.preventDefault(); e.stopPropagation(); setUserType(displayName || "自分"); }}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setUserType(displayName || "自分");
+                }}
                 className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-semibold transition-all ${
                   userType !== "共同"
                     ? "text-white"
                     : "text-white/40 bg-slate-800/50 hover:bg-slate-800/80"
                 }`}
-                style={userType !== "共同" ? { background: `linear-gradient(135deg, ${theme.primary}, ${theme.secondary})` } : {}}
+                style={
+                  userType !== "共同"
+                    ? {
+                        background: `linear-gradient(135deg, ${theme.primary}, ${theme.secondary})`,
+                      }
+                    : {}
+                }
               >
                 <User className="h-3.5 w-3.5" />
                 {displayName || "個人"}
               </button>
               <button
                 type="button"
-                onClick={(e) => { e.preventDefault(); e.stopPropagation(); setUserType("共同"); }}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setUserType("共同");
+                }}
                 className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-semibold transition-all ${
                   userType === "共同"
                     ? "text-white bg-purple-600"
@@ -286,26 +365,33 @@ export function EditTransactionDialog({ open, onOpenChange, transaction }: EditT
           {items.length > 1 ? (
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <Label className="text-white/70 text-xs">品目（{items.length}点）</Label>
+                <Label className="text-white/70 text-xs">
+                  品目（{items.length}点）
+                </Label>
                 <button
                   type="button"
-                  onClick={() => setItems([...items, { categoryMain: "食費", categorySub: "食料品", storeName: "", amount: 0, memo: "" }])}
+                  onClick={handleAddItem}
                   className="flex items-center gap-1 text-xs px-2 py-1 rounded-md hover:bg-white/10 transition-colors"
                   style={{ color: theme.primary }}
                 >
                   <Plus className="h-3 w-3" /> 追加
                 </button>
               </div>
-              
+
               <div className="space-y-2 max-h-[40vh] overflow-y-auto pr-1">
                 {items.map((item, idx) => (
-                  <div key={idx} className="p-3 rounded-lg bg-slate-800/50 border border-slate-700/50 space-y-2">
+                  <div
+                    key={idx}
+                    className="p-3 rounded-lg bg-slate-800/50 border border-slate-700/50 space-y-2"
+                  >
                     <div className="flex items-center justify-between">
-                      <span className="text-xs text-white/40">品目 {idx + 1}</span>
+                      <span className="text-xs text-white/40">
+                        品目 {idx + 1}
+                      </span>
                       {items.length > 1 && (
                         <button
                           type="button"
-                          onClick={() => setItems(items.filter((_, i) => i !== idx))}
+                          onClick={() => handleRemoveItem(idx)}
                           className="p-1 rounded hover:bg-red-500/20 text-red-400/60 hover:text-red-400 transition-colors"
                         >
                           <X className="h-3 w-3" />
@@ -316,14 +402,22 @@ export function EditTransactionDialog({ open, onOpenChange, transaction }: EditT
                     <div className="grid grid-cols-[1fr_100px] gap-2">
                       <Input
                         value={item.memo}
-                        onChange={(e) => { const newItems = [...items]; newItems[idx].memo = e.target.value; setItems(newItems); }}
+                        onChange={(e) =>
+                          handleItemFieldChange(idx, "memo", e.target.value)
+                        }
                         placeholder="品名"
                         className="bg-slate-900/50 border-slate-700 text-white h-8 text-xs"
                       />
                       <Input
                         type="number"
                         value={item.amount || ""}
-                        onChange={(e) => { const newItems = [...items]; newItems[idx].amount = Number(e.target.value); setItems(newItems); }}
+                        onChange={(e) =>
+                          handleItemFieldChange(
+                            idx,
+                            "amount",
+                            Number(e.target.value),
+                          )
+                        }
                         placeholder="金額"
                         className="bg-slate-900/50 border-slate-700 text-white h-8 text-xs"
                       />
@@ -331,16 +425,24 @@ export function EditTransactionDialog({ open, onOpenChange, transaction }: EditT
                     {/* カテゴリー選択ボタン */}
                     <button
                       type="button"
-                      onClick={() => openPicker(idx, item.categoryMain)}
+                      onClick={() => openPicker(idx)}
                       className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg border border-purple-500/30 bg-purple-500/10 hover:bg-purple-500/20 transition-all text-left"
                     >
                       <span className="flex items-center gap-1.5 text-xs">
-                        <span className="text-sm">{getCategoryIconFromDB(item.categoryMain)}</span>
-                        <span className="font-semibold text-white">{item.categoryMain}</span>
+                        <span className="text-sm">
+                          {getCategoryIcon(item.categoryMain)}
+                        </span>
+                        <span className="font-semibold text-white">
+                          {item.categoryMain}
+                        </span>
                         <span className="text-white/30">/</span>
-                        <span className="text-white/60">{item.categorySub}</span>
+                        <span className="text-white/60">
+                          {item.categorySub}
+                        </span>
                       </span>
-                      <span className="text-[10px] text-purple-400 shrink-0">変更 ›</span>
+                      <span className="text-[10px] text-purple-400 shrink-0">
+                        変更 ›
+                      </span>
                     </button>
                   </div>
                 ))}
@@ -351,7 +453,7 @@ export function EditTransactionDialog({ open, onOpenChange, transaction }: EditT
               <div className="flex items-center justify-between p-2 rounded-lg bg-slate-800/30 border border-slate-700/30">
                 <span className="text-xs text-white/50">合計金額</span>
                 <span className="text-lg font-bold text-red-400">
-                  -¥{items.reduce((sum, item) => sum + item.amount, 0).toLocaleString()}
+                  -¥{totalItemsAmount.toLocaleString()}
                 </span>
               </div>
             </div>
@@ -362,10 +464,7 @@ export function EditTransactionDialog({ open, onOpenChange, transaction }: EditT
                 <Label className="text-white/70 text-xs">品目（1点）</Label>
                 <button
                   type="button"
-                  onClick={() => setItems([
-                    { categoryMain, categorySub, storeName, amount, memo },
-                    { categoryMain: "食費", categorySub: "食料品", storeName: "", amount: 0, memo: "" }
-                  ])}
+                  onClick={handleConvertToMultiItems}
                   className="flex items-center gap-1 text-xs px-2 py-1 rounded-md hover:bg-white/10 transition-colors"
                   style={{ color: theme.primary }}
                 >
@@ -377,32 +476,40 @@ export function EditTransactionDialog({ open, onOpenChange, transaction }: EditT
                 <Label className="text-white/70 text-xs">カテゴリー</Label>
                 <button
                   type="button"
-                  onClick={() => openPicker('single', categoryMain)}
+                  onClick={() => openPicker("single")}
                   className="w-full flex items-center justify-between px-3 py-2 rounded-lg border border-purple-500/30 bg-purple-500/10 hover:bg-purple-500/20 transition-all text-left"
                 >
                   <span className="flex items-center gap-2 text-sm">
-                    <span>{getCategoryIconFromDB(categoryMain)}</span>
-                    <span className="font-semibold text-white">{categoryMain}</span>
+                    <span>{getCategoryIcon(categoryMain)}</span>
+                    <span className="font-semibold text-white">
+                      {categoryMain}
+                    </span>
                     <span className="text-white/30">/</span>
                     <span className="text-white/60">{categorySub}</span>
                   </span>
-                  <span className="text-[10px] text-purple-400 shrink-0">変更 ›</span>
+                  <span className="text-[10px] text-purple-400 shrink-0">
+                    変更 ›
+                  </span>
                 </button>
               </div>
 
               {/* 店名 & 金額 */}
               <div className="grid gap-3 grid-cols-2">
                 <div className="space-y-1">
-                  <Label className="text-white/70 text-xs">{transactionType === 'income' ? '収入源' : '店名'}</Label>
+                  <Label className="text-white/70 text-xs">
+                    {isIncome ? "収入源" : "店名"}
+                  </Label>
                   <Input
                     value={storeName}
                     onChange={(e) => setStoreName(e.target.value)}
-                    placeholder={transactionType === 'income' ? '会社名' : 'スーパー○○'}
+                    placeholder={isIncome ? "会社名" : "スーパー○○"}
                     className="bg-slate-800/50 border-slate-700 text-white h-9 text-sm"
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-white/70 text-xs">{transactionType === 'income' ? '手取り金額' : '金額'}</Label>
+                  <Label className="text-white/70 text-xs">
+                    {isIncome ? "手取り金額" : "金額"}
+                  </Label>
                   <Input
                     type="number"
                     value={amount || ""}
@@ -413,9 +520,11 @@ export function EditTransactionDialog({ open, onOpenChange, transaction }: EditT
               </div>
 
               {/* 収入の場合: 総支給額 */}
-              {transactionType === 'income' && (
+              {isIncome && (
                 <div className="space-y-1">
-                  <Label className="text-white/70 text-xs">総支給額（額面）</Label>
+                  <Label className="text-white/70 text-xs">
+                    総支給額（額面）
+                  </Label>
                   <Input
                     type="number"
                     value={grossAmount || ""}
@@ -425,7 +534,9 @@ export function EditTransactionDialog({ open, onOpenChange, transaction }: EditT
                   />
                   {grossAmount > 0 && amount > 0 && (
                     <p className="text-xs text-orange-400">
-                      控除額: ¥{(grossAmount - amount).toLocaleString()}（{((1 - amount / grossAmount) * 100).toFixed(1)}%）
+                      控除額: ¥
+                      {(grossAmount - amount).toLocaleString()}（
+                      {((1 - amount / grossAmount) * 100).toFixed(1)}%）
                     </p>
                   )}
                 </div>
@@ -447,19 +558,35 @@ export function EditTransactionDialog({ open, onOpenChange, transaction }: EditT
           {/* ボタン */}
           <div className="flex gap-2 pt-2">
             <Button
-              onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleSave(); }}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleSave();
+              }}
               disabled={isSaving || isDeleting}
               className="flex-1 h-10 text-sm font-semibold"
-              style={{ background: `linear-gradient(135deg, ${theme.primary}, ${theme.secondary})` }}
+              style={{
+                background: `linear-gradient(135deg, ${theme.primary}, ${theme.secondary})`,
+              }}
             >
               {isSaving ? (
-                <><Loader2 className="h-4 w-4 animate-spin mr-2" />保存中...</>
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  保存中...
+                </>
               ) : (
-                <><Save className="h-4 w-4 mr-2" />保存</>
+                <>
+                  <Save className="h-4 w-4 mr-2" />
+                  保存
+                </>
               )}
             </Button>
             <Button
-              onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleDelete(); }}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleDelete();
+              }}
               disabled={isSaving || isDeleting}
               variant="destructive"
               className="h-10 text-sm px-4"
@@ -473,82 +600,15 @@ export function EditTransactionDialog({ open, onOpenChange, transaction }: EditT
           </div>
         </div>
 
-        {/* カテゴリーポップアップピッカー（Portalで画面中央に固定表示） */}
-        {pickerOpen && createPortal(
-          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 pointer-events-auto" onClick={() => setPickerOpen(false)}>
-            <div className="absolute inset-0 bg-black/60" />
-            <div
-              className="relative bg-slate-900 border border-white/15 rounded-2xl p-4 w-full max-w-sm flex flex-col"
-              style={{ boxShadow: '0 8px 32px rgba(120,60,255,0.25)', maxHeight: '60vh' }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  {pickerStep === 'sub' && (
-                    <button onClick={() => setPickerStep('main')} className="text-white/50 hover:text-white text-sm mr-1">← 戻る</button>
-                  )}
-                  <span className="text-sm font-bold text-white">
-                    {pickerStep === 'main' ? 'カテゴリーを選択' : `${getCategoryIconFromDB(pickerTempMain)} ${pickerTempMain} › 小分類`}
-                  </span>
-                </div>
-                <button onClick={() => setPickerOpen(false)} className="text-white/40 hover:text-white text-xs px-2 py-1">✕</button>
-              </div>
-              <div className="overflow-y-auto flex-1 -mx-1 px-1">
-                {pickerStep === 'main' ? (
-                  <div className="grid grid-cols-3 gap-2">
-                    {dbCategories.map((cat) => {
-                      const currentMain = pickerTarget === 'single' ? categoryMain : items[pickerTarget]?.categoryMain;
-                      const isSelected = currentMain === cat.main;
-                      return (
-                        <button
-                          key={cat.main}
-                          type="button"
-                          onClick={() => {
-                            setPickerTempMain(cat.main);
-                            setPickerStep('sub');
-                          }}
-                          className={`flex flex-col items-center gap-1 p-2.5 rounded-xl border transition-all ${
-                            isSelected
-                              ? 'border-purple-500/60 bg-purple-500/15'
-                              : 'border-white/10 bg-white/5 hover:bg-white/10 hover:border-white/20'
-                          }`}
-                          style={isSelected ? { boxShadow: '0 0 12px rgba(168,85,247,0.4)' } : {}}
-                        >
-                          <span className="text-2xl">{cat.icon}</span>
-                          <span className="text-[11px] text-white/80 text-center leading-tight">{cat.main}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-2 gap-2">
-                    {getSubcategoriesFromDB(pickerTempMain).map((sub) => {
-                      const currentMain = pickerTarget === 'single' ? categoryMain : items[pickerTarget as number]?.categoryMain;
-                      const currentSub = pickerTarget === 'single' ? categorySub : items[pickerTarget as number]?.categorySub;
-                      const isSelected = currentMain === pickerTempMain && currentSub === sub;
-                      return (
-                        <button
-                          key={sub}
-                          type="button"
-                          onClick={() => handlePickerSelectSub(sub)}
-                          className={`p-3 rounded-xl border text-sm transition-all ${
-                            isSelected
-                              ? 'border-purple-500/60 bg-purple-500/15 text-white font-semibold'
-                              : 'border-white/10 bg-white/5 hover:bg-white/10 text-white/70'
-                          }`}
-                          style={isSelected ? { boxShadow: '0 0 12px rgba(168,85,247,0.4)' } : {}}
-                        >
-                          {sub}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>,
-          document.body
-        )}
+        <CategoryPicker
+          open={pickerOpen}
+          categories={dbCategories}
+          currentMain={pickerCurrent.main}
+          currentSub={pickerCurrent.sub}
+          onSelect={handlePickerSelect}
+          onClose={() => setPickerOpen(false)}
+          tone="purple"
+        />
       </DialogContent>
     </Dialog>
   );

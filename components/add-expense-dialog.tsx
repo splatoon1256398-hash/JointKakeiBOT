@@ -1,25 +1,37 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import { createPortal } from "react-dom";
-import NextImage from "next/image";
-import { getJSTDateString } from "@/lib/date";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Camera, Loader2, Sparkles, Upload, X, Plus, Trash2, Calendar, FileText } from "lucide-react";
-import { type ReceiptAnalysisResult, type ExpenseItem } from "@/lib/gemini";
+import {
+  Camera,
+  Loader2,
+  Sparkles,
+  Plus,
+  Calendar,
+} from "lucide-react";
+import { getJSTDateString } from "@/lib/date";
+import { type ExpenseItem, type ReceiptAnalysisResult } from "@/lib/gemini";
 import { supabase } from "@/lib/supabase";
-import { showPerfToast, logPerf } from "@/lib/perf-toast";
 import { useApp } from "@/contexts/app-context";
 import { useCharacter } from "@/lib/use-character";
 import { CharacterImage } from "@/components/character-image";
-import {
-  compressScannableFile,
-  detectUploadMimeType,
-  shouldUseDirectAnalysisUpload,
-} from "@/lib/scan-upload";
+import { useScanUpload } from "@/lib/hooks/use-scan-upload";
+import { runBudgetAlertCheck } from "@/lib/hooks/use-budget-alerts";
+import { ScanningOverlay } from "@/components/scan/scanning-overlay";
+import { SuccessOverlay } from "@/components/scan/success-overlay";
+import { ScanButtons } from "@/components/scan/scan-buttons";
+import { CapturedPreview } from "@/components/scan/captured-preview";
+import { CategoryPicker } from "@/components/scan/category-picker";
+import { ExpenseItemRow } from "@/components/expense/expense-item-row";
 
 interface AddExpenseDialogProps {
   open: boolean;
@@ -27,295 +39,187 @@ interface AddExpenseDialogProps {
   selectedUser: string;
 }
 
-export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpenseDialogProps) {
-  const { triggerRefresh, categories: dbCategories, getCategoryIcon, getSubcategories } = useApp();
+const DEFAULT_ITEM: ExpenseItem = {
+  categoryMain: "食費",
+  categorySub: "食料品",
+  storeName: "",
+  amount: 0,
+  memo: "",
+};
+
+export function AddExpenseDialog({
+  open,
+  onOpenChange,
+  selectedUser,
+}: AddExpenseDialogProps) {
+  const {
+    triggerRefresh,
+    categories: dbCategories,
+    getCategoryIcon,
+    getSubcategories,
+  } = useApp();
   const { assets: charAssets, isActive: charActive } = useCharacter();
 
-  // dbCategories は AppContext から来るので fetch 不要
-  // 既存コードが参照していたヘルパー名を維持
-  const getSubcategoriesFromDB = getSubcategories;
-  const getCategoryIconFromDB = getCategoryIcon;
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [analysisStage, setAnalysisStage] = useState<'uploading' | 'analyzing'>('uploading');
-  const dbCategoriesRef = useRef<{ main: string; icon: string; subs: string[] }[]>([]);
-  // analyzeImage 内で最新の dbCategories を参照するための同期
-  useEffect(() => {
-    dbCategoriesRef.current = dbCategories;
-  }, [dbCategories]);
   const [isSaving, setIsSaving] = useState(false);
-  // カテゴリーピッカー状態
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [pickerItemIndex, setPickerItemIndex] = useState(0);
-  const [pickerStep, setPickerStep] = useState<'main' | 'sub'>('main');
-  const [pickerTempMain, setPickerTempMain] = useState('');
-  const [capturedImage, setCapturedImage] = useState<string | null>(null);
-  const [isPdf, setIsPdf] = useState(false);
   const [continuousScan, setContinuousScan] = useState(false);
   const [scanCount, setScanCount] = useState(0);
   const [showSuccess, setShowSuccess] = useState(false);
   const [date, setDate] = useState(getJSTDateString());
-  const [items, setItems] = useState<ExpenseItem[]>([
-    {
-      categoryMain: "食費",
-      categorySub: "食料品",
-      storeName: "",
-      amount: 0,
-      memo: "",
-    }
-  ]);
-  
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const [items, setItems] = useState<ExpenseItem[]>([{ ...DEFAULT_ITEM }]);
 
-  // Supabase Storageに画像をアップロードし、パスを返す
-  // → Vercelの4.5MB制限を完全回避（APIにはパスのみ送信）
-  const uploadToStorage = async (file: File): Promise<{ path: string; mimeType: string }> => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.user) throw new Error('認証が必要です');
+  // Category picker state — which item index is being edited
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerItemIndex, setPickerItemIndex] = useState(0);
 
-    const userId = session.user.id;
-    const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
-    const fileName = `${userId}/${Date.now()}.${ext}`;
-    const contentType = detectUploadMimeType(file);
-
-    console.log(`Storageアップロード開始: ${(file.size / 1024 / 1024).toFixed(2)}MB (${contentType})`);
-
-    const { error } = await supabase.storage
-      .from('receipt-images')
-      .upload(fileName, file, {
-        cacheControl: '300',
-        upsert: false,
-        contentType,
-      });
-
-    if (error) {
-      console.error('Storageアップロードエラー:', error);
-      throw new Error(`アップロード失敗: ${error.message}`);
-    }
-
-    console.log(`Storageアップロード完了: ${fileName}`);
-    return { path: fileName, mimeType: contentType };
-  };
-
-  // ネイティブカメラを起動（iOS/Android対応）
-  const handleCameraCapture = () => {
-    cameraInputRef.current?.click();
-  };
-
+  // Keep the latest categories accessible inside async callbacks (the
+  // scan result arrives asynchronously after the user may have navigated).
+  const dbCategoriesRef = useRef(dbCategories);
   useEffect(() => {
-    return () => {
-      if (capturedImage?.startsWith('blob:')) {
-        URL.revokeObjectURL(capturedImage);
-      }
-    };
-  }, [capturedImage]);
+    dbCategoriesRef.current = dbCategories;
+  }, [dbCategories]);
 
-  const analyzeImage = async (params: { file?: File; storagePath?: string; mimeType: string }) => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
+  const handleScanResult = useCallback((result: ReceiptAnalysisResult) => {
+    if (result.date) setDate(result.date);
+    if (!result.items || result.items.length === 0) return;
 
-      let response: Response;
-      if (params.file) {
-        const formData = new FormData();
-        formData.append('file', params.file, params.file.name);
-        formData.append('mimeType', params.mimeType);
-
-        response = await fetch('/api/receipt', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-          },
-          body: formData,
-        });
-      } else {
-        response = await fetch('/api/receipt', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
-          },
-          body: JSON.stringify({ storagePath: params.storagePath, mimeType: params.mimeType }),
-        });
-      }
-
-      const text = await response.text();
-      let result: ReceiptAnalysisResult;
-      try {
-        result = JSON.parse(text);
-      } catch {
-        console.error('レスポンスがJSONではありません:', response.status, text.substring(0, 200));
-        alert('サーバーエラーが発生しました。もう一度お試しください。');
-        return;
-      }
-
-      if (!response.ok) {
-        console.error('API error:', response.status, result);
-        alert(`解析エラー (${response.status}): もう一度お試しください。`);
-        return;
-      }
-
-      if (result._perf) {
-        logPerf('receipt', result._perf);
-        showPerfToast('レシート解析', result._perf.total);
-      }
-
-      if (result.date) setDate(result.date);
-      if (result.items && result.items.length > 0) {
-        const cats = dbCategoriesRef.current;
-        setItems(result.items.map(item => {
-          const main = item.categoryMain || "その他";
-          const catEntry = cats.find(c => c.main === main);
-          const validMain = catEntry ? main : (cats[0]?.main || "その他");
-          const validSubs = cats.find(c => c.main === validMain)?.subs || ["その他"];
-          const sub = item.categorySub && validSubs.includes(item.categorySub)
+    const cats = dbCategoriesRef.current;
+    setItems(
+      result.items.map((item) => {
+        const main = item.categoryMain || "その他";
+        const catEntry = cats.find((c) => c.main === main);
+        const validMain = catEntry ? main : cats[0]?.main || "その他";
+        const validSubs =
+          cats.find((c) => c.main === validMain)?.subs || ["その他"];
+        const sub =
+          item.categorySub && validSubs.includes(item.categorySub)
             ? item.categorySub
             : validSubs[0] || "その他";
-          return {
-            categoryMain: validMain,
-            categorySub: sub,
-            storeName: item.storeName || "",
-            amount: item.amount || 0,
-            memo: item.memo || "",
-          };
-        }));
-      }
-    } catch (error) {
-      console.error("レシート解析エラー:", error);
-      alert("レシートの解析に失敗しました。手動で入力してください。");
-    } finally {
-      setIsAnalyzing(false);
-    }
-  };
-
-  const processSelectedFile = async (file: File, previewUrl: string, pdf: boolean) => {
-    // 先に解析画面を表示（capturedImage の重い HEIC デコードより前に出す）
-    setIsPdf(pdf);
-    setIsAnalyzing(true);
-    setAnalysisStage('uploading');
-
-    // React に commit + paint させてから重い処理 (canvas 圧縮) を始める
-    // → 解析画面が即時表示される
-    await new Promise<void>((resolve) =>
-      requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+        return {
+          categoryMain: validMain,
+          categorySub: sub,
+          storeName: item.storeName || "",
+          amount: item.amount || 0,
+          memo: item.memo || "",
+        };
+      }),
     );
+  }, []);
 
-    // 解析画面が出た後に preview 画像を設定（裏で decode される）
-    setCapturedImage(previewUrl);
+  const scan = useScanUpload<ReceiptAnalysisResult>({
+    endpoint: "/api/receipt",
+    perfLabel: "receipt",
+    label: "レシート",
+    onSuccess: handleScanResult,
+  });
 
-    try {
-      const prepared = await compressScannableFile(file);
-      const mimeType = detectUploadMimeType(prepared);
-
-      if (shouldUseDirectAnalysisUpload(prepared)) {
-        setAnalysisStage('analyzing');
-        await analyzeImage({ file: prepared, mimeType });
-        return;
-      }
-
-      const { path, mimeType: uploadedMimeType } = await uploadToStorage(prepared);
-      setAnalysisStage('analyzing');
-      await analyzeImage({ storagePath: path, mimeType: uploadedMimeType });
-    } catch (err) {
-      console.error('ファイル処理エラー:', err);
-      alert('ファイルの処理に失敗しました。もう一度お試しください。');
-      setIsAnalyzing(false);
-    }
-  };
-
-  // カメラ撮影結果の処理
-  const handleCameraChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    e.target.value = '';
-
-    const previewUrl = URL.createObjectURL(file);
-    await processSelectedFile(file, previewUrl, false);
-  };
-
-  // ファイルから画像/PDFを読み込み
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    e.target.value = '';
-
-    const isFilePdf = file.type === 'application/pdf';
-    const previewUrl = URL.createObjectURL(file);
-    await processSelectedFile(file, previewUrl, isFilePdf);
-  };
-
+  // Scroll to the newly-added item when the list grows
   const itemsEndRef = useRef<HTMLDivElement>(null);
   const prevItemsLengthRef = useRef(0);
-
-  // 項目追加時に末尾へスクロール
   useEffect(() => {
-    if (items.length > prevItemsLengthRef.current && prevItemsLengthRef.current > 0) {
+    if (
+      items.length > prevItemsLengthRef.current &&
+      prevItemsLengthRef.current > 0
+    ) {
       setTimeout(() => {
-        itemsEndRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        itemsEndRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "nearest",
+        });
       }, 100);
     }
     prevItemsLengthRef.current = items.length;
   }, [items.length]);
 
-  // 項目を追加
-  const addItem = () => {
-    setItems([...items, {
-      categoryMain: "食費",
-      categorySub: "食料品",
-      storeName: "",
-      amount: 0,
-      memo: "",
-    }]);
-  };
+  const addItem = useCallback(() => {
+    setItems((prev) => [...prev, { ...DEFAULT_ITEM }]);
+  }, []);
 
-  // 項目を削除
-  const removeItem = (index: number) => {
-    if (items.length > 1) {
-      setItems(items.filter((_, i) => i !== index));
+  const removeItem = useCallback((index: number) => {
+    setItems((prev) => (prev.length > 1 ? prev.filter((_, i) => i !== index) : prev));
+  }, []);
+
+  const updateItem = useCallback(
+    (index: number, field: keyof ExpenseItem, value: string | number) => {
+      setItems((prev) => {
+        const next = [...prev];
+        next[index] = { ...next[index], [field]: value };
+        if (field === "categoryMain") {
+          const subs = getSubcategories(value as string);
+          next[index].categorySub = subs[0];
+        }
+        return next;
+      });
+    },
+    [getSubcategories],
+  );
+
+  const openPickerFor = useCallback((index: number) => {
+    setPickerItemIndex(index);
+    setPickerOpen(true);
+  }, []);
+
+  const handlePickerSelect = useCallback((main: string, sub: string) => {
+    setItems((prev) => {
+      const next = [...prev];
+      next[pickerItemIndex] = {
+        ...next[pickerItemIndex],
+        categoryMain: main,
+        categorySub: sub,
+      };
+      return next;
+    });
+    setPickerOpen(false);
+  }, [pickerItemIndex]);
+
+  const totalAmount = useMemo(
+    () => items.reduce((sum, item) => sum + Number(item.amount || 0), 0),
+    [items],
+  );
+
+  const resetForm = useCallback(() => {
+    setDate(getJSTDateString());
+    setItems([{ ...DEFAULT_ITEM }]);
+    scan.clearCaptured();
+  }, [scan]);
+
+  const handleOpenChange = (newOpen: boolean) => {
+    if (!newOpen) {
+      resetForm();
+      setContinuousScan(false);
+      setScanCount(0);
     }
+    onOpenChange(newOpen);
   };
 
-  // 項目を更新
-  const updateItem = (index: number, field: keyof ExpenseItem, value: string | number) => {
-    const newItems = [...items];
-    newItems[index] = { ...newItems[index], [field]: value };
-    
-    // 大カテゴリーが変更された場合、小カテゴリーをリセット
-    if (field === 'categoryMain') {
-      const subcategories = getSubcategoriesFromDB(value as string);
-      newItems[index].categorySub = subcategories[0];
-    }
-    
-    setItems(newItems);
-  };
-
-  // フォーム送信（Supabaseに保存）
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
 
     try {
-      // 現在のユーザーIDとセッションを取得
-      const { data: { user } } = await supabase.auth.getUser();
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
       const accessToken = session?.access_token || "";
+
       let insertedTxId: string | null = null;
-      
+
       if (items.length > 1) {
-        // 複数項目 → 1つのトランザクション + items JSONB に格納
         const { data: inserted, error } = await supabase
-          .from('transactions')
+          .from("transactions")
           .insert({
             user_id: user?.id,
             user_type: selectedUser,
-            type: 'expense',
-            date: date,
+            type: "expense",
+            date,
             category_main: items[0].categoryMain,
             category_sub: items[0].categorySub,
             store_name: items[0].storeName,
             amount: totalAmount,
-            memo: items.map(i => i.memo || i.categorySub).join(', '),
-            items: items.map(item => ({
+            memo: items.map((i) => i.memo || i.categorySub).join(", "),
+            items: items.map((item) => ({
               categoryMain: item.categoryMain,
               categorySub: item.categorySub,
               storeName: item.storeName,
@@ -323,83 +227,78 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
               memo: item.memo,
             })),
           })
-          .select('id')
+          .select("id")
           .single();
 
         if (error) {
-          console.error('Supabase保存エラー:', error);
+          console.error("Supabase保存エラー:", error);
           alert(`保存に失敗しました: ${error.message}`);
           return;
         }
         insertedTxId = inserted?.id || null;
       } else {
-        // 単一項目 → 通常のトランザクション
         const item = items[0];
         const { data: inserted, error } = await supabase
-          .from('transactions')
+          .from("transactions")
           .insert({
             user_id: user?.id,
             user_type: selectedUser,
-            type: 'expense',
-            date: date,
+            type: "expense",
+            date,
             category_main: item.categoryMain,
             category_sub: item.categorySub,
             store_name: item.storeName,
             amount: item.amount,
             memo: item.memo,
           })
-          .select('id')
+          .select("id")
           .single();
 
         if (error) {
-          console.error('Supabase保存エラー:', error);
+          console.error("Supabase保存エラー:", error);
           alert(`保存に失敗しました: ${error.message}`);
           return;
         }
         insertedTxId = inserted?.id || null;
       }
 
-      alert('支出を追加しました！');
-      
-      // 共同支出の場合、パートナーに Push 通知を送信
+      alert("支出を追加しました！");
+
+      // Push partner for joint expenses (fire-and-forget)
       if (selectedUser === "共同") {
         try {
           await fetch("/api/push/joint-expense", {
             method: "POST",
-            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${accessToken}` },
-            body: JSON.stringify({
-              transactionId: insertedTxId,
-            }),
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${accessToken}`,
+            },
+            body: JSON.stringify({ transactionId: insertedTxId }),
           });
         } catch (pushError) {
           console.error("Push通知送信エラー:", pushError);
         }
       }
 
-      // 予算アラートチェック
-      try {
-        await checkBudgetAlerts(user?.id || '', selectedUser, items, totalAmount);
-      } catch (alertError) {
-        console.error("予算アラートチェックエラー:", alertError);
-      }
-      
-      // データを即座に反映
+      // Budget alerts (fire-and-forget, swallows errors internally)
+      void runBudgetAlertCheck({
+        userId: user?.id || "",
+        userType: selectedUser,
+        savedItems: items,
+        accessToken,
+      });
+
       triggerRefresh();
-      
-      // 連続スキャンモードの場合、フォームリセットしてカメラを再起動
+
       if (continuousScan) {
-        setScanCount(prev => prev + 1);
+        setScanCount((prev) => prev + 1);
         resetForm();
-        // 少し待ってからカメラを起動
-        setTimeout(() => {
-          cameraInputRef.current?.click();
-        }, 500);
+        setTimeout(() => scan.openCamera(), 500);
         return;
       }
-      
-      // フォームをリセット
+
       resetForm();
-      // キャラ着せ替え時は成功演出を表示
+
       if (charActive && charAssets) {
         setShowSuccess(true);
         setTimeout(() => {
@@ -410,140 +309,14 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
         onOpenChange(false);
       }
     } catch (error) {
-      console.error('保存エラー:', error);
-      alert('保存に失敗しました');
+      console.error("保存エラー:", error);
+      alert("保存に失敗しました");
     } finally {
       setIsSaving(false);
     }
   };
 
-  // フォームをリセット
-  const resetForm = () => {
-    setDate(getJSTDateString());
-    setItems([{
-      categoryMain: "食費",
-      categorySub: "食料品",
-      storeName: "",
-      amount: 0,
-      memo: "",
-    }]);
-    setCapturedImage(null);
-    setIsPdf(false);
-  };
-
-  // 予算アラートチェック
-  const checkBudgetAlerts = async (userId: string, userType: string, savedItems: typeof items, savedTotal: number) => {
-    try {
-      // 今月の範囲
-      const now = new Date();
-      const alertMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-      const monthStart = `${alertMonth}-01`;
-      const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-      const monthEnd = `${alertMonth}-${String(lastDay.getDate()).padStart(2, '0')}`;
-
-      // 今追加した支出のカテゴリのみチェック
-      const affectedCategories = new Set(savedItems.map(i => i.categoryMain));
-
-      // 予算取得（対象カテゴリのみ）
-      const { data: budgets } = await supabase
-        .from('budgets')
-        .select('category_main, monthly_budget')
-        .eq('user_type', userType);
-
-      if (!budgets || budgets.length === 0) return;
-
-      const relevantBudgets = budgets.filter(b => affectedCategories.has(b.category_main));
-      if (relevantBudgets.length === 0) return;
-
-      // 今月の支出取得
-      const { data: monthExpenses } = await supabase
-        .from('transactions')
-        .select('amount, category_main, items')
-        .eq('user_type', userType)
-        .eq('type', 'expense')
-        .gte('date', monthStart)
-        .lte('date', monthEnd);
-
-      // カテゴリ別支出集計
-      const spentMap: Record<string, number> = {};
-      monthExpenses?.forEach(t => {
-        if (t.items && Array.isArray(t.items) && t.items.length > 0) {
-          (t.items as Array<{ categoryMain: string; amount: number }>).forEach(item => {
-            spentMap[item.categoryMain] = (spentMap[item.categoryMain] || 0) + item.amount;
-          });
-        } else {
-          spentMap[t.category_main] = (spentMap[t.category_main] || 0) + t.amount;
-        }
-      });
-
-      // 既存のアラートログを取得（重複防止）
-      const { data: existingLogs } = await supabase
-        .from('budget_alert_logs')
-        .select('category_main, alert_type')
-        .eq('user_id', userId)
-        .eq('user_type', userType)
-        .eq('alert_month', alertMonth);
-
-      const sentSet = new Set(
-        (existingLogs || []).map(l => `${l.category_main}:${l.alert_type}`)
-      );
-
-      // アラート対象のカテゴリを検出
-      const alerts: string[] = [];
-      const newLogs: { user_id: string; user_type: string; category_main: string; alert_type: string; alert_month: string }[] = [];
-
-      for (const budget of relevantBudgets) {
-        const spent = spentMap[budget.category_main] || 0;
-        const pct = budget.monthly_budget > 0 ? (spent / budget.monthly_budget) * 100 : 0;
-        const remaining = budget.monthly_budget - spent;
-
-        if (pct >= 100 && !sentSet.has(`${budget.category_main}:100`)) {
-          alerts.push(`⚠️ ${budget.category_main}の予算を超過しました（¥${(-remaining).toLocaleString()}オーバー）`);
-          newLogs.push({ user_id: userId, user_type: userType, category_main: budget.category_main, alert_type: '100', alert_month: alertMonth });
-        } else if (pct >= 80 && pct < 100 && !sentSet.has(`${budget.category_main}:80`)) {
-          alerts.push(`⚠ ${budget.category_main}があと¥${remaining.toLocaleString()}で上限です`);
-          newLogs.push({ user_id: userId, user_type: userType, category_main: budget.category_main, alert_type: '80', alert_month: alertMonth });
-        }
-      }
-
-      // アラートがあればPush通知
-      if (alerts.length > 0) {
-        const { data: { session: alertSession } } = await supabase.auth.getSession();
-        const alertToken = alertSession?.access_token || "";
-        await fetch('/api/push/send', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${alertToken}` },
-          body: JSON.stringify({
-            title: '予算アラート',
-            body: alerts.join('\n'),
-            targetUserId: userId,
-            notificationType: 'budget_alert',
-            url: `/?page=kakeibo&tab=analysis`,
-          }),
-        });
-
-        // 送信ログを記録
-        if (newLogs.length > 0) {
-          await supabase.from('budget_alert_logs').insert(newLogs);
-        }
-      }
-    } catch (err) {
-      console.error('予算アラートチェックエラー:', err);
-    }
-  };
-
-  // ダイアログを閉じる際のクリーンアップ
-  const handleOpenChange = (newOpen: boolean) => {
-    if (!newOpen) {
-      resetForm();
-      setContinuousScan(false);
-      setScanCount(0);
-    }
-    onOpenChange(newOpen);
-  };
-
-  // 合計金額を計算
-  const totalAmount = items.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+  const currentPickerItem = items[pickerItemIndex];
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -569,259 +342,63 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
           </DialogDescription>
         </DialogHeader>
 
-        {/* AI解析中のアニメーション（フルスクリーン） */}
-        {isAnalyzing && createPortal(
-          <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-[100] flex items-center justify-center">
-            <div className="text-center space-y-6 px-8">
-              {charActive && charAssets ? (
-                <>
-                  <div className="relative mx-auto w-40 h-40">
-                    <div className="absolute inset-0 rounded-full border-4 border-white/10" />
-                    <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-purple-400 animate-spin" style={{ animationDuration: '1.2s' }} />
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <CharacterImage
-                        src={charAssets.scanning}
-                        alt="解析中"
-                        width={100}
-                        height={100}
-                        className="animate-bounce"
-                        fallback={<Sparkles className="h-10 w-10 text-purple-300" />}
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <p className="text-lg font-bold text-white">
-                      {analysisStage === 'uploading' ? '画像をアップロード中...' : 'レシートを解析中...'}
-                    </p>
-                    <p className="text-sm text-white/50">
-                      {analysisStage === 'uploading' ? 'しばらくお待ちください' : 'AIが項目を分類しています'}
-                    </p>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="relative mx-auto w-24 h-24">
-                    <div className="absolute inset-0 rounded-full border-2 border-purple-500/20" />
-                    <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-purple-400 animate-spin" style={{ animationDuration: '1s' }} />
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <Sparkles className="h-8 w-8 text-purple-300" />
-                    </div>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-base font-bold text-white">
-                      {analysisStage === 'uploading' ? '画像をアップロード中...' : 'レシートを解析中...'}
-                    </p>
-                    <p className="text-sm text-white/40">
-                      {analysisStage === 'uploading' ? 'しばらくお待ちください' : 'AIが項目を分類しています'}
-                    </p>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>,
-          document.body
-        )}
+        <ScanningOverlay
+          open={scan.isAnalyzing}
+          title={
+            scan.stage === "uploading"
+              ? "画像をアップロード中..."
+              : "レシートを解析中..."
+          }
+          subtitle={
+            scan.stage === "uploading"
+              ? "しばらくお待ちください"
+              : "AIが項目を分類しています"
+          }
+          tone="purple"
+        />
 
-        {/* 保存成功キャラ演出（フルスクリーン） */}
-        {showSuccess && charActive && charAssets && createPortal(
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex items-center justify-center">
-            <div className="text-center space-y-4 animate-char-celebrate">
-              <CharacterImage
-                src={charAssets.success || charAssets.avatar}
-                alt="成功！"
-                width={140}
-                height={140}
-                className="mx-auto drop-shadow-2xl"
-                fallback={null}
-              />
-              <p className="text-2xl font-bold text-white">記録できた！</p>
-              <p className="text-base text-white/60">ナイス家計管理！</p>
-            </div>
-            {/* 紙吹雪エフェクト */}
-            {[...Array(18)].map((_, i) => (
-              <div
-                key={i}
-                className="absolute w-3 h-3 rounded-full animate-confetti"
-                style={{
-                  left: `${5 + Math.random() * 90}%`,
-                  top: '-10px',
-                  backgroundColor: ['#FFD700', '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7'][i % 6],
-                  animationDelay: `${Math.random() * 0.8}s`,
-                  animationDuration: `${1.5 + Math.random() * 1}s`,
-                }}
-              />
-            ))}
-          </div>,
-          document.body
-        )}
+        <SuccessOverlay open={showSuccess} />
 
-        {/* カテゴリーポップアップピッカー（Portalで画面中央に固定表示） */}
-        {pickerOpen && createPortal(
-          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 pointer-events-auto" onClick={() => setPickerOpen(false)}>
-            <div className="absolute inset-0 bg-black/60" />
-            <div
-              className="relative bg-slate-900 border border-white/15 rounded-2xl p-4 w-full max-w-sm flex flex-col"
-              style={{ boxShadow: '0 8px 32px rgba(120,60,255,0.25)', maxHeight: '60vh' }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  {pickerStep === 'sub' && (
-                    <button onClick={() => setPickerStep('main')} className="text-white/50 hover:text-white text-sm mr-1">← 戻る</button>
-                  )}
-                  <span className="text-sm font-bold text-white">
-                    {pickerStep === 'main' ? 'カテゴリーを選択' : `${getCategoryIconFromDB(pickerTempMain)} ${pickerTempMain} › 小分類`}
-                  </span>
-                </div>
-                <button onClick={() => setPickerOpen(false)} className="text-white/40 hover:text-white text-xs px-2 py-1">✕</button>
-              </div>
-              <div className="overflow-y-auto flex-1 -mx-1 px-1">
-                {pickerStep === 'main' ? (
-                  <div className="grid grid-cols-3 gap-2">
-                    {dbCategories.map((cat) => {
-                      const isSelected = items[pickerItemIndex]?.categoryMain === cat.main;
-                      return (
-                        <button
-                          key={cat.main}
-                          type="button"
-                          onClick={() => {
-                            setPickerTempMain(cat.main);
-                            setPickerStep('sub');
-                          }}
-                          className={`flex flex-col items-center gap-1 p-2.5 rounded-xl border transition-all ${
-                            isSelected
-                              ? 'border-purple-500/60 bg-purple-500/15'
-                              : 'border-white/10 bg-white/5 hover:bg-white/10 hover:border-white/20'
-                          }`}
-                          style={isSelected ? { boxShadow: '0 0 12px rgba(168,85,247,0.4)' } : {}}
-                        >
-                          <span className="text-2xl">{cat.icon}</span>
-                          <span className="text-[11px] text-white/80 text-center leading-tight">{cat.main}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-2 gap-2">
-                    {getSubcategoriesFromDB(pickerTempMain).map((sub) => {
-                      const isSelected = items[pickerItemIndex]?.categoryMain === pickerTempMain && items[pickerItemIndex]?.categorySub === sub;
-                      return (
-                        <button
-                          key={sub}
-                          type="button"
-                          onClick={() => {
-                            setItems(prev => {
-                              const newItems = [...prev];
-                              newItems[pickerItemIndex] = {
-                                ...newItems[pickerItemIndex],
-                                categoryMain: pickerTempMain,
-                                categorySub: sub,
-                              };
-                              return newItems;
-                            });
-                            setPickerOpen(false);
-                          }}
-                          className={`p-3 rounded-xl border text-sm transition-all ${
-                            isSelected
-                              ? 'border-purple-500/60 bg-purple-500/15 text-white font-semibold'
-                              : 'border-white/10 bg-white/5 hover:bg-white/10 text-white/70'
-                          }`}
-                          style={isSelected ? { boxShadow: '0 0 12px rgba(168,85,247,0.4)' } : {}}
-                        >
-                          {sub}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>,
-          document.body
+        {currentPickerItem && (
+          <CategoryPicker
+            open={pickerOpen}
+            categories={dbCategories}
+            currentMain={currentPickerItem.categoryMain}
+            currentSub={currentPickerItem.categorySub}
+            onSelect={handlePickerSelect}
+            onClose={() => setPickerOpen(false)}
+            tone="purple"
+            mainTitle="カテゴリーを選択"
+            mainColumns={3}
+          />
         )}
 
         <div className="space-y-4">
-          {/* カメラ/アップロードセクション（iOSネイティブカメラ対応 + PDF対応） */}
-          {!capturedImage && (
-            <div className="grid gap-2 grid-cols-2">
-              <Button
-                type="button"
-                variant="outline"
-                className="h-20 border-dashed border-2 hover:border-purple-600 hover:bg-gradient-to-br hover:from-purple-50 hover:to-pink-50 dark:hover:from-purple-950 dark:hover:to-pink-950 transition-all text-xs"
-                onClick={handleCameraCapture}
-              >
-                <div className="flex flex-col items-center gap-1">
-                  <Camera className="h-6 w-6" />
-                  <span className="font-semibold">カメラで撮影</span>
-                </div>
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                className="h-20 border-dashed border-2 hover:border-blue-600 hover:bg-gradient-to-br hover:from-blue-50 hover:to-cyan-50 dark:hover:from-blue-950 dark:hover:to-cyan-950 transition-all text-xs"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <div className="flex flex-col items-center gap-1">
-                  <Upload className="h-6 w-6" />
-                  <span className="font-semibold">画像 / PDF</span>
-                </div>
-              </Button>
-              {/* カメラ用: capture属性でiOS/Androidネイティブカメラを起動 */}
-              <input
-                ref={cameraInputRef}
-                type="file"
-                accept="image/*"
-                capture="environment"
-                className="hidden"
-                onChange={handleCameraChange}
-              />
-              {/* アップロード用: 画像 + PDF対応 */}
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*,application/pdf"
-                className="hidden"
-                onChange={handleFileChange}
-              />
-            </div>
+          {!scan.capturedImage && (
+            <ScanButtons
+              cameraInputRef={scan.cameraInputRef}
+              fileInputRef={scan.fileInputRef}
+              onCameraChange={scan.onCameraChange}
+              onFileChange={scan.onFileChange}
+              variant="expense"
+            />
           )}
 
-          {/* プレビュー（画像 or PDFアイコン） */}
-          {capturedImage && (
-            <div className="relative rounded-lg overflow-hidden border border-purple-200 dark:border-purple-800 shadow-lg">
-              {isPdf ? (
-                <div className="flex items-center justify-center gap-2 p-6 bg-slate-100 dark:bg-slate-800">
-                  <FileText className="h-10 w-10 text-red-500" />
-                  <span className="text-sm font-semibold">PDFファイル</span>
-                </div>
-              ) : (
-                <NextImage
-                  src={capturedImage}
-                  alt="撮影したレシート"
-                  width={1200}
-                  height={1600}
-                  unoptimized
-                  className="w-full h-auto"
-                />
-              )}
-              <Button
-                type="button"
-                size="sm"
-                variant="destructive"
-                className="absolute top-2 right-2 rounded-full h-7 w-7 p-0"
-                onClick={() => { setCapturedImage(null); setIsPdf(false); }}
-              >
-                <X className="h-3 w-3" />
-              </Button>
-            </div>
+          {scan.capturedImage && (
+            <CapturedPreview
+              src={scan.capturedImage}
+              isPdf={scan.isPdf}
+              onClear={scan.clearCaptured}
+              variant="expense"
+            />
           )}
 
-          {/* 入力フォーム */}
           <form onSubmit={handleSubmit} className="space-y-3">
-            {/* 日付選択 */}
             <div className="flex items-center gap-2 p-2 rounded-lg bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-950 dark:to-purple-950 border">
               <Calendar className="h-4 w-4 text-purple-600" />
-              <Label htmlFor="date" className="text-sm font-semibold">日付</Label>
+              <Label htmlFor="date" className="text-sm font-semibold">
+                日付
+              </Label>
               <Input
                 id="date"
                 type="date"
@@ -832,7 +409,6 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
               />
             </div>
 
-            {/* 項目リスト */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold flex items-center gap-1">
@@ -852,88 +428,20 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
               </div>
 
               {items.map((item, index) => (
-                <div 
-                  key={index} 
-                  className="p-3 rounded-lg border bg-white/50 dark:bg-slate-900/50 backdrop-blur-sm shadow hover:shadow-lg transition-all space-y-2"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-bold text-purple-600">#{index + 1}</span>
-                    {/* カテゴリー選択ボタン（ポップアップピッカーを開く） */}
-                    <div className="relative flex-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setPickerItemIndex(index);
-                          setPickerTempMain(item.categoryMain);
-                          setPickerStep('main');
-                          setPickerOpen(true);
-                        }}
-                        className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg border border-purple-300 dark:border-purple-500/30 bg-purple-50 dark:bg-purple-500/10 hover:bg-purple-100 dark:hover:bg-purple-500/20 transition-all text-left"
-                      >
-                        <span className="flex items-center gap-1.5 text-xs">
-                          <span className="text-sm">{getCategoryIconFromDB(item.categoryMain)}</span>
-                          <span className="font-semibold text-slate-800 dark:text-white">{item.categoryMain}</span>
-                          <span className="text-slate-400 dark:text-white/30">/</span>
-                          <span className="text-slate-500 dark:text-white/60">{item.categorySub}</span>
-                        </span>
-                        <span className="text-[10px] text-purple-500 dark:text-purple-400 shrink-0">変更 ›</span>
-                      </button>
-                    </div>
-                    {items.length > 1 && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => removeItem(index)}
-                        className="text-destructive hover:text-destructive hover:bg-destructive/10 h-6 w-6 p-0"
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
-                    )}
-                  </div>
-
-                  <div className="grid gap-2 grid-cols-2">
-                    {/* 店名 */}
-                    <div className="space-y-1">
-                      <Label className="text-xs">店名</Label>
-                      <Input
-                        placeholder="スーパー○○"
-                        value={item.storeName}
-                        onChange={(e) => updateItem(index, 'storeName', e.target.value)}
-                        className="h-8 text-xs"
-                      />
-                    </div>
-
-                    {/* 金額 */}
-                    <div className="space-y-1">
-                      <Label className="text-xs">金額 *</Label>
-                      <Input
-                        type="number"
-                        placeholder="1000"
-                        value={item.amount || ''}
-                        onChange={(e) => updateItem(index, 'amount', Number(e.target.value))}
-                        required
-                        className="h-8 text-xs"
-                      />
-                    </div>
-                  </div>
-
-                  {/* メモ */}
-                  <div className="space-y-1">
-                    <Label className="text-xs">メモ</Label>
-                    <Input
-                      placeholder="詳細を入力"
-                      value={item.memo}
-                      onChange={(e) => updateItem(index, 'memo', e.target.value)}
-                      className="h-8 text-xs"
-                    />
-                  </div>
-                </div>
+                <ExpenseItemRow
+                  key={index}
+                  item={item}
+                  index={index}
+                  icon={getCategoryIcon(item.categoryMain)}
+                  onChange={(field, value) => updateItem(index, field, value)}
+                  onOpenPicker={() => openPickerFor(index)}
+                  onRemove={() => removeItem(index)}
+                  removable={items.length > 1}
+                />
               ))}
               <div ref={itemsEndRef} />
             </div>
 
-            {/* 合計金額表示 */}
             <div className="p-2 rounded-lg bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-950 dark:to-emerald-950 border border-green-200 dark:border-green-800">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-semibold">合計金額</span>
@@ -943,16 +451,14 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
               </div>
             </div>
 
-            {/* 連続スキャンモード + 送信ボタン */}
             <div className="space-y-2">
-              {/* 連続スキャントグル */}
               <button
                 type="button"
                 onClick={() => setContinuousScan(!continuousScan)}
                 className={`w-full flex items-center justify-between p-2.5 rounded-lg border transition-all text-xs ${
                   continuousScan
-                    ? 'bg-purple-500/10 border-purple-500/30 text-purple-300'
-                    : 'bg-white/5 border-white/10 text-white/50'
+                    ? "bg-purple-500/10 border-purple-500/30 text-purple-300"
+                    : "bg-white/5 border-white/10 text-white/50"
                 }`}
               >
                 <span className="flex items-center gap-2">
@@ -964,9 +470,13 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
                     </span>
                   )}
                 </span>
-                <div className={`w-8 h-4 rounded-full transition-colors flex items-center ${
-                  continuousScan ? 'bg-purple-500 justify-end' : 'bg-white/20 justify-start'
-                }`}>
+                <div
+                  className={`w-8 h-4 rounded-full transition-colors flex items-center ${
+                    continuousScan
+                      ? "bg-purple-500 justify-end"
+                      : "bg-white/20 justify-start"
+                  }`}
+                >
                   <div className="w-3 h-3 rounded-full bg-white mx-0.5" />
                 </div>
               </button>
@@ -976,10 +486,9 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
                 </p>
               )}
 
-              {/* ボタン行 */}
               <div className="flex gap-2">
-                <Button 
-                  type="submit" 
+                <Button
+                  type="submit"
                   className="flex-1 h-10 text-sm font-semibold bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
                   disabled={isSaving}
                 >
@@ -1000,14 +509,14 @@ export function AddExpenseDialog({ open, onOpenChange, selectedUser }: AddExpens
                     </>
                   )}
                 </Button>
-                <Button 
-                  type="button" 
-                  variant="outline" 
+                <Button
+                  type="button"
+                  variant="outline"
                   onClick={() => handleOpenChange(false)}
                   className="h-10 text-sm"
                   disabled={isSaving}
                 >
-                  {continuousScan && scanCount > 0 ? '完了' : 'キャンセル'}
+                  {continuousScan && scanCount > 0 ? "完了" : "キャンセル"}
                 </Button>
               </div>
             </div>
