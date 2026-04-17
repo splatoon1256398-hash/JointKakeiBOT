@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import dynamic from "next/dynamic";
 import { Calendar as CalendarIcon, List, Search, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
@@ -67,7 +67,7 @@ export function History({ isCompact = false }: HistoryProps) {
     try {
       const { data } = await supabase
         .from('transactions')
-        .select('*')
+        .select('id, date, category_main, category_sub, store_name, amount, memo, type, items, source, metadata')
         .eq('user_type', userType)
         .order('date', { ascending: false })
         .order('created_at', { ascending: false })
@@ -128,78 +128,93 @@ export function History({ isCompact = false }: HistoryProps) {
   }, [targetTxId, isLoading, viewMode, selectedDate, transactions, searchQuery]);
 
   const normalizedQuery = searchQuery.trim().toLowerCase();
-  const filteredTransactions = transactions.filter((t) => {
-    if (!normalizedQuery) return true;
-    const words = [
-      t.date,
-      t.category_main,
-      t.category_sub,
-      t.store_name,
-      t.memo,
-      t.type,
-      String(t.amount),
-      `¥${t.amount}`,
-    ]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase();
-    return words.includes(normalizedQuery);
-  });
 
-  const groupedTransactions = filteredTransactions.reduce((acc, transaction) => {
-    const date = transaction.date;
-    if (!acc[date]) {
-      acc[date] = [];
-    }
-    acc[date].push(transaction);
-    return acc;
-  }, {} as Record<string, Transaction[]>);
+  const filteredTransactions = useMemo(() => {
+    if (!normalizedQuery) return transactions;
+    return transactions.filter((t) => {
+      const words = [
+        t.date,
+        t.category_main,
+        t.category_sub,
+        t.store_name,
+        t.memo,
+        t.type,
+        String(t.amount),
+        `¥${t.amount}`,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return words.includes(normalizedQuery);
+    });
+  }, [transactions, normalizedQuery]);
 
-  const getDayTotal = (date: Date) => {
-    const dateStr = toLocalDateStr(date);
-    const dayTransactions = groupedTransactions[dateStr] || [];
-    const expenses = dayTransactions.filter(t => t.type !== 'income').reduce((sum, t) => sum + t.amount, 0);
-    const incomes = dayTransactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
-    return { expenses, incomes, net: incomes - expenses };
-  };
+  const groupedTransactions = useMemo(() => {
+    return filteredTransactions.reduce((acc, transaction) => {
+      const date = transaction.date;
+      if (!acc[date]) acc[date] = [];
+      acc[date].push(transaction);
+      return acc;
+    }, {} as Record<string, Transaction[]>);
+  }, [filteredTransactions]);
 
-  const tileContent = ({ date, view }: { date: Date; view: string }) => {
-    if (view === 'month') {
-      const { expenses, incomes } = getDayTotal(date);
-      if (expenses > 0 || incomes > 0) {
-        const expenseText = expenses > 0
-          ? (expenses >= 10000 ? `-${(expenses / 10000).toFixed(expenses % 10000 === 0 ? 0 : 1)}万` : `-¥${expenses.toLocaleString()}`)
-          : null;
-        const incomeText = incomes > 0
-          ? (incomes >= 10000 ? `+${(incomes / 10000).toFixed(incomes % 10000 === 0 ? 0 : 1)}万` : `+¥${incomes.toLocaleString()}`)
-          : null;
-        
-        return (
-          <div className="w-full text-center mt-0.5 space-y-0.5">
-            {expenseText && (
-              <p className="text-[10px] font-bold leading-tight px-0.5 rounded text-red-500 bg-red-500/10">
-                {expenseText}
-              </p>
-            )}
-            {incomeText && (
-              <p className="text-[10px] font-bold leading-tight px-0.5 rounded text-emerald-500 bg-emerald-500/10">
-                {incomeText}
-              </p>
-            )}
-          </div>
-        );
+  // date → { expenses, incomes } を 1 回の走査で構築。
+  // カレンダーの tileContent/tileClassName が同じ日付で getDayTotal を毎回計算していた
+  // コストを削減する。
+  const dayTotalsByDate = useMemo(() => {
+    const map = new Map<string, { expenses: number; incomes: number }>();
+    for (const [date, txs] of Object.entries(groupedTransactions)) {
+      let expenses = 0;
+      let incomes = 0;
+      for (const t of txs) {
+        if (t.type === 'income') incomes += t.amount;
+        else expenses += t.amount;
       }
+      map.set(date, { expenses, incomes });
     }
-    return null;
-  };
+    return map;
+  }, [groupedTransactions]);
 
-  const tileClassName = ({ date, view }: { date: Date; view: string }) => {
-    if (view === 'month') {
-      const { expenses, incomes } = getDayTotal(date);
-      if (expenses > 0 || incomes > 0) return 'has-expense';
-    }
-    return '';
-  };
+  const getDayTotal = useCallback((date: Date) => {
+    const dateStr = toLocalDateStr(date);
+    const entry = dayTotalsByDate.get(dateStr);
+    if (!entry) return { expenses: 0, incomes: 0, net: 0 };
+    return { expenses: entry.expenses, incomes: entry.incomes, net: entry.incomes - entry.expenses };
+  }, [dayTotalsByDate]);
+
+  const tileContent = useCallback(({ date, view }: { date: Date; view: string }) => {
+    if (view !== 'month') return null;
+    const { expenses, incomes } = getDayTotal(date);
+    if (expenses === 0 && incomes === 0) return null;
+
+    const expenseText = expenses > 0
+      ? (expenses >= 10000 ? `-${(expenses / 10000).toFixed(expenses % 10000 === 0 ? 0 : 1)}万` : `-¥${expenses.toLocaleString()}`)
+      : null;
+    const incomeText = incomes > 0
+      ? (incomes >= 10000 ? `+${(incomes / 10000).toFixed(incomes % 10000 === 0 ? 0 : 1)}万` : `+¥${incomes.toLocaleString()}`)
+      : null;
+
+    return (
+      <div className="w-full text-center mt-0.5 space-y-0.5">
+        {expenseText && (
+          <p className="text-[10px] font-bold leading-tight px-0.5 rounded text-red-500 bg-red-500/10">
+            {expenseText}
+          </p>
+        )}
+        {incomeText && (
+          <p className="text-[10px] font-bold leading-tight px-0.5 rounded text-emerald-500 bg-emerald-500/10">
+            {incomeText}
+          </p>
+        )}
+      </div>
+    );
+  }, [getDayTotal]);
+
+  const tileClassName = useCallback(({ date, view }: { date: Date; view: string }) => {
+    if (view !== 'month') return '';
+    const { expenses, incomes } = getDayTotal(date);
+    return (expenses > 0 || incomes > 0) ? 'has-expense' : '';
+  }, [getDayTotal]);
 
   return (
     <div className={isCompact ? "space-y-4" : "space-y-6 pb-24"}>

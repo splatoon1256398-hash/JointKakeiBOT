@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { ChevronRight, ChevronLeft, ChevronsLeft, ChevronsRight, TrendingUp, TrendingDown, Calendar as CalendarIcon, Banknote, Search, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useApp } from "@/contexts/app-context";
@@ -283,7 +283,9 @@ export function Analysis() {
   };
 
   // 選択月のトランザクションをフィルタ（items対応）
-  const getFilteredTransactions = () => {
+  // renderDetail で 1 回しか使わないが、親の再描画ごとに再計算されると
+  // 大きな transactions 配列のスキャンがムダなので useMemo 化する。
+  const filteredDetailTransactions = useMemo(() => {
     const mm = String(selectedMonth).padStart(2, '0');
     const firstDayStr = `${selectedYear}-${mm}-01`;
     const lastDay = new Date(selectedYear, selectedMonth, 0);
@@ -312,7 +314,7 @@ export function Analysis() {
       return t.category_main === selectedMainCategory &&
         (drillLevel === 'subcategory' || t.category_sub === selectedSubCategory);
     });
-  };
+  }, [transactions, selectedYear, selectedMonth, selectedMainCategory, selectedSubCategory, drillLevel, normalizedQuery]);
 
   // 月選択ナビゲーション
   const renderMonthNav = () => (
@@ -568,7 +570,7 @@ export function Analysis() {
 
   // Level 3: 個別トランザクション（items対応 + 日付グループ化）
   const renderDetail = () => {
-    const filtered = getFilteredTransactions();
+    const filtered = filteredDetailTransactions;
 
     // items対応: マッチする明細を展開表示
     interface DetailItem {

@@ -77,7 +77,7 @@ export function IncomeDetail({ onBack, selectedYear, selectedMonth }: Props) {
 
       let query = supabase
         .from("transactions")
-        .select("*")
+        .select("id, date, category_main, category_sub, store_name, amount, memo, metadata, target_month, income_month, type, user_type")
         .eq("type", "income")
         .gte("date", startStr)
         .lte("date", endStr)
