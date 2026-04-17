@@ -9,6 +9,7 @@ import { supabase } from "@/lib/supabase";
 import { useApp } from "@/contexts/app-context";
 import { useCharacter } from "@/lib/use-character";
 import { CharacterImage } from "@/components/character-image";
+import { MonthlyReportBanner } from "@/components/monthly-report-banner";
 
 interface Message {
   id: string;
@@ -318,6 +319,9 @@ export function Chat() {
           <h1 className="text-base font-bold">AIチャット - {selectedUser}</h1>
         </div>
       </div>
+
+      {/* 月次AIレポートバナー (未読時のみ表示) */}
+      <MonthlyReportBanner />
 
       {/* メッセージエリア + 入力エリアをflexで収める */}
       <Card className="flex-1 bg-slate-800/50 backdrop-blur-xl border-slate-700/50 shadow-xl overflow-hidden flex flex-col min-h-0">

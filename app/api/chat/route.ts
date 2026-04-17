@@ -5,6 +5,7 @@ import { validateSelectedUser } from "@/lib/auth";
 import { getJSTDateString, getJSTMonthRange, getJSTPrevMonthRange } from "@/lib/date";
 import { ChatRequestSchema, parseBody } from "@/lib/server/schemas";
 import { AppError, reportError, toErrorPayload } from "@/lib/errors";
+import { buildCategoryHints } from "@/lib/server/category-hints";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -82,6 +83,7 @@ export async function POST(request: NextRequest) {
       { data: budgets },
       { data: savingGoals },
       { data: categories },
+      categoryHints,
     ] = await Promise.all([
       supabaseAdmin
         .from("transactions")
@@ -116,6 +118,7 @@ export async function POST(request: NextRequest) {
         .from("categories")
         .select("main_category, subcategories")
         .order("sort_order"),
+      buildCategoryHints(user.id, supabaseAdmin),
     ]);
 
     const totalExpense =
@@ -189,7 +192,7 @@ ${prevComparison}
 
 【利用可能なカテゴリー】
 ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.join(", ")}`).join("\n") || "- その他: その他"}
-
+${categoryHints ? `\n${categoryHints}\n` : ""}
 【🔴 最重要ルール: 毎メッセージ独立処理】
 - ユーザーの各メッセージは完全に独立した記録リクエストである
 - 過去に「記録しました」と返答済みでも、新しいメッセージに金額があれば必ず recordExpense を呼べ

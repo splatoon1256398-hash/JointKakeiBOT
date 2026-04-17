@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Bell, BellOff, Loader2, CheckCircle2, AlertCircle, DollarSign, Users } from "lucide-react";
+import { Bell, BellOff, Loader2, CheckCircle2, AlertCircle, DollarSign, Users, FileText } from "lucide-react";
 import { useApp } from "@/contexts/app-context";
 import { supabase } from "@/lib/supabase";
 import { subscribeToPush, unsubscribeFromPush, registerServiceWorker } from "@/lib/push";
@@ -11,11 +11,13 @@ type PushState = "loading" | "unsupported" | "denied" | "prompt" | "subscribed" 
 interface NotificationPreferences {
   budget_alert: boolean;
   joint_expense_alert: boolean;
+  monthly_report: boolean;
 }
 
 const DEFAULT_PREFS: NotificationPreferences = {
   budget_alert: true,
   joint_expense_alert: true,
+  monthly_report: true,
 };
 
 export function PushNotificationSettings() {
@@ -302,6 +304,34 @@ export function PushNotificationSettings() {
               <span
                 className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${
                   prefs.budget_alert ? "translate-x-5" : ""
+                }`}
+              />
+            </button>
+          </div>
+
+          {/* 月次AIレポート */}
+          <div
+            className="flex items-center justify-between rounded-xl p-3"
+            style={{ background: `${theme.primary}10`, border: `1px solid ${theme.primary}30` }}
+          >
+            <div className="flex items-center gap-3">
+              <FileText className="h-4 w-4 text-emerald-400 flex-shrink-0" />
+              <div>
+                <p className="text-sm font-medium text-white">月次AIレポート</p>
+                <p className="text-xs text-gray-400">毎月1日に先月の振り返りを配信</p>
+              </div>
+            </div>
+            <button
+              onClick={() => savePrefs({ ...prefs, monthly_report: !prefs.monthly_report })}
+              disabled={isSavingPrefs}
+              className={`relative w-11 h-6 rounded-full transition-colors ${
+                prefs.monthly_report ? "" : "bg-gray-600"
+              }`}
+              style={prefs.monthly_report ? { backgroundColor: theme.primary } : {}}
+            >
+              <span
+                className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${
+                  prefs.monthly_report ? "translate-x-5" : ""
                 }`}
               />
             </button>

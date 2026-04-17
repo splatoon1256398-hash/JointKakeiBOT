@@ -7,6 +7,10 @@
     {
       "path": "/api/cron/fixed-expenses",
       "schedule": "0 15 * * *"
+    },
+    {
+      "path": "/api/cron/monthly-report",
+      "schedule": "0 0 1 * *"
     }
   ]
 }

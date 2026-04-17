@@ -248,6 +248,35 @@ export function EditTransactionDialog({
         return;
       }
 
+      // Feature #1: カテゴリを変更した場合は category_corrections に学習用履歴を残す。
+      // 単一品目 (items.length <= 1) のときだけ記録 (複数品目は修正箇所が特定しづらいためスキップ)。
+      if (
+        !hasItems &&
+        transaction &&
+        (transaction.category_main !== categoryMain ||
+          transaction.category_sub !== categorySub)
+      ) {
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user) {
+            await supabase.from("category_corrections").insert({
+              user_id: user.id,
+              user_type: userType,
+              store_name: storeName || transaction.store_name || null,
+              memo: memo || transaction.memo || null,
+              original_category_main: transaction.category_main,
+              original_category_sub: transaction.category_sub,
+              corrected_category_main: categoryMain,
+              corrected_category_sub: categorySub,
+              source: "edit_dialog",
+            });
+          }
+        } catch (learnErr) {
+          // 学習ログの失敗で本体更新を失敗扱いにはしない
+          console.warn("category_corrections insert failed:", learnErr);
+        }
+      }
+
       triggerRefresh();
       onOpenChange(false);
     } catch (error) {
