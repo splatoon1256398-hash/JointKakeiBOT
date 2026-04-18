@@ -5,6 +5,7 @@ import {
   LayoutGrid, Loader2, Save, Check,
   UtensilsCrossed, Coffee, PiggyBank, Calendar,
   Banknote, ShoppingCart, TrendingDown, HandCoins,
+  type LucideIcon,
 } from "lucide-react";
 import { useApp } from "@/contexts/app-context";
 import { supabase } from "@/lib/supabase";
@@ -27,7 +28,7 @@ const DEFAULT_SLOTS: WidgetSlot[] = [
 ];
 
 // ウィジェットのアイコンマッピング
-const WIDGET_ICONS: Record<string, any> = {
+const WIDGET_ICONS: Record<string, LucideIcon> = {
   food_budget: UtensilsCrossed,
   dining_count: Coffee,
   saving_progress: PiggyBank,
@@ -184,8 +185,6 @@ export function HomeWidgetSettings() {
 
       <div className="space-y-5">
         {slots.map((slot, index) => {
-          const IconForSlot = WIDGET_ICONS[slot.type];
-
           return (
             <div key={index} className="space-y-2">
               {/* スロットヘッダー */}

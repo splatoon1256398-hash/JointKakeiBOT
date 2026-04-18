@@ -34,7 +34,28 @@ async function getEmailContent(accessToken: string, messageId: string) {
   return res.json();
 }
 
-function extractEmailBody(message: any): string {
+interface GmailHeader {
+  name: string;
+  value: string;
+}
+
+interface GmailMessagePart {
+  mimeType?: string;
+  body?: { data?: string };
+  parts?: GmailMessagePart[];
+}
+
+interface GmailMessage {
+  labelIds?: string[];
+  payload?: GmailMessagePart & { headers?: GmailHeader[] };
+}
+
+interface GmailLabel {
+  id: string;
+  name: string;
+}
+
+function extractEmailBody(message: GmailMessage): string {
   const payload = message.payload;
   if (!payload) return "";
 
@@ -59,8 +80,10 @@ function extractEmailBody(message: any): string {
   return "";
 }
 
-function extractHeader(headers: any[], name: string): string {
-  const header = headers?.find((h: any) => h.name.toLowerCase() === name.toLowerCase());
+function extractHeader(headers: GmailHeader[], name: string): string {
+  const header = headers?.find(
+    (h) => h.name.toLowerCase() === name.toLowerCase(),
+  );
   return header?.value || "";
 }
 
@@ -107,9 +130,11 @@ async function getOrCreateLabelId(accessToken: string): Promise<string | null> {
       "https://gmail.googleapis.com/gmail/v1/users/me/labels",
       { headers: { Authorization: `Bearer ${accessToken}` } }
     );
-    const listData = await listRes.json();
+    const listData = (await listRes.json()) as {
+      labels?: GmailLabel[];
+    };
     const existing = listData.labels?.find(
-      (l: any) => l.name === PROCESSED_LABEL_NAME
+      (l) => l.name === PROCESSED_LABEL_NAME,
     );
     if (existing) return existing.id;
 
@@ -140,7 +165,7 @@ async function getOrCreateLabelId(accessToken: string): Promise<string | null> {
 /**
  * メールにラベルがついているか確認
  */
-function hasLabel(message: any, labelId: string): boolean {
+function hasLabel(message: GmailMessage, labelId: string): boolean {
   return message.labelIds?.includes(labelId) || false;
 }
 

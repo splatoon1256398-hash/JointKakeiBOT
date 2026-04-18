@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI, Type, type Content, type Part, type Tool } from "@google/genai";
 import { validateSelectedUser } from "@/lib/auth";
 import { getJSTDateString, getJSTMonthRange, getJSTPrevMonthRange } from "@/lib/date";
+import { ChatRequestSchema, parseBody } from "@/lib/server/schemas";
+import { AppError, reportError, toErrorPayload } from "@/lib/errors";
+import { buildCategoryHints } from "@/lib/server/category-hints";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -38,51 +41,34 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries = 2): Promise<T> {
   throw new Error('Unreachable');
 }
 
-interface ChatHistoryItem {
-  role: "user" | "assistant";
-  content: string;
-  functionCalls?: Array<{ name: string; args: Record<string, unknown>; result: { success: boolean; message: string } }>;
-}
-
-interface ChatRequest {
-  message: string;
-  selectedUser: string;
-  history: ChatHistoryItem[];
-  lastRecordedId: string | null;
-}
-
-
 export async function POST(request: NextRequest) {
   try {
     // 認証チェック
     const authHeader = request.headers.get("authorization");
     const token = authHeader?.replace("Bearer ", "");
     if (!token) {
-      return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
+      throw new AppError("auth_required", 401, "認証が必要です");
     }
     const {
       data: { user },
       error: authError,
     } = await supabaseAdmin.auth.getUser(token);
     if (authError || !user) {
-      return NextResponse.json(
-        { error: "認証に失敗しました" },
-        { status: 401 }
-      );
+      throw new AppError("auth_invalid", 401, "認証に失敗しました");
     }
 
-    const body: ChatRequest = await request.json();
-    const { message, selectedUser, history, lastRecordedId } = body;
+    const rawBody = await request.json().catch(() => null);
+    const { message, selectedUser, history, lastRecordedId } = parseBody(
+      ChatRequestSchema,
+      rawBody
+    );
     const authDisplayName = typeof user.user_metadata?.display_name === "string"
       ? user.user_metadata.display_name.trim()
       : (user.email?.split("@")[0] ?? "");
 
     // ===== selectedUser の認可チェック =====
     if (!validateSelectedUser(selectedUser, authDisplayName)) {
-      return NextResponse.json(
-        { error: "許可されていないユーザー区分です" },
-        { status: 403 }
-      );
+      throw new AppError("forbidden", 403, "許可されていないユーザー区分です");
     }
 
     // ===== コンテキスト取得 =====
@@ -97,6 +83,7 @@ export async function POST(request: NextRequest) {
       { data: budgets },
       { data: savingGoals },
       { data: categories },
+      categoryHints,
     ] = await Promise.all([
       supabaseAdmin
         .from("transactions")
@@ -131,6 +118,7 @@ export async function POST(request: NextRequest) {
         .from("categories")
         .select("main_category, subcategories")
         .order("sort_order"),
+      buildCategoryHints(user.id, supabaseAdmin),
     ]);
 
     const totalExpense =
@@ -204,7 +192,7 @@ ${prevComparison}
 
 【利用可能なカテゴリー】
 ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.join(", ")}`).join("\n") || "- その他: その他"}
-
+${categoryHints ? `\n${categoryHints}\n` : ""}
 【🔴 最重要ルール: 毎メッセージ独立処理】
 - ユーザーの各メッセージは完全に独立した記録リクエストである
 - 過去に「記録しました」と返答済みでも、新しいメッセージに金額があれば必ず recordExpense を呼べ
@@ -276,7 +264,7 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
 - 複数件登録時は各件を箇条書きで並べる。絶対にテーブルを使わないこと`;
 
     // ===== Gemini ツール定義 =====
-    const tools: any[] = [
+    const tools: Tool[] = [
       {
         functionDeclarations: [
             {
@@ -432,7 +420,7 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
       ];
 
     // ===== チャット履歴構築 =====
-    const chatHistory: Array<{ role: "user" | "model"; parts: any[] }> = [
+    const chatHistory: Content[] = [
       { role: "user", parts: [{ text: systemPrompt }] },
       { role: "model", parts: [{ text: "はい、承知しました。家計簿アシスタントとして対応します。" }] },
     ];
@@ -752,13 +740,19 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
       // すべての関数結果をまとめてAIに返して最終応答を生成
       try {
         const modelTurn = response.candidates?.[0]?.content;
-        const finalContents: any[] = [
+        const functionResponseParts: Part[] = executedFunctionCalls.map(
+          (fc) => ({
+            functionResponse: {
+              name: fc.name,
+              response: fc.result as Record<string, unknown>,
+            },
+          }),
+        );
+        const finalContents: Content[] = [
           ...chatHistory,
           { role: "user", parts: [{ text: message }] },
           ...(modelTurn ? [modelTurn] : []),
-          { role: "user", parts: executedFunctionCalls.map(fc => ({
-            functionResponse: { name: fc.name, response: fc.result as object },
-          })) },
+          { role: "user", parts: functionResponseParts },
         ];
         const finalResult = await withRetry(() => ai.models.generateContent({
           model: "gemini-3-flash-preview",
@@ -805,12 +799,8 @@ ${categories?.map((c: CategoryRow) => `- ${c.main_category}: ${c.subcategories?.
       ...(executedFunctionCalls.length > 0 && { functionCalls: executedFunctionCalls }),
     });
   } catch (error) {
-    const errMsg = error instanceof Error ? error.message : String(error);
-    const errStack = error instanceof Error ? error.stack?.substring(0, 500) : '';
-    console.error("Chat API error:", errMsg, "\nStack:", errStack);
-    return NextResponse.json(
-      { error: `エラーが発生しました: ${errMsg.substring(0, 200)}` },
-      { status: 500 }
-    );
+    reportError("chat", error);
+    const { status, body } = toErrorPayload(error);
+    return NextResponse.json(body, { status });
   }
 }

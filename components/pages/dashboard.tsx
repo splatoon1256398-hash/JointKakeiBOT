@@ -2,18 +2,19 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useApp } from "@/contexts/app-context";
-import { 
-  Wallet, 
-  TrendingDown, 
-  UtensilsCrossed, 
-  Coffee, 
-  PiggyBank, 
+import {
+  Wallet,
+  TrendingDown,
+  UtensilsCrossed,
+  Coffee,
+  PiggyBank,
   Calendar,
   ChevronRight,
   Banknote,
   ShoppingCart,
   HandCoins,
   Settings,
+  type LucideIcon,
 } from "lucide-react";
 // Phase 4-B: recharts を Dashboard の critical path から除去。
 // 自前 SVG ドーナツ (~50 行) で同じ見た目を再現。
@@ -51,11 +52,6 @@ interface CategoryBudget {
   percentage: number;
 }
 
-const BUDGETS = {
-  共同: 150000,
-  れん: 80000,
-  あかね: 70000,
-};
 
 const CHART_COLORS = ['#8b5cf6', '#ec4899', '#06b6d4', '#10b981', '#f59e0b', '#ef4444'];
 
@@ -82,7 +78,9 @@ export function Dashboard({ onNavigateToAnalysis, onNavigateToHistory }: Dashboa
   const [noMoneyDays, setNoMoneyDays] = useState(0);
   const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
   const [categoryBudgets, setCategoryBudgets] = useState<CategoryBudget[]>([]);
-  const [categoryBreakdown, setCategoryBreakdown] = useState<any[]>([]);
+  const [categoryBreakdown, setCategoryBreakdown] = useState<
+    Array<{ name: string; value: number }>
+  >([]);
   const [editingTransaction, setEditingTransaction] = useState<TransactionForEdit | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [widgetSlots, setWidgetSlots] = useState<WidgetSlot[]>([
@@ -97,7 +95,6 @@ export function Dashboard({ onNavigateToAnalysis, onNavigateToHistory }: Dashboa
     const now = new Date();
     const year = now.getFullYear();
     const month = now.getMonth();
-    const firstDay = new Date(year, month, 1);
     // new Date(year, month+1, 0) で正確な末日を取得（2月=28/29, etc）
     const lastDay = new Date(year, month + 1, 0);
     return {
@@ -275,7 +272,7 @@ export function Dashboard({ onNavigateToAnalysis, onNavigateToHistory }: Dashboa
   ).length;
 
   // ウィジェットレンダリングヘルパー
-  const ICON_MAP: Record<string, any> = {
+  const ICON_MAP: Record<string, LucideIcon> = {
     food_budget: UtensilsCrossed,
     dining_count: Coffee,
     saving_progress: PiggyBank,

@@ -112,6 +112,7 @@ export async function POST(request: NextRequest) {
       if (typeof url === "string" && url.trim()) return url;
       if (notificationType === "joint_expense_alert") return "/?page=kakeibo&tab=history";
       if (notificationType === "budget_alert") return "/?page=kakeibo&tab=analysis";
+      if (notificationType === "monthly_report") return "/?page=chat";
       if (typeof title === "string" && title.includes("Gmail")) return "/?page=kakeibo&tab=history";
       if (typeof title === "string" && title.includes("共同支出")) return "/?page=kakeibo&tab=history";
       return "/";

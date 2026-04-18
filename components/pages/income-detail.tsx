@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useApp } from "@/contexts/app-context";
+import { DeductionBar } from "@/components/income/deduction-bar";
 import {
   BarChart,
   Bar,
@@ -76,7 +77,7 @@ export function IncomeDetail({ onBack, selectedYear, selectedMonth }: Props) {
 
       let query = supabase
         .from("transactions")
-        .select("*")
+        .select("id, date, category_main, category_sub, store_name, amount, memo, metadata, target_month, income_month, type, user_type")
         .eq("type", "income")
         .gte("date", startStr)
         .lte("date", endStr)
@@ -249,34 +250,7 @@ export function IncomeDetail({ onBack, selectedYear, selectedMonth }: Props) {
 
             {/* 控除割合バー */}
             {yearDeductions > 0 && (
-              <div className="p-3 rounded-xl card-solid-inner">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs text-white/60">年間控除率</span>
-                  <span className="text-sm font-bold text-orange-400">
-                    {yearDeductionRate}%
-                  </span>
-                </div>
-                <div className="h-2.5 bg-white/10 rounded-full overflow-hidden">
-                  <div className="h-full flex">
-                    <div
-                      className="h-full bg-green-500 rounded-l-full"
-                      style={{ width: `${100 - yearDeductionRate}%` }}
-                    />
-                    <div
-                      className="h-full bg-orange-500 rounded-r-full"
-                      style={{ width: `${yearDeductionRate}%` }}
-                    />
-                  </div>
-                </div>
-                <div className="flex justify-between mt-1">
-                  <span className="text-[10px] text-green-400/60">
-                    手取り {100 - yearDeductionRate}%
-                  </span>
-                  <span className="text-[10px] text-orange-400/60">
-                    控除 {yearDeductionRate}%
-                  </span>
-                </div>
-              </div>
+              <DeductionBar rate={yearDeductionRate} label="年間控除率" />
             )}
 
             {yearMonthCount > 0 && (
@@ -425,20 +399,7 @@ export function IncomeDetail({ onBack, selectedYear, selectedMonth }: Props) {
                 </div>
 
                 {/* 控除バー */}
-                {mDeductions > 0 && (
-                  <div className="h-1.5 bg-white/10 rounded-full overflow-hidden mb-3">
-                    <div className="h-full flex">
-                      <div
-                        className="h-full bg-green-500 rounded-l-full"
-                        style={{ width: `${100 - mRate}%` }}
-                      />
-                      <div
-                        className="h-full bg-orange-500 rounded-r-full"
-                        style={{ width: `${mRate}%` }}
-                      />
-                    </div>
-                  </div>
-                )}
+                {mDeductions > 0 && <DeductionBar rate={mRate} size="sm" />}
 
                 {/* 明細 */}
                 <div className="space-y-1.5">
@@ -545,36 +506,11 @@ export function IncomeDetail({ onBack, selectedYear, selectedMonth }: Props) {
 
                 {/* 控除バー */}
                 {tmDeductions > 0 && (
-                  <div className="p-3 rounded-xl card-solid-inner">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs text-white/60">
-                        控除額（税・保険料等）
-                      </span>
-                      <span className="text-sm font-bold text-orange-400">
-                        -¥{tmDeductions.toLocaleString()} ({tmDeductionRate}%)
-                      </span>
-                    </div>
-                    <div className="h-2 bg-white/10 rounded-full overflow-hidden">
-                      <div className="h-full flex">
-                        <div
-                          className="h-full bg-green-500 rounded-l-full"
-                          style={{ width: `${100 - tmDeductionRate}%` }}
-                        />
-                        <div
-                          className="h-full bg-orange-500 rounded-r-full"
-                          style={{ width: `${tmDeductionRate}%` }}
-                        />
-                      </div>
-                    </div>
-                    <div className="flex justify-between mt-1">
-                      <span className="text-[10px] text-green-400/60">
-                        手取り {100 - tmDeductionRate}%
-                      </span>
-                      <span className="text-[10px] text-orange-400/60">
-                        控除 {tmDeductionRate}%
-                      </span>
-                    </div>
-                  </div>
+                  <DeductionBar
+                    rate={tmDeductionRate}
+                    label="控除額（税・保険料等）"
+                    amount={tmDeductions}
+                  />
                 )}
 
                 {/* 収入明細 */}
@@ -683,34 +619,7 @@ export function IncomeDetail({ onBack, selectedYear, selectedMonth }: Props) {
 
                 {/* 控除割合バー */}
                 {yearDeductions > 0 && (
-                  <div className="p-3 rounded-xl card-solid-inner">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs text-white/60">控除率</span>
-                      <span className="text-sm font-bold text-orange-400">
-                        {yearDeductionRate}%
-                      </span>
-                    </div>
-                    <div className="h-2 bg-white/10 rounded-full overflow-hidden">
-                      <div className="h-full flex">
-                        <div
-                          className="h-full bg-green-500 rounded-l-full"
-                          style={{ width: `${100 - yearDeductionRate}%` }}
-                        />
-                        <div
-                          className="h-full bg-orange-500 rounded-r-full"
-                          style={{ width: `${yearDeductionRate}%` }}
-                        />
-                      </div>
-                    </div>
-                    <div className="flex justify-between mt-1">
-                      <span className="text-[10px] text-green-400/60">
-                        手取り {100 - yearDeductionRate}%
-                      </span>
-                      <span className="text-[10px] text-orange-400/60">
-                        控除 {yearDeductionRate}%
-                      </span>
-                    </div>
-                  </div>
+                  <DeductionBar rate={yearDeductionRate} label="控除率" />
                 )}
               </div>
             )}

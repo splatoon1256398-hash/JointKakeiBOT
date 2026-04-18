@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { Palette, Check, RotateCcw, Info, Users, User, Sparkles, Wallet } from "lucide-react";
+import { Palette, Check, RotateCcw, Users, User, Sparkles, Wallet } from "lucide-react";
 import { useApp } from "@/contexts/app-context";
 import { CHARACTER_LIST, CharacterId } from "@/lib/characters";
 import { CharacterImage } from "@/components/character-image";

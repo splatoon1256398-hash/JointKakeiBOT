@@ -503,3 +503,79 @@ BEGIN
     COMMENT ON COLUMN user_settings.character_id IS 'キャラ着せ替えID。none=通常、hachiware=ハチワレ';
   END IF;
 END $$;
+
+-- ==========================================
+-- Stage 6 (2026-04-17): 新機能用テーブル
+--   #1 レシート自動分類の学習機能
+--   #7 月次 AI レポート
+-- ==========================================
+
+-- ----- #1 category_corrections -----
+-- ユーザがカテゴリを手動修正した履歴を残し、AI 推論時に few-shot として参照する。
+CREATE TABLE IF NOT EXISTS category_corrections (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_type TEXT NOT NULL,                       -- 共同 / れん / あかね
+  store_name TEXT,                               -- 店名（無くてもよい）
+  memo TEXT,                                     -- 商品・品目メモ
+  original_category_main TEXT,                   -- 修正前（AI が最初に付けた値）
+  original_category_sub TEXT,
+  corrected_category_main TEXT NOT NULL,         -- 修正後（ユーザが確定させた値）
+  corrected_category_sub TEXT NOT NULL,
+  source TEXT DEFAULT 'edit_dialog',             -- 記録元 (edit_dialog / chat など)
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_category_corrections_user_created
+  ON category_corrections (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_category_corrections_user_store
+  ON category_corrections (user_id, store_name);
+
+ALTER TABLE category_corrections ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view own category_corrections" ON category_corrections
+  FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert own category_corrections" ON category_corrections
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own category_corrections" ON category_corrections
+  FOR DELETE USING (auth.uid() = user_id);
+
+COMMENT ON TABLE category_corrections IS 'カテゴリ自動分類学習 (#1): ユーザが修正したカテゴリを few-shot 用に蓄積する';
+COMMENT ON COLUMN category_corrections.source IS '記録元。edit_dialog / chat / scan など';
+
+-- ----- #7 monthly_reports -----
+-- 毎月1日 9:00 JST に生成される月次 AI レポートの保存先。
+CREATE TABLE IF NOT EXISTS monthly_reports (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_type TEXT NOT NULL,                       -- 共同 / れん / あかね
+  year INTEGER NOT NULL,
+  month INTEGER NOT NULL,                        -- 1-12
+  summary_text TEXT NOT NULL,                    -- AI 生成の要約本文
+  total_expense INTEGER NOT NULL DEFAULT 0,
+  total_income INTEGER NOT NULL DEFAULT 0,
+  top_categories JSONB,                          -- [{main, amount}, ...]
+  prev_comparison JSONB,                         -- {prev_total, diff_pct}
+  read_at TIMESTAMP WITH TIME ZONE,              -- ユーザが UI 上で開封した時刻
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
+  UNIQUE (user_id, user_type, year, month)       -- 同一ユーザ・区分の同月レポートは 1 件のみ
+);
+
+CREATE INDEX IF NOT EXISTS idx_monthly_reports_user_created
+  ON monthly_reports (user_id, created_at DESC);
+
+ALTER TABLE monthly_reports ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view own monthly_reports" ON monthly_reports
+  FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own monthly_reports" ON monthly_reports
+  FOR UPDATE USING (auth.uid() = user_id);
+
+-- NOTE: INSERT はサーバ側 (service role) からの cron 経由でしか発生しないため、
+--       通常のユーザ insert ポリシーは置かない。
+
+COMMENT ON TABLE monthly_reports IS '月次 AI レポート (#7): cron で自動生成しユーザに Push + チャットバナー通知する';
+COMMENT ON COLUMN monthly_reports.read_at IS 'ユーザが UI で確認した時刻。NULL なら未読バッジ表示対象';

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { memo, useState } from "react";
 import { Pencil, ChevronDown, Mail } from "lucide-react";
 
 export interface ExpenseCardProps {
@@ -27,7 +27,7 @@ const CATEGORY_ICONS: Record<string, string> = {
   "保険料": "🛡️", "税金": "🏛️", "その他": "📦",
 };
 
-export function ExpenseCard({
+function ExpenseCardImpl({
   memo,
   storeName,
   categoryMain,
@@ -148,3 +148,28 @@ export function ExpenseCard({
     </div>
   );
 }
+
+/**
+ * React.memo のデフォルトは Object.is 比較で、親が inline アロー関数を `onEdit` に
+ * 渡すだけで memo 化は無効化される。
+ * ExpenseCard は大量にリスト描画されるので、`onEdit` の関数参照差は無視して
+ * 表示内容に関わるプリミティブだけを比較することでフィルタ/検索時の再描画を抑える。
+ * `items` / `source` は fetch 単位で参照が安定しているのでそのまま参照比較で足りる。
+ */
+export const ExpenseCard = memo(ExpenseCardImpl, (prev, next) => {
+  return (
+    prev.id === next.id &&
+    prev.memo === next.memo &&
+    prev.storeName === next.storeName &&
+    prev.categoryMain === next.categoryMain &&
+    prev.categorySub === next.categorySub &&
+    prev.categoryIcon === next.categoryIcon &&
+    prev.amount === next.amount &&
+    prev.date === next.date &&
+    prev.showDate === next.showDate &&
+    prev.type === next.type &&
+    prev.items === next.items &&
+    prev.source === next.source
+    // onEdit は比較しない: 親の inline アローでも中身は同じ
+  );
+});
