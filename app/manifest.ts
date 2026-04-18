@@ -2,10 +2,12 @@ import type { MetadataRoute } from 'next'
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
+    id: '/',
     name: '共同家計簿',
     short_name: '家計簿',
     description: 'AIを活用した共同家計簿アプリ',
     start_url: '/',
+    scope: '/',
     display: 'standalone',
     background_color: '#000000',
     theme_color: '#000000',
