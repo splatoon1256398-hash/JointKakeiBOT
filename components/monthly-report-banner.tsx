@@ -87,43 +87,47 @@ export function MonthlyReportBanner() {
 
   return (
     <div
-      className="mb-3 overflow-hidden rounded-xl border backdrop-blur-md"
+      className="mb-3 overflow-hidden rounded-xl border border-white/10 bg-slate-900/80 shadow-lg backdrop-blur-md"
       style={{
-        borderColor: `${theme.primary}80`,
-        background: `linear-gradient(135deg, ${theme.primary}20, ${theme.secondary}10)`,
+        boxShadow: `0 0 0 1px ${theme.primary}40, 0 8px 24px rgba(0,0,0,0.25)`,
       }}
     >
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left"
+        className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left"
       >
         <div className="flex min-w-0 items-center gap-2">
-          <FileText className="h-4 w-4 flex-shrink-0" style={{ color: theme.primary }} />
+          <span
+            className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full"
+            style={{ background: `${theme.primary}30` }}
+          >
+            <FileText className="h-4 w-4" style={{ color: theme.primary }} />
+          </span>
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold text-white">
               {report.year}年{report.month}月の家計レポート
             </p>
-            <p className="truncate text-xs text-white/60">
+            <p className="truncate text-xs text-white/80">
               支出 ¥{report.total_expense.toLocaleString()} / 収入 ¥{report.total_income.toLocaleString()}
             </p>
           </div>
         </div>
         <ChevronDown
-          className={`h-4 w-4 flex-shrink-0 text-white/60 transition-transform ${expanded ? "rotate-180" : ""}`}
+          className={`h-4 w-4 flex-shrink-0 text-white/70 transition-transform ${expanded ? "rotate-180" : ""}`}
         />
       </button>
 
       {expanded && (
-        <div className="border-t border-white/10 px-3 py-2">
-          <p className="whitespace-pre-wrap text-xs leading-relaxed text-white/90">
+        <div className="border-t border-white/10 bg-black/20 px-3 py-3">
+          <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-white">
             {report.summary_text}
           </p>
           <div className="mt-3 flex items-center gap-2">
             <button
               type="button"
               onClick={goToDetails}
-              className="flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold text-white transition-opacity hover:opacity-90"
+              className="flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold text-white shadow transition-opacity hover:opacity-90"
               style={{
                 background: `linear-gradient(135deg, ${theme.primary}, ${theme.secondary})`,
               }}
@@ -134,7 +138,7 @@ export function MonthlyReportBanner() {
             <button
               type="button"
               onClick={dismiss}
-              className="flex items-center gap-1 rounded-full bg-white/10 px-3 py-1 text-xs text-white/70 transition-colors hover:bg-white/20"
+              className="flex items-center gap-1 rounded-full border border-white/20 bg-white/5 px-3 py-1.5 text-xs text-white/90 transition-colors hover:bg-white/15"
             >
               <X className="h-3 w-3" />
               閉じる
