@@ -27,6 +27,17 @@ function optional(name: string): string | undefined {
   return v && v.length > 0 ? v : undefined;
 }
 
+function requireLiteral(name: string, value: string | undefined): string {
+  if (!value) {
+    throw new Error(`Missing required env var: ${name}`);
+  }
+  return value;
+}
+
+function optionalLiteral(value: string | undefined): string | undefined {
+  return value && value.length > 0 ? value : undefined;
+}
+
 /**
  * サーバー側でのみ参照可能な環境変数。
  * クライアントコンポーネントから呼ぶと undefined が返ってくる (Next.js によって置換されない)。
@@ -67,20 +78,23 @@ export const serverEnv = {
 
 /**
  * サーバー/クライアント両方で参照可能な NEXT_PUBLIC_ 系。
- * 値はビルド時にクライアントバンドルへインライン埋め込みされる。
+ * Next.js は `process.env.NEXT_PUBLIC_X` をリテラルで書かれた箇所だけビルド時に
+ * クライアントバンドルへインラインする。`process.env[name]` のような動的ルックアップは
+ * 置換されずブラウザで undefined になるので、ここではリテラル参照した値を
+ * 下流ヘルパーに渡して検証する。
  */
 export const clientEnv = {
   get supabaseUrl() {
-    return required("NEXT_PUBLIC_SUPABASE_URL");
+    return requireLiteral("NEXT_PUBLIC_SUPABASE_URL", process.env.NEXT_PUBLIC_SUPABASE_URL);
   },
   get supabaseAnonKey() {
-    return required("NEXT_PUBLIC_SUPABASE_ANON_KEY");
+    return requireLiteral("NEXT_PUBLIC_SUPABASE_ANON_KEY", process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
   },
   get vapidPublicKey() {
-    return optional("NEXT_PUBLIC_VAPID_PUBLIC_KEY");
+    return optionalLiteral(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY);
   },
   get appUrl() {
-    return optional("NEXT_PUBLIC_APP_URL");
+    return optionalLiteral(process.env.NEXT_PUBLIC_APP_URL);
   },
   get showPerf() {
     return process.env.NEXT_PUBLIC_SHOW_PERF === "1";
