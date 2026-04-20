@@ -68,11 +68,14 @@ export function FixedExpenses() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   // Stage 7: 振込サマリー関連
+  const [formUserType, setFormUserType] = useState<string>(selectedUser);
   const [bankAccountId, setBankAccountId] = useState<string>("");
   const [splitPreset, setSplitPreset] = useState<SplitPreset>("joint_5050");
   const [splitRen, setSplitRen] = useState<number>(50);
   const [splitAkane, setSplitAkane] = useState<number>(50);
   const [transferRequired, setTransferRequired] = useState<boolean>(true);
+
+  const USER_TYPE_OPTIONS = ["共同", "れん", "あかね"] as const;
 
   const bankAccountsMap = Object.fromEntries(bankAccounts.map((a) => [a.id, a]));
 
@@ -110,9 +113,15 @@ export function FixedExpenses() {
     setEndDate("");
     setBankAccountId("");
     setTransferRequired(true);
+    setFormUserType(selectedUser);
     applyDefaultSplitForUserType(selectedUser);
     setEditingId(null);
     setShowAddForm(false);
+  };
+
+  const handleFormUserTypeChange = (ut: string) => {
+    setFormUserType(ut);
+    applyDefaultSplitForUserType(ut);
   };
 
   // 固定費の取得
@@ -152,6 +161,7 @@ export function FixedExpenses() {
     setEndDate(expense.end_date || "");
     setBankAccountId(expense.bank_account_id ?? "");
     setTransferRequired(expense.transfer_required !== false);
+    setFormUserType(expense.user_type);
     const ratio = normalizeSplitRatio(expense.split_ratio, expense.user_type);
     const preset = inferSplitPreset(ratio);
     setSplitPreset(preset);
@@ -177,10 +187,20 @@ export function FixedExpenses() {
 
     setSaving(true);
     try {
-      const splitRatio = buildSplitRatio(splitPreset, splitRen, splitAkane) as unknown as Json;
+      const effectiveUserType = formUserType || selectedUser;
+      // 個人持ちのときは split_ratio を本人100% に強制（UI 非表示のため）
+      const effectivePreset: SplitPreset =
+        effectiveUserType === "れん"
+          ? "ren_full"
+          : effectiveUserType === "あかね"
+            ? "akane_full"
+            : splitPreset;
+      const effectiveRen = effectiveUserType === "共同" ? splitRen : effectivePreset === "ren_full" ? 100 : 0;
+      const effectiveAkane = effectiveUserType === "共同" ? splitAkane : effectivePreset === "akane_full" ? 100 : 0;
+      const splitRatio = buildSplitRatio(effectivePreset, effectiveRen, effectiveAkane) as unknown as Json;
       const payload = {
         user_id: user.id,
-        user_type: selectedUser,
+        user_type: effectiveUserType,
         category_main: categoryMain,
         category_sub: categorySub,
         amount: parseInt(amount),
@@ -211,6 +231,30 @@ export function FixedExpenses() {
       console.error("固定費保存エラー:", error);
     } finally {
       setSaving(false);
+    }
+  };
+
+  // カードから user_type を直接切替（split_ratio も default に戻す）
+  const handleChangeUserType = async (expense: FixedExpense, nextUserType: string) => {
+    if (expense.user_type === nextUserType) return;
+    try {
+      const nextRatio =
+        nextUserType === "共同"
+          ? { "れん": 50, "あかね": 50 }
+          : nextUserType === "れん"
+            ? { "れん": 100, "あかね": 0 }
+            : { "れん": 0, "あかね": 100 };
+      const { error } = await supabase
+        .from("fixed_expenses")
+        .update({
+          user_type: nextUserType,
+          split_ratio: nextRatio as unknown as Json,
+        })
+        .eq("id", expense.id);
+      if (error) throw error;
+      await fetchExpenses();
+    } catch (e) {
+      console.error("user_type 切替エラー:", e);
     }
   };
 
@@ -285,6 +329,31 @@ export function FixedExpenses() {
         <button onClick={resetForm} className="text-white/40 hover:text-white">
           <X className="h-4 w-4" />
         </button>
+      </div>
+
+      {/* スコープ（共同 / 個人）*/}
+      <div className="space-y-1">
+        <Label className="text-xs text-gray-400">スコープ</Label>
+        <div className="grid grid-cols-3 gap-1.5">
+          {USER_TYPE_OPTIONS.map((ut) => {
+            const active = formUserType === ut;
+            return (
+              <button
+                key={ut}
+                type="button"
+                onClick={() => handleFormUserTypeChange(ut)}
+                className={`rounded-lg py-1.5 text-xs border transition-all ${
+                  active
+                    ? "text-white font-semibold"
+                    : "border-white/10 bg-white/5 text-white/60 hover:bg-white/10"
+                }`}
+                style={active ? { background: `${theme.primary}25`, borderColor: `${theme.primary}70` } : {}}
+              >
+                {ut}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* カテゴリー選択ボタン（ピッカーUI） */}
@@ -377,7 +446,8 @@ export function FixedExpenses() {
         )}
       </div>
 
-      {/* 負担配分 */}
+      {/* 負担配分（共同のときのみ表示。個人持ちは本人100%で自動確定） */}
+      {formUserType === "共同" ? (
       <div className="space-y-1.5">
         <Label className="text-xs text-gray-400">負担配分</Label>
         <div className="grid grid-cols-4 gap-1.5">
@@ -447,17 +517,24 @@ export function FixedExpenses() {
             {" / あかね ¥"}{Math.round((parseInt(amount) * splitAkane) / 100).toLocaleString()}
           </p>
         )}
-        <label className="flex items-center gap-1.5 pt-1 text-[11px] text-white/60 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={!transferRequired}
-            onChange={(e) => setTransferRequired(!e.target.checked)}
-            className="accent-current"
-            style={{ accentColor: theme.primary }}
-          />
-          振込サマリーから除外（自分の口座から直接引落など）
-        </label>
       </div>
+      ) : (
+        <p className="text-[11px] text-white/40 -mt-1">
+          個人持ち: {formUserType} 100% 負担として扱います
+        </p>
+      )}
+
+      {/* 振込対象フラグ */}
+      <label className="flex items-center gap-1.5 text-[11px] text-white/60 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={!transferRequired}
+          onChange={(e) => setTransferRequired(!e.target.checked)}
+          className="accent-current"
+          style={{ accentColor: theme.primary }}
+        />
+        振込サマリーから除外（自分の口座から直接引落など）
+      </label>
 
       {/* 適用期間 */}
       <div className="grid grid-cols-2 gap-3">
@@ -651,6 +728,23 @@ export function FixedExpenses() {
                           <Calendar className="h-3 w-3" />
                           毎月{expense.payment_day}日
                         </span>
+                        <span>·</span>
+                        <div className="relative inline-flex">
+                          <select
+                            value={expense.user_type}
+                            onChange={(e) => handleChangeUserType(expense, e.target.value)}
+                            className="appearance-none bg-white/5 border border-white/10 rounded-full pl-2 pr-4 py-0.5 text-[10px] text-white/80 font-semibold cursor-pointer hover:bg-white/10 focus:outline-none"
+                            style={{ background: `${theme.primary}20`, borderColor: `${theme.primary}40` }}
+                            aria-label="スコープ変更"
+                          >
+                            {USER_TYPE_OPTIONS.map((ut) => (
+                              <option key={ut} value={ut} className="bg-slate-800 text-white">
+                                {ut}
+                              </option>
+                            ))}
+                          </select>
+                          <span className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 text-[8px] text-white/50">▾</span>
+                        </div>
                       </div>
                       <div className="flex items-center gap-1 text-[10px] text-white/40 mt-0.5 flex-wrap">
                         {expense.bank_account_id && bankAccountsMap[expense.bank_account_id] ? (
