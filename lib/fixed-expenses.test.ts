@@ -6,17 +6,20 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  * Supabase クライアントの最低限のモック。
  * - fixed_expenses: select().eq().eq() → { data, error }
  * - transactions:
- *   - select().eq().gte().lte().like() → { data, error }
+ *   - select().eq().gte().lte().or() → { data, error }
  *   - insert(rows) → { error }
  */
+type ExistingEntry = string | { memo: string; user_type?: string };
 function makeClient(opts: {
   fixedExpenses: unknown[];
-  existingMemos?: string[];
+  existingMemos?: ExistingEntry[];
   insertError?: string;
   onInsert?: (rows: unknown[]) => void;
   fixedFetchError?: string;
 }) {
-  const existing = (opts.existingMemos || []).map((m) => ({ memo: m }));
+  const existing = (opts.existingMemos || []).map((m) =>
+    typeof m === "string" ? { memo: m, user_type: "れん" } : { user_type: "れん", ...m },
+  );
   return {
     from(table: string) {
       if (table === "fixed_expenses") {
@@ -37,7 +40,7 @@ function makeClient(opts: {
             eq: () => ({
               gte: () => ({
                 lte: () => ({
-                  like: async () => ({ data: existing, error: null }),
+                  or: async () => ({ data: existing, error: null }),
                 }),
               }),
             }),
@@ -65,6 +68,8 @@ const baseExpense = {
   memo: null,
   start_date: null,
   end_date: null,
+  kind: "expense" as const,
+  split_ratio: null,
 };
 
 describe("processFixedExpenses", () => {
@@ -183,5 +188,79 @@ describe("processFixedExpenses", () => {
     const result = await processFixedExpenses(USER_ID, client);
     expect(result.errors[0]).toContain("固定費 bulk 登録エラー");
     expect(result.processed).toBe(0);
+  });
+
+  it("budget_transfer (共同, 折半) は 個人家計簿に 2 件、共同には入れない", async () => {
+    const inserted: Array<{ user_type: string; amount: number; memo: string }> = [];
+    const transfer = {
+      ...baseExpense,
+      id: "ft1",
+      user_type: "共同",
+      kind: "budget_transfer" as const,
+      amount: 40000,
+      category_main: "食費",
+      category_sub: "食料品",
+      memo: "Revolut送金",
+      split_ratio: { "れん": 50, "あかね": 50 },
+    };
+    const client = makeClient({
+      fixedExpenses: [transfer],
+      onInsert: (rows) => inserted.push(...(rows as typeof inserted)),
+    });
+    await processFixedExpenses(USER_ID, client);
+    expect(inserted).toHaveLength(2);
+    // 共同家計簿には登録されない
+    expect(inserted.some((r) => r.user_type === "共同")).toBe(false);
+    // ren分 ¥20,000
+    expect(inserted.find((r) => r.user_type === "れん")?.amount).toBe(20000);
+    expect(inserted.find((r) => r.user_type === "れん")?.memo).toBe("【送金】Revolut送金 (れん分)");
+    // akane分 ¥20,000
+    expect(inserted.find((r) => r.user_type === "あかね")?.amount).toBe(20000);
+  });
+
+  it("budget_transfer (個人持ち, 100%) は 自分の家計簿に 1 件だけ", async () => {
+    const inserted: Array<{ user_type: string; amount: number }> = [];
+    const transfer = {
+      ...baseExpense,
+      id: "ft2",
+      user_type: "れん",
+      kind: "budget_transfer" as const,
+      amount: 10000,
+      split_ratio: { "れん": 100 },
+      memo: "お小遣い送金",
+    };
+    const client = makeClient({
+      fixedExpenses: [transfer],
+      onInsert: (rows) => inserted.push(...(rows as typeof inserted)),
+    });
+    await processFixedExpenses(USER_ID, client);
+    expect(inserted).toHaveLength(1);
+    expect(inserted[0].user_type).toBe("れん");
+    expect(inserted[0].amount).toBe(10000);
+  });
+
+  it("budget_transfer は 既存 【送金】 memo があるとスキップ", async () => {
+    const inserted: Array<{ user_type: string }> = [];
+    const transfer = {
+      ...baseExpense,
+      id: "ft3",
+      user_type: "共同",
+      kind: "budget_transfer" as const,
+      amount: 40000,
+      memo: "Revolut送金",
+      split_ratio: { "れん": 50, "あかね": 50 },
+    };
+    const client = makeClient({
+      fixedExpenses: [transfer],
+      // ren 分は既に入っている、akane 分はまだ
+      existingMemos: [
+        { memo: "【送金】Revolut送金 (れん分)", user_type: "れん" },
+      ],
+      onInsert: (rows) => inserted.push(...(rows as typeof inserted)),
+    });
+    await processFixedExpenses(USER_ID, client);
+    // あかね分のみ insert される
+    expect(inserted).toHaveLength(1);
+    expect(inserted[0].user_type).toBe("あかね");
   });
 });

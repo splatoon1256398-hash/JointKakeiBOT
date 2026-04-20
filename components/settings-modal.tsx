@@ -64,37 +64,48 @@ function ScopeBadge({ scope, label }: { scope: "personal" | "shared"; label?: st
 }
 
 export function SettingsModal() {
-  const { isSettingsOpen, setIsSettingsOpen, theme, selectedUser, displayName, settingsTab, setSettingsTab } = useApp();
+  const { isSettingsOpen, setIsSettingsOpen, theme, selectedUser, setSelectedUser, displayName, settingsTab, setSettingsTab } = useApp();
 
-  const isJoint = selectedUser === "共同";
+  const scopeOptions: Array<"共同" | string> = ["共同", ...(displayName ? [displayName] : [])];
 
   return (
     <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto overflow-x-hidden bg-slate-900/95 backdrop-blur-xl border-slate-700" style={{ overscrollBehavior: 'contain', touchAction: 'pan-y' }}>
         <DialogHeader>
-          <div className="flex items-center justify-between">
-            <div className="space-y-1">
-              <DialogTitle className="flex items-center gap-2 text-white">
-                <SettingsIcon className="h-5 w-5" style={{ color: theme.primary }} />
-                設定
-              </DialogTitle>
-              {/* コンテキストヘッダー: 現在の操作対象 */}
-              <div className="flex items-center gap-2">
-                {isJoint ? (
-                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-purple-500/15 text-purple-300">
-                    <Users className="h-3 w-3" />
-                    共同設定を編集中
-                  </div>
-                ) : (
-                  <div
-                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold"
-                    style={{ backgroundColor: `${theme.primary}20`, color: theme.primary }}
+          <div className="space-y-2">
+            <DialogTitle className="flex items-center gap-2 text-white">
+              <SettingsIcon className="h-5 w-5" style={{ color: theme.primary }} />
+              設定
+            </DialogTitle>
+            {/* 共同/個人 切替スイッチ (モーダルを閉じずに切り替えられる) */}
+            <div className="inline-flex items-center gap-1 bg-slate-800/60 border border-slate-700 rounded-full p-0.5">
+              {scopeOptions.map((opt) => {
+                const active = selectedUser === opt;
+                const Icon = opt === "共同" ? Users : User;
+                return (
+                  <button
+                    key={opt}
+                    type="button"
+                    onClick={() => setSelectedUser(opt)}
+                    className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold transition-all ${
+                      active ? "text-white" : "text-white/50 hover:text-white/80"
+                    }`}
+                    style={
+                      active
+                        ? {
+                            background:
+                              opt === "共同" ? "rgba(168,85,247,0.25)" : `${theme.primary}30`,
+                            color: opt === "共同" ? "rgb(216,180,254)" : theme.primary,
+                          }
+                        : {}
+                    }
                   >
-                    <User className="h-3 w-3" />
-                    {displayName || selectedUser} の設定を編集中
-                  </div>
-                )}
-              </div>
+                    <Icon className="h-3 w-3" />
+                    {opt}
+                  </button>
+                );
+              })}
+              <span className="text-[10px] text-white/30 ml-1 mr-2">の設定</span>
             </div>
           </div>
         </DialogHeader>

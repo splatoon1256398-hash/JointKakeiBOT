@@ -1,5 +1,7 @@
 import { supabase as defaultClient } from "./supabase";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { normalizeSplitRatio, PAYER_USER_TYPES } from "./transfers";
+import type { Json } from "./database.types";
 
 interface FixedExpense {
   id: string;
@@ -13,6 +15,7 @@ interface FixedExpense {
   start_date: string | null;
   end_date: string | null;
   kind: string | null;
+  split_ratio: Json | null;
 }
 
 /**
@@ -68,18 +71,28 @@ export async function processFixedExpenses(
 
     const { data: existingTransactions, error: txError } = await client
       .from("transactions")
-      .select("memo")
+      .select("memo, user_type")
       .eq("user_id", userId)
       .gte("date", monthStart)
       .lte("date", monthEnd)
-      .like("memo", "【固定費】%");
+      .or("memo.like.【固定費】%,memo.like.【送金】%");
 
     if (txError) {
       result.errors.push(`取引取得エラー: ${txError.message}`);
       return result;
     }
 
-    const existingMemos = new Set(existingTransactions?.map((t) => t.memo) || []);
+    const existingMemos = new Set(
+      (existingTransactions || [])
+        .filter((t) => (t.memo ?? "").startsWith("【固定費】"))
+        .map((t) => t.memo),
+    );
+    // 送金側は user_type ごとに個別 insert するため (user_type, memo) を key にする
+    const existingTransferKeys = new Set(
+      (existingTransactions || [])
+        .filter((t) => (t.memo ?? "").startsWith("【送金】"))
+        .map((t) => `${t.user_type}::${t.memo}`),
+    );
 
     // Phase 3-D: 単発 insert のループを bulk insert 1 回に置換
     const todayStr = `${currentYear}-${String(currentMonth).padStart(2, "0")}-${String(currentDay).padStart(2, "0")}`;
@@ -96,13 +109,6 @@ export async function processFixedExpenses(
     const insertedLabels: string[] = [];
 
     for (const expense of fixedExpenses as FixedExpense[]) {
-      // 予算送金 (budget_transfer) は家計簿に自動登録しない
-      // 振込サマリーには出るが transactions には何も入れない
-      if (expense.kind === "budget_transfer") {
-        result.skipped++;
-        continue;
-      }
-
       // 適用期間チェック: start_date/end_date の範囲外ならスキップ
       if (expense.start_date && todayStr < expense.start_date) {
         result.skipped++;
@@ -119,21 +125,47 @@ export async function processFixedExpenses(
         continue;
       }
 
-      // 固定費の識別子（メモに埋め込み、重複チェック用）
-      // 新フォーマット: 【固定費】メモ内容 or 【固定費】小カテゴリー
+      // 引き落とし日の日付を生成（月末を超えないよう調整）
+      const actualPayDay = Math.min(expense.payment_day, lastDayOfMonth);
+      const paymentDate = `${currentYear}-${String(currentMonth).padStart(2, "0")}-${String(actualPayDay).padStart(2, "0")}`;
+
+      if (expense.kind === "budget_transfer") {
+        // 送金: 個人家計簿に折半分 (or 設定比率) を登録。共同家計簿には登録しない
+        const ratio = normalizeSplitRatio(expense.split_ratio, expense.user_type);
+        const transferMemoBase = `【送金】${expense.memo || expense.category_sub}`;
+        for (const payer of PAYER_USER_TYPES) {
+          const pct = ratio[payer] ?? 0;
+          if (pct <= 0) continue;
+          const portion = Math.round((expense.amount * pct) / 100);
+          if (portion <= 0) continue;
+          const memoForPayer = `${transferMemoBase} (${payer}分)`;
+          if (existingTransferKeys.has(`${payer}::${memoForPayer}`)) {
+            result.skipped++;
+            continue;
+          }
+          rowsToInsert.push({
+            user_id: expense.user_id,
+            user_type: payer,
+            type: "expense",
+            amount: portion,
+            category_main: expense.category_main,
+            category_sub: expense.category_sub,
+            memo: memoForPayer,
+            date: paymentDate,
+          });
+          insertedLabels.push(`送金 ${payer} ${expense.category_sub} ¥${portion}`);
+        }
+        continue;
+      }
+
+      // 固定費 (expense): 既存の挙動 (全額を user_type で登録)
       const fixedExpenseMemo = `【固定費】${expense.memo || expense.category_sub}`;
-      // 旧フォーマットとの互換性チェック用
       const oldFormatMemo = `【固定費】${expense.category_main}/${expense.category_sub}${expense.memo ? ` - ${expense.memo}` : ""}`;
 
-      // 今月すでに登録済みならスキップ（新旧両フォーマットに対応）
       if (existingMemos.has(fixedExpenseMemo) || existingMemos.has(oldFormatMemo)) {
         result.skipped++;
         continue;
       }
-
-      // 引き落とし日の日付を生成（月末を超えないよう調整）
-      const actualPayDay = Math.min(expense.payment_day, lastDayOfMonth);
-      const paymentDate = `${currentYear}-${String(currentMonth).padStart(2, "0")}-${String(actualPayDay).padStart(2, "0")}`;
 
       rowsToInsert.push({
         user_id: expense.user_id,
