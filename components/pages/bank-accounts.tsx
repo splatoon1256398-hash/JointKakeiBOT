@@ -27,6 +27,7 @@ export function BankAccounts() {
   const [accountLast4, setAccountLast4] = useState("");
   const [color, setColor] = useState("#4f46e5");
   const [icon, setIcon] = useState("🏦");
+  const [isMain, setIsMain] = useState<boolean>(false);
 
   const addFormRef = useRef<HTMLDivElement>(null);
 
@@ -37,6 +38,7 @@ export function BankAccounts() {
     setAccountLast4("");
     setColor("#4f46e5");
     setIcon("🏦");
+    setIsMain(false);
     setEditingId(null);
     setShowAddForm(false);
   };
@@ -59,6 +61,7 @@ export function BankAccounts() {
     setAccountLast4(acc.account_last4 ?? "");
     setColor(acc.color ?? "#4f46e5");
     setIcon(acc.icon ?? "🏦");
+    setIsMain(acc.is_main === true);
     setShowAddForm(false);
   };
 
@@ -84,6 +87,7 @@ export function BankAccounts() {
         color,
         icon: icon || "🏦",
         is_active: true,
+        is_main: isMain,
       };
 
       if (editingId) {
@@ -217,6 +221,34 @@ export function BankAccounts() {
         </div>
       </div>
 
+      {/* メイン口座トグル */}
+      <button
+        type="button"
+        onClick={() => setIsMain((v) => !v)}
+        className={`w-full flex items-center justify-between px-3 py-2 rounded-lg border transition-all ${
+          isMain
+            ? "border-emerald-500/50 bg-emerald-500/10"
+            : "border-white/10 bg-white/5"
+        }`}
+      >
+        <div className="text-left">
+          <p className="text-sm font-semibold text-white">
+            メイン口座
+            {isMain && <span className="ml-1 text-emerald-400">✓</span>}
+          </p>
+          <p className="text-[10px] text-white/50 leading-tight">
+            給料振込口座などで残高がある口座。自分→自分の事前振込を振込画面から除外します
+          </p>
+        </div>
+        <div
+          className={`w-10 h-5 rounded-full flex items-center transition-all flex-shrink-0 ${
+            isMain ? "bg-emerald-500 justify-end" : "bg-white/20 justify-start"
+          }`}
+        >
+          <div className="w-4 h-4 bg-white rounded-full mx-0.5" />
+        </div>
+      </button>
+
       <div className="flex gap-2 pt-1">
         <Button
           variant="ghost"
@@ -318,6 +350,11 @@ export function BankAccounts() {
                     >
                       {acc.owner_user_type}
                     </span>
+                    {acc.is_main && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold bg-emerald-500/20 text-emerald-300">
+                        メイン
+                      </span>
+                    )}
                   </div>
                   <p className="text-[11px] text-white/50 truncate">
                     {[acc.bank_name, acc.branch_name, acc.account_last4 && `****${acc.account_last4}`]

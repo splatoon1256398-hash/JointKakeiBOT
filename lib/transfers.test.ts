@@ -14,6 +14,7 @@ const makeAccount = (
   id: string,
   owner: "れん" | "あかね" | "共同",
   name = `${owner}口座`,
+  extras: Partial<BankAccount> = {},
 ): BankAccount => ({
   id,
   user_id: "u1",
@@ -26,8 +27,10 @@ const makeAccount = (
   icon: "🏦",
   sort_order: 0,
   is_active: true,
+  is_main: false,
   created_at: "2026-04-01T00:00:00Z",
   updated_at: "2026-04-01T00:00:00Z",
+  ...extras,
 });
 
 const makeExpense = (
@@ -390,6 +393,61 @@ describe("computeTransferSummary", () => {
     const akaneGroup = summary.payableByMe.find((g) => g.bankAccount.id === "acc-akane");
     expect(jointGroup?.totalAmount).toBe(40000);
     expect(akaneGroup?.totalAmount).toBe(20000);
+  });
+
+  it("is_main=true の自分口座への自己振込はスキップ (メイン口座は放置OK)", () => {
+    const mainAccount = makeAccount("acc-ren-main", "れん", "住信SBI メイン", { is_main: true });
+    const subAccount = makeAccount("acc-ren-sub", "れん", "楽天銀行 費目用", { is_main: false });
+    const accountsWithMain = [mainAccount, subAccount, akaneAccount, jointAccount];
+    const amazonSub = makeExpense({
+      id: "fe-amazon",
+      user_type: "れん",
+      amount: 661,
+      bank_account_id: "acc-ren-main",
+      split_ratio: { "れん": 100 },
+    });
+    const insurance = makeExpense({
+      id: "fe-insurance",
+      user_type: "れん",
+      amount: 14000,
+      bank_account_id: "acc-ren-sub",
+      split_ratio: { "れん": 100 },
+    });
+    const summary = computeTransferSummary({
+      currentUser: "れん",
+      fixedExpenses: [amazonSub, insurance],
+      bankAccounts: accountsWithMain,
+      transfers: [],
+      targetMonth,
+    });
+    // is_main=true の口座 (住信SBI) への自己振込は出ない、サブ口座 (楽天銀行) だけ出る
+    expect(summary.grandTotalPayable).toBe(14000);
+    expect(summary.payableByMe).toHaveLength(1);
+    expect(summary.payableByMe[0]?.bankAccount.id).toBe("acc-ren-sub");
+  });
+
+  it("受取側に 自分→自分 の行は出ない (受取は他人からのみ)", () => {
+    const subAccount = makeAccount("acc-ren-sub", "れん", "楽天銀行");
+    const accountsWithSub = [subAccount, akaneAccount, jointAccount];
+    const personalInsurance = makeExpense({
+      id: "fe-personal-insurance",
+      user_type: "れん",
+      amount: 14000,
+      bank_account_id: "acc-ren-sub",
+      split_ratio: { "れん": 100 },
+    });
+    const summary = computeTransferSummary({
+      currentUser: "れん",
+      fixedExpenses: [personalInsurance],
+      bankAccounts: accountsWithSub,
+      transfers: [],
+      targetMonth,
+    });
+    // payable には出る
+    expect(summary.grandTotalPayable).toBe(14000);
+    // receivable には出ない (自分→自分は受取ではない)
+    expect(summary.grandTotalReceivable).toBe(0);
+    expect(summary.receivableByMe).toHaveLength(0);
   });
 
   it("グループソート: 共同口座が先、個人口座が後", () => {

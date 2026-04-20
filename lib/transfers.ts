@@ -178,9 +178,13 @@ export function computeTransferSummary(input: ComputeTransferSummaryInput): Tran
       if (payerPct <= 0) continue;
       // payer === payee (自分 → 自分の口座) の扱い:
       // - source が設定されていれば「A口座 → B口座」の明示的振替として表示
-      // - expense.user_type === payer (= 個人固定費) なら、月初に口座へ確保する必要があるので表示
+      // - expense.user_type === payer (= 個人固定費) なら月初に口座へ確保する必要があるので表示
+      // - 受取口座が is_main=true (給料振込口座など放置でOK) なら事前準備不要なのでスキップ
       // - 上記以外 (共同で自分負担分など) は振込不要としてスキップ
-      if (!sourceAccount && payee === payer && expense.user_type !== payer) continue;
+      if (!sourceAccount && payee === payer) {
+        if (expense.user_type !== payer) continue;
+        if (account.is_main === true) continue;
+      }
 
       const payerAmount = computePayerAmount(expense.amount, ratio, payer);
       if (payerAmount <= 0) continue;
@@ -245,8 +249,9 @@ export function computeTransferSummary(input: ComputeTransferSummaryInput): Tran
   const payableRows = isPayerUserType(currentUser)
     ? allRows.filter((r) => r.payer === currentUser)
     : allRows; // 共同モードでは全行を payable として扱い、家庭内総額を表示
+  // 受取側は「他人から自分の口座へ」の振込のみ (自分→自分の口座準備は受取ではない)
   const receivableRows = isPayerUserType(currentUser)
-    ? allRows.filter((r) => r.payee === currentUser)
+    ? allRows.filter((r) => r.payee === currentUser && r.payer !== currentUser)
     : [];
 
   const payableByMe = groupBy(payableRows);

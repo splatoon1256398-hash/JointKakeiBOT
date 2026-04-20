@@ -57,6 +57,7 @@ export type Database = {
           icon: string | null
           id: string
           is_active: boolean | null
+          is_main: boolean | null
           owner_user_type: string
           sort_order: number | null
           updated_at: string
@@ -72,6 +73,7 @@ export type Database = {
           icon?: string | null
           id?: string
           is_active?: boolean | null
+          is_main?: boolean | null
           owner_user_type: string
           sort_order?: number | null
           updated_at?: string
@@ -87,6 +89,7 @@ export type Database = {
           icon?: string | null
           id?: string
           is_active?: boolean | null
+          is_main?: boolean | null
           owner_user_type?: string
           sort_order?: number | null
           updated_at?: string

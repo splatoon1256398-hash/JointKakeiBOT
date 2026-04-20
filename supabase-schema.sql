@@ -636,6 +636,20 @@ END $$;
 COMMENT ON TABLE bank_accounts IS '銀行口座マスター (Stage 7)。固定費の引落先として紐付け、振込サマリーの基準になる';
 COMMENT ON COLUMN bank_accounts.owner_user_type IS '所有者 user_type: "れん" / "あかね" / "共同"';
 
+-- is_main: メイン口座フラグ (給料振込口座など残高潤沢で事前準備不要)
+-- true の場合、振込サマリーで自分→自分の振込 (同一オーナー内の口座準備) から除外される
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'bank_accounts' AND column_name = 'is_main'
+  ) THEN
+    ALTER TABLE bank_accounts
+      ADD COLUMN is_main BOOLEAN DEFAULT FALSE;
+    COMMENT ON COLUMN bank_accounts.is_main IS
+      'メイン口座フラグ。true = 給料振込口座等で放置で引落OK。自分→自分の振込サマリーから除外';
+  END IF;
+END $$;
+
 -- 2. fixed_expenses 拡張: 引落口座 + 負担配分
 DO $$ BEGIN
   IF NOT EXISTS (
