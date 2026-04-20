@@ -2,7 +2,7 @@
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Settings as SettingsIcon, Tag, Wallet, CreditCard, Mail, Bell, LayoutGrid, Landmark, User, Users } from "lucide-react";
+import { Settings as SettingsIcon, Tag, Wallet, CreditCard, Mail, Bell, LayoutGrid, Landmark, Send, User, Users } from "lucide-react";
 import { useApp } from "@/contexts/app-context";
 import { Settings } from "@/components/pages/settings";
 import { BudgetSettings } from "@/components/pages/budget-settings";
@@ -18,6 +18,7 @@ import { ThemeSettings } from "@/components/pages/theme-settings";
 // "shared"   = selectedUser（共同 or 個人）に紐づく共有設定
 const TAB_SCOPE: Record<string, "personal" | "shared"> = {
   fixed: "shared",
+  transfers: "shared",
   budget: "shared",
   categories: "shared",
   accounts: "shared",
@@ -29,6 +30,7 @@ const TAB_SCOPE: Record<string, "personal" | "shared"> = {
 
 const TAB_SCOPE_LABEL: Record<string, string> = {
   fixed: "選択中のユーザーの固定費",
+  transfers: "選択中のユーザーの月次送金",
   budget: "選択中のユーザーの予算",
   categories: "全員で共有するカテゴリ",
   accounts: "全員で共有する銀行口座マスター",
@@ -104,6 +106,10 @@ export function SettingsModal() {
                 <CreditCard className="h-4 w-4" />
                 固定費
               </TabsTrigger>
+              <TabsTrigger value="transfers" className="flex flex-col gap-1 py-2 px-2 text-[10px] min-w-0 flex-shrink-0">
+                <Send className="h-4 w-4" />
+                送金
+              </TabsTrigger>
               <TabsTrigger value="budget" className="flex flex-col gap-1 py-2 px-2 text-[10px] min-w-0 flex-shrink-0">
                 <Wallet className="h-4 w-4" />
                 予算
@@ -140,7 +146,14 @@ export function SettingsModal() {
             <div className="flex justify-end mb-2">
               <ScopeBadge scope={TAB_SCOPE.fixed} label={TAB_SCOPE_LABEL.fixed} />
             </div>
-            <FixedExpenses />
+            <FixedExpenses kind="expense" />
+          </TabsContent>
+
+          <TabsContent value="transfers" className="mt-4 min-h-[520px]">
+            <div className="flex justify-end mb-2">
+              <ScopeBadge scope={TAB_SCOPE.transfers} label={TAB_SCOPE_LABEL.transfers} />
+            </div>
+            <FixedExpenses kind="budget_transfer" />
           </TabsContent>
 
           <TabsContent value="budget" className="mt-4 min-h-[520px]">

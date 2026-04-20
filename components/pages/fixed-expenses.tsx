@@ -45,8 +45,43 @@ interface FixedExpense {
 
 type FixedExpenseKind = "expense" | "budget_transfer";
 
-export function FixedExpenses() {
+interface FixedExpensesProps {
+  // 'expense' (default) = 固定費。cron で家計簿に自動登録される
+  // 'budget_transfer' = 送金のみ。家計簿には登録しない、振込サマリーにだけ出る
+  kind?: FixedExpenseKind;
+}
+
+export function FixedExpenses({ kind: pageKind = "expense" }: FixedExpensesProps = {}) {
   const { user, selectedUser, displayName, theme, categories: dbCategories, getCategoryIcon, getSubcategories, bankAccounts } = useApp();
+  const isTransfer = pageKind === "budget_transfer";
+  // UI ラベル
+  const labels = isTransfer
+    ? {
+        title: "送金設定",
+        subtitle: `${selectedUser} の月次送金（家計簿には登録されません）`,
+        totalLabel: "毎月の送金合計",
+        addButtonTitle: "送金を追加",
+        editButtonTitle: "送金を編集",
+        emptyIcon: "💸",
+        emptyLabel: "送金が登録されていません",
+        emptyHint: "食費送金・Revolut 送金などを「追加」から登録",
+        dayLabel: "送金予定日",
+        bankLabel: "送金先口座",
+        memoPlaceholder: "例: 食費送金、Revolut 送金",
+      }
+    : {
+        title: "固定費設定",
+        subtitle: `${selectedUser} の固定費（毎月自動で家計簿に反映）`,
+        totalLabel: "毎月の固定費合計",
+        addButtonTitle: "固定費を追加",
+        editButtonTitle: "固定費を編集",
+        emptyIcon: "",
+        emptyLabel: "固定費が登録されていません",
+        emptyHint: "「追加」ボタンから登録してください",
+        dayLabel: "引き落とし日",
+        bankLabel: "引落口座",
+        memoPlaceholder: "例: 家賃、光熱費など",
+      };
   const [expenses, setExpenses] = useState<FixedExpense[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -77,7 +112,6 @@ export function FixedExpenses() {
   const [splitRen, setSplitRen] = useState<number>(50);
   const [splitAkane, setSplitAkane] = useState<number>(50);
   const [transferRequired, setTransferRequired] = useState<boolean>(true);
-  const [kind, setKind] = useState<FixedExpenseKind>("expense");
 
   // スコープ候補: 共同 + ログインユーザー自身の名前のみ (displayName が空なら "共同" のみ)
   const USER_TYPE_OPTIONS = displayName ? (["共同", displayName] as const) : (["共同"] as const);
@@ -118,7 +152,6 @@ export function FixedExpenses() {
     setEndDate("");
     setBankAccountId("");
     setTransferRequired(true);
-    setKind("expense");
     setFormUserType(selectedUser);
     applyDefaultSplitForUserType(selectedUser);
     setEditingId(null);
@@ -130,26 +163,32 @@ export function FixedExpenses() {
     applyDefaultSplitForUserType(ut);
   };
 
-  // 固定費の取得
+  // 固定費 or 送金 の取得（kind に応じて分岐）
   const fetchExpenses = useCallback(async () => {
     if (!user) return;
     setLoading(true);
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from("fixed_expenses")
         .select("*")
         .eq("user_type", selectedUser)
-        .eq("is_active", true)
-        .order("payment_day", { ascending: true });
+        .eq("is_active", true);
+      if (pageKind === "budget_transfer") {
+        query = query.eq("kind", "budget_transfer");
+      } else {
+        // expense ページでは kind=NULL (既存データ) と kind='expense' 両方を対象にする
+        query = query.or("kind.is.null,kind.eq.expense");
+      }
+      const { data, error } = await query.order("payment_day", { ascending: true });
 
       if (error) throw error;
       setExpenses(data || []);
     } catch (error) {
-      console.error("固定費取得エラー:", error);
+      console.error("取得エラー:", error);
     } finally {
       setLoading(false);
     }
-  }, [user, selectedUser]);
+  }, [user, selectedUser, pageKind]);
 
   useEffect(() => {
     fetchExpenses();
@@ -167,7 +206,6 @@ export function FixedExpenses() {
     setEndDate(expense.end_date || "");
     setBankAccountId(expense.bank_account_id ?? "");
     setTransferRequired(expense.transfer_required !== false);
-    setKind((expense.kind as FixedExpenseKind) ?? "expense");
     setFormUserType(expense.user_type);
     const ratio = normalizeSplitRatio(expense.split_ratio, expense.user_type);
     const preset = inferSplitPreset(ratio);
@@ -219,7 +257,7 @@ export function FixedExpenses() {
         bank_account_id: bankAccountId || null,
         split_ratio: splitRatio,
         transfer_required: transferRequired,
-        kind,
+        kind: pageKind,
       };
 
       if (editingId) {
@@ -332,7 +370,7 @@ export function FixedExpenses() {
     <div className="rounded-xl p-3 bg-slate-800/50 border space-y-3" style={{ borderColor: `${theme.primary}40` }}>
       <div className="flex items-center justify-between mb-1">
         <p className="text-sm font-semibold text-white">
-          {isAdd ? "固定費を追加" : "固定費を編集"}
+          {isAdd ? labels.addButtonTitle : labels.editButtonTitle}
         </p>
         <button onClick={resetForm} className="text-white/40 hover:text-white">
           <X className="h-4 w-4" />
@@ -367,38 +405,6 @@ export function FixedExpenses() {
         </div>
       </div>
 
-      {/* 種別: 固定費 (家計簿に自動登録) / 送金のみ (振込サマリーにだけ出す) */}
-      <div className="space-y-1">
-        <Label className="text-xs text-gray-400">種別</Label>
-        <div className="grid grid-cols-2 gap-1.5">
-          <button
-            type="button"
-            onClick={() => setKind("expense")}
-            className={`rounded-lg py-1.5 text-xs border transition-all text-left px-2.5 ${
-              kind === "expense"
-                ? "text-white font-semibold"
-                : "border-white/10 bg-white/5 text-white/60 hover:bg-white/10"
-            }`}
-            style={kind === "expense" ? { background: `${theme.primary}25`, borderColor: `${theme.primary}70` } : {}}
-          >
-            <div>固定費</div>
-            <div className="text-[9px] text-white/50">家計簿に自動登録</div>
-          </button>
-          <button
-            type="button"
-            onClick={() => setKind("budget_transfer")}
-            className={`rounded-lg py-1.5 text-xs border transition-all text-left px-2.5 ${
-              kind === "budget_transfer"
-                ? "text-white font-semibold"
-                : "border-white/10 bg-white/5 text-white/60 hover:bg-white/10"
-            }`}
-            style={kind === "budget_transfer" ? { background: `${theme.primary}25`, borderColor: `${theme.primary}70` } : {}}
-          >
-            <div>送金のみ</div>
-            <div className="text-[9px] text-white/50">食費・生活費など</div>
-          </button>
-        </div>
-      </div>
 
       {/* カテゴリー選択ボタン（ピッカーUI） */}
       <div className="space-y-1">
@@ -435,9 +441,9 @@ export function FixedExpenses() {
           />
         </div>
 
-        {/* 引き落とし日 */}
+        {/* 引き落とし日 or 送金予定日 */}
         <div>
-          <Label className="text-xs text-gray-400">引き落とし日</Label>
+          <Label className="text-xs text-gray-400">{labels.dayLabel}</Label>
           <Select value={paymentDay} onValueChange={setPaymentDay}>
             <SelectTrigger className="bg-slate-700 border-slate-600 text-white h-9">
               <SelectValue placeholder="日付" />
@@ -459,16 +465,16 @@ export function FixedExpenses() {
         <Input
           value={memo}
           onChange={(e) => setMemo(e.target.value)}
-          placeholder="例: 家賃、光熱費など"
+          placeholder={labels.memoPlaceholder}
           className="bg-slate-700 border-slate-600 text-white h-9"
         />
       </div>
 
-      {/* 引落口座 */}
+      {/* 引落口座 or 送金先口座 */}
       <div>
         <Label className="text-xs text-gray-400 flex items-center gap-1">
           <Landmark className="h-3 w-3" />
-          引落口座
+          {labels.bankLabel}
         </Label>
         <Select value={bankAccountId || "__none__"} onValueChange={(v) => setBankAccountId(v === "__none__" ? "" : v)}>
           <SelectTrigger className="bg-slate-700 border-slate-600 text-white h-9">
@@ -568,18 +574,6 @@ export function FixedExpenses() {
         </p>
       )}
 
-      {/* 振込対象フラグ */}
-      <label className="flex items-center gap-1.5 text-[11px] text-white/60 cursor-pointer">
-        <input
-          type="checkbox"
-          checked={!transferRequired}
-          onChange={(e) => setTransferRequired(!e.target.checked)}
-          className="accent-current"
-          style={{ accentColor: theme.primary }}
-        />
-        振込サマリーから除外（自分の口座から直接引落など）
-      </label>
-
       {/* 適用期間 */}
       <div className="grid grid-cols-2 gap-3">
         <div>
@@ -655,10 +649,10 @@ export function FixedExpenses() {
         <div>
           <h3 className="text-lg font-bold text-white flex items-center gap-2">
             <CreditCard className="h-5 w-5" style={{ color: theme.primary }} />
-            固定費設定
+            {labels.title}
           </h3>
           <p className="text-xs text-gray-400 mt-0.5">
-            {selectedUser} の固定費（毎月自動で家計簿に反映）
+            {labels.subtitle}
           </p>
         </div>
         <Button
@@ -680,7 +674,7 @@ export function FixedExpenses() {
           border: `1px solid ${theme.primary}40`,
         }}
       >
-        <p className="text-xs text-gray-400">毎月の固定費合計</p>
+        <p className="text-xs text-gray-400">{labels.totalLabel}</p>
         <p className="text-2xl font-bold text-white">
           ¥{monthlyTotal.toLocaleString()}
         </p>
@@ -724,8 +718,8 @@ export function FixedExpenses() {
       ) : expenses.length === 0 ? (
         <div className="text-center py-8 text-gray-400">
           <CreditCard className="h-12 w-12 mx-auto mb-2 text-gray-600" />
-          <p className="text-sm">固定費が登録されていません</p>
-          <p className="text-xs mt-1">「追加」ボタンから登録してください</p>
+          <p className="text-sm">{labels.emptyLabel}</p>
+          <p className="text-xs mt-1">{labels.emptyHint}</p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -770,7 +764,7 @@ export function FixedExpenses() {
                         <span>·</span>
                         <span className="flex items-center gap-0.5">
                           <Calendar className="h-3 w-3" />
-                          毎月{expense.payment_day}日
+                          {isTransfer ? "送金" : "引落"} 毎月{expense.payment_day}日
                         </span>
                         <span>·</span>
                         <div className="relative inline-flex">
@@ -795,14 +789,6 @@ export function FixedExpenses() {
                           </select>
                           <span className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 text-[8px] text-white/50">▾</span>
                         </div>
-                        {expense.kind === "budget_transfer" && (
-                          <>
-                            <span>·</span>
-                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300">
-                              送金のみ
-                            </span>
-                          </>
-                        )}
                       </div>
                       <div className="flex items-center gap-1 text-[10px] text-white/40 mt-0.5 flex-wrap">
                         {expense.bank_account_id && bankAccountsMap[expense.bank_account_id] ? (
