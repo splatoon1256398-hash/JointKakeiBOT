@@ -30,6 +30,10 @@ const AddSavingDialog = dynamic(
   () => import("@/components/add-saving-dialog").then((module) => module.AddSavingDialog),
   { loading: () => null }
 );
+const TransferSummaryDialog = dynamic(
+  () => import("@/components/transfer-summary-dialog").then((module) => module.TransferSummaryDialog),
+  { loading: () => null }
+);
 
 function AppContent() {
   const {
@@ -46,6 +50,7 @@ function AppContent() {
   const [isAddExpenseOpen, setIsAddExpenseOpen] = useState(false);
   const [isAddIncomeOpen, setIsAddIncomeOpen] = useState(false);
   const [isAddSavingOpen, setIsAddSavingOpen] = useState(false);
+  const [isTransferSummaryOpen, setIsTransferSummaryOpen] = useState(false);
   const [loginKey, setLoginKey] = useState(0);
   const [splashFadeOut, setSplashFadeOut] = useState(false);
   const [showSplash, setShowSplash] = useState(true);
@@ -175,6 +180,7 @@ function AppContent() {
             <Dashboard
               onNavigateToAnalysis={handleNavigateToAnalysis}
               onNavigateToHistory={handleNavigateToHistory}
+              onNavigateToTransfers={() => setIsTransferSummaryOpen(true)}
             />
           )}
         </section>
@@ -228,6 +234,13 @@ function AppContent() {
         <AddSavingDialog
           open={isAddSavingOpen}
           onOpenChange={setIsAddSavingOpen}
+        />
+      )}
+
+      {isTransferSummaryOpen && (
+        <TransferSummaryDialog
+          open={isTransferSummaryOpen}
+          onOpenChange={setIsTransferSummaryOpen}
         />
       )}
     </div>

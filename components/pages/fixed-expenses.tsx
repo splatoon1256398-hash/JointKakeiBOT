@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { getJSTDateString } from "@/lib/date";
-import { Plus, Trash2, Calendar, Loader2, CreditCard, Pencil, X, Check } from "lucide-react";
+import { Plus, Trash2, Calendar, Loader2, CreditCard, Pencil, X, Check, Landmark } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,6 +16,13 @@ import {
 } from "@/components/ui/select";
 import { supabase } from "@/lib/supabase";
 import { useApp } from "@/contexts/app-context";
+import type { Json } from "@/lib/database.types";
+import {
+  buildSplitRatio,
+  inferSplitPreset,
+  normalizeSplitRatio,
+  type SplitPreset,
+} from "@/lib/transfers";
 
 interface FixedExpense {
   id: string;
@@ -30,10 +37,13 @@ interface FixedExpense {
   start_date: string | null;
   end_date: string | null;
   created_at: string;
+  bank_account_id: string | null;
+  split_ratio: Json | null;
+  transfer_required: boolean | null;
 }
 
 export function FixedExpenses() {
-  const { user, selectedUser, theme, categories: dbCategories, getCategoryIcon, getSubcategories } = useApp();
+  const { user, selectedUser, theme, categories: dbCategories, getCategoryIcon, getSubcategories, bankAccounts } = useApp();
   const [expenses, setExpenses] = useState<FixedExpense[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -57,6 +67,38 @@ export function FixedExpenses() {
   const [memo, setMemo] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  // Stage 7: 振込サマリー関連
+  const [bankAccountId, setBankAccountId] = useState<string>("");
+  const [splitPreset, setSplitPreset] = useState<SplitPreset>("joint_5050");
+  const [splitRen, setSplitRen] = useState<number>(50);
+  const [splitAkane, setSplitAkane] = useState<number>(50);
+  const [transferRequired, setTransferRequired] = useState<boolean>(true);
+
+  const bankAccountsMap = Object.fromEntries(bankAccounts.map((a) => [a.id, a]));
+
+  const applyPreset = (preset: SplitPreset) => {
+    setSplitPreset(preset);
+    if (preset === "joint_5050") {
+      setSplitRen(50);
+      setSplitAkane(50);
+    } else if (preset === "ren_full") {
+      setSplitRen(100);
+      setSplitAkane(0);
+    } else if (preset === "akane_full") {
+      setSplitRen(0);
+      setSplitAkane(100);
+    }
+  };
+
+  const applyDefaultSplitForUserType = (ut: string) => {
+    if (ut === "共同") {
+      applyPreset("joint_5050");
+    } else if (ut === "れん") {
+      applyPreset("ren_full");
+    } else if (ut === "あかね") {
+      applyPreset("akane_full");
+    }
+  };
 
   const resetForm = () => {
     setCategoryMain("");
@@ -66,6 +108,9 @@ export function FixedExpenses() {
     setMemo("");
     setStartDate("");
     setEndDate("");
+    setBankAccountId("");
+    setTransferRequired(true);
+    applyDefaultSplitForUserType(selectedUser);
     setEditingId(null);
     setShowAddForm(false);
   };
@@ -105,6 +150,13 @@ export function FixedExpenses() {
     setMemo(expense.memo || "");
     setStartDate(expense.start_date || "");
     setEndDate(expense.end_date || "");
+    setBankAccountId(expense.bank_account_id ?? "");
+    setTransferRequired(expense.transfer_required !== false);
+    const ratio = normalizeSplitRatio(expense.split_ratio, expense.user_type);
+    const preset = inferSplitPreset(ratio);
+    setSplitPreset(preset);
+    setSplitRen(ratio["れん"] ?? 0);
+    setSplitAkane(ratio["あかね"] ?? 0);
     setShowAddForm(false);
   };
 
@@ -125,6 +177,7 @@ export function FixedExpenses() {
 
     setSaving(true);
     try {
+      const splitRatio = buildSplitRatio(splitPreset, splitRen, splitAkane) as unknown as Json;
       const payload = {
         user_id: user.id,
         user_type: selectedUser,
@@ -136,6 +189,9 @@ export function FixedExpenses() {
         start_date: startDate || null,
         end_date: endDate || null,
         is_active: true,
+        bank_account_id: bankAccountId || null,
+        split_ratio: splitRatio,
+        transfer_required: transferRequired,
       };
 
       if (editingId) {
@@ -293,6 +349,114 @@ export function FixedExpenses() {
           placeholder="例: 家賃、光熱費など"
           className="bg-slate-700 border-slate-600 text-white h-9"
         />
+      </div>
+
+      {/* 引落口座 */}
+      <div>
+        <Label className="text-xs text-gray-400 flex items-center gap-1">
+          <Landmark className="h-3 w-3" />
+          引落口座
+        </Label>
+        <Select value={bankAccountId || "__none__"} onValueChange={(v) => setBankAccountId(v === "__none__" ? "" : v)}>
+          <SelectTrigger className="bg-slate-700 border-slate-600 text-white h-9">
+            <SelectValue placeholder="口座を選択" />
+          </SelectTrigger>
+          <SelectContent className="bg-slate-800 border-slate-700">
+            <SelectItem value="__none__" className="text-white/60">未設定</SelectItem>
+            {bankAccounts.map((acc) => (
+              <SelectItem key={acc.id} value={acc.id} className="text-white">
+                {acc.icon ?? "🏦"} {acc.account_name}（{acc.owner_user_type}）
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {bankAccounts.length === 0 && (
+          <p className="text-[10px] text-orange-400 mt-0.5">
+            先に「設定 → 口座」で銀行口座を登録してください
+          </p>
+        )}
+      </div>
+
+      {/* 負担配分 */}
+      <div className="space-y-1.5">
+        <Label className="text-xs text-gray-400">負担配分</Label>
+        <div className="grid grid-cols-4 gap-1.5">
+          {([
+            { key: "joint_5050", label: "折半", sub: "50:50" },
+            { key: "ren_full", label: "れん", sub: "100%" },
+            { key: "akane_full", label: "あかね", sub: "100%" },
+            { key: "custom", label: "カスタム", sub: "自由" },
+          ] as const).map((p) => {
+            const active = splitPreset === p.key;
+            return (
+              <button
+                key={p.key}
+                type="button"
+                onClick={() => applyPreset(p.key)}
+                className={`rounded-lg py-1.5 text-center border transition-all ${
+                  active
+                    ? "text-white font-semibold"
+                    : "border-white/10 bg-white/5 text-white/60 hover:bg-white/10"
+                }`}
+                style={active ? { background: `${theme.primary}25`, borderColor: `${theme.primary}70` } : {}}
+              >
+                <div className="text-[11px] leading-tight">{p.label}</div>
+                <div className="text-[9px] text-white/50 leading-tight">{p.sub}</div>
+              </button>
+            );
+          })}
+        </div>
+        {splitPreset === "custom" && (
+          <div className="grid grid-cols-2 gap-2 pt-1">
+            <div>
+              <Label className="text-[10px] text-gray-400">れん %</Label>
+              <Input
+                type="number"
+                min={0}
+                max={100}
+                value={splitRen}
+                onChange={(e) => {
+                  const v = Math.max(0, Math.min(100, Number(e.target.value) || 0));
+                  setSplitRen(v);
+                  setSplitAkane(100 - v);
+                }}
+                className="bg-slate-700 border-slate-600 text-white h-8"
+              />
+            </div>
+            <div>
+              <Label className="text-[10px] text-gray-400">あかね %</Label>
+              <Input
+                type="number"
+                min={0}
+                max={100}
+                value={splitAkane}
+                onChange={(e) => {
+                  const v = Math.max(0, Math.min(100, Number(e.target.value) || 0));
+                  setSplitAkane(v);
+                  setSplitRen(100 - v);
+                }}
+                className="bg-slate-700 border-slate-600 text-white h-8"
+              />
+            </div>
+          </div>
+        )}
+        {amount && parseInt(amount) > 0 && (
+          <p className="text-[10px] text-white/50 pt-0.5">
+            計算: ¥{parseInt(amount).toLocaleString()} →
+            {" れん ¥"}{Math.round((parseInt(amount) * splitRen) / 100).toLocaleString()}
+            {" / あかね ¥"}{Math.round((parseInt(amount) * splitAkane) / 100).toLocaleString()}
+          </p>
+        )}
+        <label className="flex items-center gap-1.5 pt-1 text-[11px] text-white/60 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={!transferRequired}
+            onChange={(e) => setTransferRequired(!e.target.checked)}
+            className="accent-current"
+            style={{ accentColor: theme.primary }}
+          />
+          振込サマリーから除外（自分の口座から直接引落など）
+        </label>
       </div>
 
       {/* 適用期間 */}
@@ -487,6 +651,22 @@ export function FixedExpenses() {
                           <Calendar className="h-3 w-3" />
                           毎月{expense.payment_day}日
                         </span>
+                      </div>
+                      <div className="flex items-center gap-1 text-[10px] text-white/40 mt-0.5 flex-wrap">
+                        {expense.bank_account_id && bankAccountsMap[expense.bank_account_id] ? (
+                          <span className="flex items-center gap-0.5">
+                            <Landmark className="h-2.5 w-2.5" />
+                            {bankAccountsMap[expense.bank_account_id]?.account_name}
+                            <span className="text-white/30">
+                              ({bankAccountsMap[expense.bank_account_id]?.owner_user_type})
+                            </span>
+                          </span>
+                        ) : (
+                          <span className="text-orange-400/80">🏦 口座未設定</span>
+                        )}
+                        {expense.transfer_required === false && (
+                          <span className="text-white/40">· 振込対象外</span>
+                        )}
                       </div>
                       {period && (
                         <p className="text-[10px] text-gray-500 mt-0.5">

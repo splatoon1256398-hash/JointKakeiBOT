@@ -2,11 +2,12 @@
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Settings as SettingsIcon, Tag, Wallet, CreditCard, Mail, Bell, LayoutGrid, User, Users } from "lucide-react";
+import { Settings as SettingsIcon, Tag, Wallet, CreditCard, Mail, Bell, LayoutGrid, Landmark, User, Users } from "lucide-react";
 import { useApp } from "@/contexts/app-context";
 import { Settings } from "@/components/pages/settings";
 import { BudgetSettings } from "@/components/pages/budget-settings";
 import { FixedExpenses } from "@/components/pages/fixed-expenses";
+import { BankAccounts } from "@/components/pages/bank-accounts";
 import { GmailSettings } from "@/components/pages/gmail-settings";
 import { PushNotificationSettings } from "@/components/pages/push-notification-settings";
 import { HomeWidgetSettings } from "@/components/pages/home-widget-settings";
@@ -19,6 +20,7 @@ const TAB_SCOPE: Record<string, "personal" | "shared"> = {
   fixed: "shared",
   budget: "shared",
   categories: "shared",
+  accounts: "shared",
   home: "personal",
   gmail: "personal",
   push: "personal",
@@ -29,6 +31,7 @@ const TAB_SCOPE_LABEL: Record<string, string> = {
   fixed: "選択中のユーザーの固定費",
   budget: "選択中のユーザーの予算",
   categories: "全員で共有するカテゴリ",
+  accounts: "全員で共有する銀行口座マスター",
   home: "あなた個人のホーム設定",
   gmail: "あなた個人のGmail連携",
   push: "あなた個人の通知設定",
@@ -109,6 +112,10 @@ export function SettingsModal() {
                 <Tag className="h-4 w-4" />
                 カテゴリ
               </TabsTrigger>
+              <TabsTrigger value="accounts" className="flex flex-col gap-1 py-2 px-2 text-[10px] min-w-0 flex-shrink-0">
+                <Landmark className="h-4 w-4" />
+                口座
+              </TabsTrigger>
               <TabsTrigger value="home" className="flex flex-col gap-1 py-2 px-2 text-[10px] min-w-0 flex-shrink-0">
                 <LayoutGrid className="h-4 w-4" />
                 ホーム
@@ -148,6 +155,13 @@ export function SettingsModal() {
               <ScopeBadge scope={TAB_SCOPE.categories} label={TAB_SCOPE_LABEL.categories} />
             </div>
             <Settings />
+          </TabsContent>
+
+          <TabsContent value="accounts" className="mt-4 min-h-[520px]">
+            <div className="flex justify-end mb-2">
+              <ScopeBadge scope={TAB_SCOPE.accounts} label={TAB_SCOPE_LABEL.accounts} />
+            </div>
+            <BankAccounts />
           </TabsContent>
 
           <TabsContent value="home" className="mt-4 min-h-[520px]">

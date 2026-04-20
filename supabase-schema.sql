@@ -579,3 +579,117 @@ CREATE POLICY "Users can update own monthly_reports" ON monthly_reports
 
 COMMENT ON TABLE monthly_reports IS '月次 AI レポート (#7): cron で自動生成しユーザに Push + チャットバナー通知する';
 COMMENT ON COLUMN monthly_reports.read_at IS 'ユーザが UI で確認した時刻。NULL なら未読バッジ表示対象';
+
+-- ==========================================
+-- Stage 7 (2026-04-20): 銀行口座マスター + 固定費引落口座紐付け + 月次振込サマリー
+-- ==========================================
+
+-- 1. bank_accounts: 銀行口座マスター
+-- 所有者は "れん" / "あかね" / "共同" の3種。支払元として固定費に紐付ける
+CREATE TABLE IF NOT EXISTS bank_accounts (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  owner_user_type TEXT NOT NULL CHECK (owner_user_type IN ('れん', 'あかね', '共同')),
+  account_name TEXT NOT NULL,
+  bank_name TEXT,
+  branch_name TEXT,
+  account_last4 TEXT,
+  color TEXT DEFAULT '#4f46e5',
+  icon TEXT DEFAULT '🏦',
+  sort_order INTEGER DEFAULT 0,
+  is_active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_bank_accounts_owner ON bank_accounts(owner_user_type);
+CREATE INDEX IF NOT EXISTS idx_bank_accounts_active ON bank_accounts(is_active);
+
+ALTER TABLE bank_accounts ENABLE ROW LEVEL SECURITY;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'bank_accounts' AND policyname = 'Authenticated can read bank_accounts') THEN
+    CREATE POLICY "Authenticated can read bank_accounts" ON bank_accounts
+      FOR SELECT USING (auth.role() = 'authenticated');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'bank_accounts' AND policyname = 'Authenticated can insert bank_accounts') THEN
+    CREATE POLICY "Authenticated can insert bank_accounts" ON bank_accounts
+      FOR INSERT WITH CHECK (auth.role() = 'authenticated' AND auth.uid() = user_id);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'bank_accounts' AND policyname = 'Authenticated can update bank_accounts') THEN
+    CREATE POLICY "Authenticated can update bank_accounts" ON bank_accounts
+      FOR UPDATE USING (auth.role() = 'authenticated');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'bank_accounts' AND policyname = 'Authenticated can delete bank_accounts') THEN
+    CREATE POLICY "Authenticated can delete bank_accounts" ON bank_accounts
+      FOR DELETE USING (auth.role() = 'authenticated');
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_bank_accounts_updated_at') THEN
+    CREATE TRIGGER update_bank_accounts_updated_at BEFORE UPDATE ON bank_accounts
+      FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+  END IF;
+END $$;
+
+COMMENT ON TABLE bank_accounts IS '銀行口座マスター (Stage 7)。固定費の引落先として紐付け、振込サマリーの基準になる';
+COMMENT ON COLUMN bank_accounts.owner_user_type IS '所有者 user_type: "れん" / "あかね" / "共同"';
+
+-- 2. fixed_expenses 拡張: 引落口座 + 負担配分
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'fixed_expenses' AND column_name = 'bank_account_id'
+  ) THEN
+    ALTER TABLE fixed_expenses
+      ADD COLUMN bank_account_id UUID REFERENCES bank_accounts(id) ON DELETE SET NULL,
+      ADD COLUMN split_ratio JSONB,
+      ADD COLUMN transfer_required BOOLEAN DEFAULT TRUE;
+
+    COMMENT ON COLUMN fixed_expenses.bank_account_id IS '引落口座 (bank_accounts.id)。NULL は未設定';
+    COMMENT ON COLUMN fixed_expenses.split_ratio IS '負担配分 JSONB。例: {"れん":50,"あかね":50} / {"あかね":100}。NULL=user_type当人100% (共同なら50:50)';
+    COMMENT ON COLUMN fixed_expenses.transfer_required IS '振込対象に含めるか。false にすると振込サマリーから除外';
+  END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_fixed_expenses_bank_account
+  ON fixed_expenses(bank_account_id);
+
+-- 3. fixed_expense_transfers: 月次振込済みチェック
+CREATE TABLE IF NOT EXISTS fixed_expense_transfers (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  fixed_expense_id UUID NOT NULL REFERENCES fixed_expenses(id) ON DELETE CASCADE,
+  target_month DATE NOT NULL,
+  payer_user_type TEXT NOT NULL CHECK (payer_user_type IN ('れん', 'あかね')),
+  amount INTEGER NOT NULL,
+  bank_account_id UUID REFERENCES bank_accounts(id) ON DELETE SET NULL,
+  transferred_at TIMESTAMPTZ,
+  created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
+  UNIQUE(fixed_expense_id, target_month, payer_user_type)
+);
+
+CREATE INDEX IF NOT EXISTS idx_fixed_expense_transfers_month
+  ON fixed_expense_transfers(target_month, payer_user_type);
+
+ALTER TABLE fixed_expense_transfers ENABLE ROW LEVEL SECURITY;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'fixed_expense_transfers' AND policyname = 'Authenticated can manage transfers') THEN
+    CREATE POLICY "Authenticated can manage transfers" ON fixed_expense_transfers
+      FOR ALL USING (auth.role() = 'authenticated')
+      WITH CHECK (auth.role() = 'authenticated');
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_fixed_expense_transfers_updated_at') THEN
+    CREATE TRIGGER update_fixed_expense_transfers_updated_at
+      BEFORE UPDATE ON fixed_expense_transfers
+      FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+  END IF;
+END $$;
+
+COMMENT ON TABLE fixed_expense_transfers IS '月次振込済みチェック (Stage 7)。月×固定費×振込者でユニーク。toggle は insert/delete で実装。amount はスナップショット';

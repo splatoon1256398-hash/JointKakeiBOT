@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { User } from '@supabase/supabase-js';
 import { processFixedExpenses } from '@/lib/fixed-expenses';
 import { CharacterId, isValidCharacterId, CHARACTER_REGISTRY } from '@/lib/characters';
+import type { BankAccount } from '@/lib/transfers';
 
 export type UserType = "共同" | string;
 
@@ -31,6 +32,7 @@ export interface Category {
 }
 
 const CATEGORIES_CACHE_KEY = "categories-v1";
+const BANK_ACCOUNTS_CACHE_KEY = "bank-accounts-v1";
 
 interface AppContextType {
   user: User | null;
@@ -64,6 +66,9 @@ interface AppContextType {
   getCategoryIcon: (main: string) => string;
   getSubcategories: (main: string) => string[];
   refreshCategories: () => Promise<void>;
+  // ===== 銀行口座マスター（Stage 7） =====
+  bankAccounts: BankAccount[];
+  refreshBankAccounts: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -155,6 +160,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
     return [];
   });
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const cached = localStorage.getItem(BANK_ACCOUNTS_CACHE_KEY);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) return parsed as BankAccount[];
+      }
+    } catch {
+      // ignore
+    }
+    return [];
+  });
   const fixedExpensesProcessed = useRef(false);
 
   // ===== テーマ構築ロジック =====
@@ -231,6 +249,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // 起動時 1 回だけ fetch（キャッシュは state の初期値で既に入っている）
     refreshCategories();
   }, [refreshCategories]);
+
+  const refreshBankAccounts = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("bank_accounts")
+      .select("*")
+      .eq("is_active", true)
+      .order("sort_order", { ascending: true });
+    if (error || !data) return;
+    setBankAccounts(data as BankAccount[]);
+    try {
+      localStorage.setItem(BANK_ACCOUNTS_CACHE_KEY, JSON.stringify(data));
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshBankAccounts();
+  }, [refreshBankAccounts]);
 
   // ===== キャラクター画像の事前 preload =====
   // ハチワレ等のキャラクターを使っている場合、scanning / success などの
@@ -479,6 +516,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // Phase 2: 集約済みカテゴリ
       categories, categoriesMap, categoryIcons,
       getCategoryIcon, getSubcategories, refreshCategories,
+      // Stage 7: 銀行口座マスター
+      bankAccounts, refreshBankAccounts,
     }), [
       user,
       isAuthLoading,
@@ -503,6 +542,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       getCategoryIcon,
       getSubcategories,
       refreshCategories,
+      bankAccounts,
+      refreshBankAccounts,
     ]);
 
   return (

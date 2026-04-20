@@ -46,6 +46,54 @@ export type Database = {
           },
         ]
       }
+      bank_accounts: {
+        Row: {
+          account_last4: string | null
+          account_name: string
+          bank_name: string | null
+          branch_name: string | null
+          color: string | null
+          created_at: string
+          icon: string | null
+          id: string
+          is_active: boolean | null
+          owner_user_type: string
+          sort_order: number | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          account_last4?: string | null
+          account_name: string
+          bank_name?: string | null
+          branch_name?: string | null
+          color?: string | null
+          created_at?: string
+          icon?: string | null
+          id?: string
+          is_active?: boolean | null
+          owner_user_type: string
+          sort_order?: number | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          account_last4?: string | null
+          account_name?: string
+          bank_name?: string | null
+          branch_name?: string | null
+          color?: string | null
+          created_at?: string
+          icon?: string | null
+          id?: string
+          is_active?: boolean | null
+          owner_user_type?: string
+          sort_order?: number | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       budget_alert_logs: {
         Row: {
           alert_month: string
@@ -139,6 +187,7 @@ export type Database = {
       fixed_expenses: {
         Row: {
           amount: number
+          bank_account_id: string | null
           category_main: string
           category_sub: string
           created_at: string | null
@@ -147,13 +196,16 @@ export type Database = {
           is_active: boolean | null
           memo: string | null
           payment_day: number
+          split_ratio: Json | null
           start_date: string | null
+          transfer_required: boolean | null
           updated_at: string | null
           user_id: string | null
           user_type: string
         }
         Insert: {
           amount: number
+          bank_account_id?: string | null
           category_main: string
           category_sub: string
           created_at?: string | null
@@ -162,13 +214,16 @@ export type Database = {
           is_active?: boolean | null
           memo?: string | null
           payment_day: number
+          split_ratio?: Json | null
           start_date?: string | null
+          transfer_required?: boolean | null
           updated_at?: string | null
           user_id?: string | null
           user_type: string
         }
         Update: {
           amount?: number
+          bank_account_id?: string | null
           category_main?: string
           category_sub?: string
           created_at?: string | null
@@ -177,12 +232,76 @@ export type Database = {
           is_active?: boolean | null
           memo?: string | null
           payment_day?: number
+          split_ratio?: Json | null
           start_date?: string | null
+          transfer_required?: boolean | null
           updated_at?: string | null
           user_id?: string | null
           user_type?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "fixed_expenses_bank_account_id_fkey"
+            columns: ["bank_account_id"]
+            isOneToOne: false
+            referencedRelation: "bank_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fixed_expense_transfers: {
+        Row: {
+          amount: number
+          bank_account_id: string | null
+          created_at: string
+          created_by: string | null
+          fixed_expense_id: string
+          id: string
+          payer_user_type: string
+          target_month: string
+          transferred_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          amount: number
+          bank_account_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          fixed_expense_id: string
+          id?: string
+          payer_user_type: string
+          target_month: string
+          transferred_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          bank_account_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          fixed_expense_id?: string
+          id?: string
+          payer_user_type?: string
+          target_month?: string
+          transferred_at?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fixed_expense_transfers_fixed_expense_id_fkey"
+            columns: ["fixed_expense_id"]
+            isOneToOne: false
+            referencedRelation: "fixed_expenses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fixed_expense_transfers_bank_account_id_fkey"
+            columns: ["bank_account_id"]
+            isOneToOne: false
+            referencedRelation: "bank_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       gmail_filters: {
         Row: {

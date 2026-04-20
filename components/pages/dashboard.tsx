@@ -27,6 +27,7 @@ import { calculateDaysToPayday, WIDGET_TYPES } from "@/lib/widgets";
 import { EmptyState } from "@/components/empty-state";
 import { useCharacter } from "@/lib/use-character";
 import { CharacterImage } from "@/components/character-image";
+import { useTransferSummary, getCurrentTargetMonth } from "@/lib/use-transfer-summary";
 
 type UserType = "共同" | "れん" | "あかね";
 
@@ -58,6 +59,7 @@ const CHART_COLORS = ['#8b5cf6', '#ec4899', '#06b6d4', '#10b981', '#f59e0b', '#e
 interface DashboardProps {
   onNavigateToAnalysis?: () => void;
   onNavigateToHistory?: () => void;
+  onNavigateToTransfers?: () => void;
 }
 
 interface WidgetSlot {
@@ -69,7 +71,7 @@ interface WidgetSlot {
   paydayShift?: "before" | "after";
 }
 
-export function Dashboard({ onNavigateToAnalysis, onNavigateToHistory }: DashboardProps) {
+export function Dashboard({ onNavigateToAnalysis, onNavigateToHistory, onNavigateToTransfers }: DashboardProps) {
   const { selectedUser, theme, refreshTrigger, user, setIsSettingsOpen, setSettingsTab, categoryIcons } = useApp();
   const { assets: charAssets, isActive: charActive, themeColors: charColors } = useCharacter();
   const [isLoading, setIsLoading] = useState(true);
@@ -90,6 +92,8 @@ export function Dashboard({ onNavigateToAnalysis, onNavigateToHistory }: Dashboa
     { type: "payday", payday: 25, paydayShift: "before" },
   ]);
   const [savingGoals, setSavingGoals] = useState<{ id: string; goal_name: string; target_amount: number; current_amount: number }[]>([]);
+  const currentTargetMonth = getCurrentTargetMonth();
+  const { summary: transferSummary, loading: transferLoading } = useTransferSummary(currentTargetMonth);
 
   const getMonthRange = () => {
     const now = new Date();
@@ -473,6 +477,60 @@ export function Dashboard({ onNavigateToAnalysis, onNavigateToHistory }: Dashboa
       <div className="grid grid-cols-2 gap-3">
         {widgetSlots.slice(0, 4).map((slot, index) => renderWidget(slot, index))}
       </div>
+
+      {/* 今月の振込予定カード */}
+      <button
+        onClick={onNavigateToTransfers}
+        className="card-solid w-full text-left relative overflow-hidden p-4 transition-transform active:scale-[0.99]"
+        style={{ border: `1px solid ${theme.primary}25` }}
+      >
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+            <Banknote className="w-4 h-4" style={{ color: theme.primary }} />
+            今月の振込予定
+          </h3>
+          <ChevronRight className="w-4 h-4 text-white/40" />
+        </div>
+        {transferLoading && !transferSummary ? (
+          <div className="h-12 bg-white/5 rounded-xl animate-pulse" />
+        ) : !transferSummary || transferSummary.grandTotalPayable === 0 ? (
+          <div className="flex items-center gap-2 text-white/50 text-xs">
+            <span>今月の振込はありません</span>
+            <span className="text-green-400">✓</span>
+          </div>
+        ) : (
+          <>
+            <p className="text-[11px] text-white/50">
+              {selectedUser === "共同" ? "家庭内 振込合計" : "あなたが振り込む合計"}
+            </p>
+            <div className="flex items-baseline gap-2">
+              <p className="text-2xl font-bold text-white tabular-nums">
+                ¥{transferSummary.grandTotalPayable.toLocaleString()}
+              </p>
+              <span className="text-xs text-white/40">
+                未完 {transferSummary.grandUnpaidCount} 件
+              </span>
+            </div>
+            {transferSummary.payableByMe.length > 0 && (
+              <div className="mt-2 space-y-0.5">
+                {transferSummary.payableByMe.slice(0, 2).map((g) => (
+                  <div key={g.payee} className="flex justify-between text-[11px]">
+                    <span className="text-white/60">→ {g.payee} へ</span>
+                    <span className="text-white font-medium tabular-nums">
+                      ¥{g.remainingAmount.toLocaleString()}
+                    </span>
+                  </div>
+                ))}
+                {transferSummary.payableByMe.length > 2 && (
+                  <p className="text-[10px] text-white/40">
+                    ほか {transferSummary.payableByMe.length - 2} 件
+                  </p>
+                )}
+              </div>
+            )}
+          </>
+        )}
+      </button>
 
       {/* カテゴリー予算リスト */}
       <div className="card-solid relative overflow-hidden">
