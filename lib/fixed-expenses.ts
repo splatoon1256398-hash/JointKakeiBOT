@@ -12,6 +12,7 @@ interface FixedExpense {
   memo: string | null;
   start_date: string | null;
   end_date: string | null;
+  kind: string | null;
 }
 
 /**
@@ -95,6 +96,13 @@ export async function processFixedExpenses(
     const insertedLabels: string[] = [];
 
     for (const expense of fixedExpenses as FixedExpense[]) {
+      // 予算送金 (budget_transfer) は家計簿に自動登録しない
+      // 振込サマリーには出るが transactions には何も入れない
+      if (expense.kind === "budget_transfer") {
+        result.skipped++;
+        continue;
+      }
+
       // 適用期間チェック: start_date/end_date の範囲外ならスキップ
       if (expense.start_date && todayStr < expense.start_date) {
         result.skipped++;

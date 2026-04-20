@@ -30,12 +30,10 @@ function labelMonth(targetMonth: string): string {
 }
 
 export function TransferSummaryDialog({ open, onOpenChange }: TransferSummaryDialogProps) {
-  const { user, theme, selectedUser } = useApp();
+  const { user, theme, displayName } = useApp();
   const [targetMonth, setTargetMonth] = useState(() => formatTargetMonth(new Date()));
   const { summary, loading, refetch } = useTransferSummary(targetMonth);
   const [togglingId, setTogglingId] = useState<string | null>(null);
-
-  const isJointMode = selectedUser === "共同";
 
   const toggleTransfer = useCallback(
     async (row: TransferSummaryRow) => {
@@ -125,9 +123,7 @@ export function TransferSummaryDialog({ open, onOpenChange }: TransferSummaryDia
                 className="rounded-xl p-3"
                 style={{ background: `${theme.primary}15`, border: `1px solid ${theme.primary}40` }}
               >
-                <p className="text-[10px] text-white/50">
-                  {isJointMode ? "家庭内 振込合計" : "あなたが振り込む"}
-                </p>
+                <p className="text-[10px] text-white/50">あなたが振り込む</p>
                 <p className="text-xl font-bold text-white tabular-nums">
                   ¥{summary.grandTotalPayable.toLocaleString()}
                 </p>
@@ -135,24 +131,22 @@ export function TransferSummaryDialog({ open, onOpenChange }: TransferSummaryDia
                   未完 {summary.grandUnpaidCount} 件
                 </p>
               </div>
-              {!isJointMode && (
-                <div className="rounded-xl p-3 bg-slate-800/50 border border-slate-700/50">
-                  <p className="text-[10px] text-white/50">あなたが受け取る</p>
-                  <p className="text-xl font-bold text-white tabular-nums">
-                    ¥{summary.grandTotalReceivable.toLocaleString()}
-                  </p>
-                  <p className="text-[10px] text-white/40 mt-0.5">
-                    {summary.receivableByMe.reduce((s, g) => s + g.rows.length, 0)} 件
-                  </p>
-                </div>
-              )}
+              <div className="rounded-xl p-3 bg-slate-800/50 border border-slate-700/50">
+                <p className="text-[10px] text-white/50">あなたが受け取る</p>
+                <p className="text-xl font-bold text-white tabular-nums">
+                  ¥{summary.grandTotalReceivable.toLocaleString()}
+                </p>
+                <p className="text-[10px] text-white/40 mt-0.5">
+                  {summary.receivableByMe.reduce((s, g) => s + g.rows.length, 0)} 件
+                </p>
+              </div>
             </div>
 
             {/* 振込する側（あなた→他） */}
             {summary.payableByMe.length > 0 && (
               <section className="space-y-2">
                 <h3 className="text-xs font-semibold text-white/70 px-1">
-                  {isJointMode ? "家庭内の振込予定" : "あなたが振り込む"}
+                  あなたが振り込む
                 </h3>
                 {summary.payableByMe.map((group) => (
                   <div
@@ -178,9 +172,9 @@ export function TransferSummaryDialog({ open, onOpenChange }: TransferSummaryDia
                     <div className="divide-y divide-white/5">
                       {group.rows.map((row) => {
                         const isToggling = togglingId === `${row.fixedExpenseId}__${row.payer}`;
-                        // payer=currentUser 以外（共同モードなど）は toggle 不可にする
-                        const canToggle = isPayerUserType(selectedUser)
-                          ? row.payer === selectedUser
+                        // 自分 (displayName) の振込だけ toggle できる
+                        const canToggle = isPayerUserType(displayName)
+                          ? row.payer === displayName
                           : true;
                         return (
                           <div
@@ -193,11 +187,6 @@ export function TransferSummaryDialog({ open, onOpenChange }: TransferSummaryDia
                             <div className="flex-1 min-w-0">
                               <p className="text-sm text-white truncate">{row.label}</p>
                               <p className="text-[10px] text-white/40 truncate">
-                                {isJointMode && (
-                                  <>
-                                    <span>{row.payer} →</span>{" "}
-                                  </>
-                                )}
                                 <Landmark className="inline h-2.5 w-2.5 mr-0.5" />
                                 {row.bankAccount?.account_name ?? "—"} · 毎月
                                 {row.paymentDay}日

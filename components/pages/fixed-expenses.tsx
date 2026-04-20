@@ -40,10 +40,13 @@ interface FixedExpense {
   bank_account_id: string | null;
   split_ratio: Json | null;
   transfer_required: boolean | null;
+  kind: string | null;
 }
 
+type FixedExpenseKind = "expense" | "budget_transfer";
+
 export function FixedExpenses() {
-  const { user, selectedUser, theme, categories: dbCategories, getCategoryIcon, getSubcategories, bankAccounts } = useApp();
+  const { user, selectedUser, displayName, theme, categories: dbCategories, getCategoryIcon, getSubcategories, bankAccounts } = useApp();
   const [expenses, setExpenses] = useState<FixedExpense[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -74,8 +77,10 @@ export function FixedExpenses() {
   const [splitRen, setSplitRen] = useState<number>(50);
   const [splitAkane, setSplitAkane] = useState<number>(50);
   const [transferRequired, setTransferRequired] = useState<boolean>(true);
+  const [kind, setKind] = useState<FixedExpenseKind>("expense");
 
-  const USER_TYPE_OPTIONS = ["共同", "れん", "あかね"] as const;
+  // スコープ候補: 共同 + ログインユーザー自身の名前のみ (displayName が空なら "共同" のみ)
+  const USER_TYPE_OPTIONS = displayName ? (["共同", displayName] as const) : (["共同"] as const);
 
   const bankAccountsMap = Object.fromEntries(bankAccounts.map((a) => [a.id, a]));
 
@@ -113,6 +118,7 @@ export function FixedExpenses() {
     setEndDate("");
     setBankAccountId("");
     setTransferRequired(true);
+    setKind("expense");
     setFormUserType(selectedUser);
     applyDefaultSplitForUserType(selectedUser);
     setEditingId(null);
@@ -161,6 +167,7 @@ export function FixedExpenses() {
     setEndDate(expense.end_date || "");
     setBankAccountId(expense.bank_account_id ?? "");
     setTransferRequired(expense.transfer_required !== false);
+    setKind((expense.kind as FixedExpenseKind) ?? "expense");
     setFormUserType(expense.user_type);
     const ratio = normalizeSplitRatio(expense.split_ratio, expense.user_type);
     const preset = inferSplitPreset(ratio);
@@ -212,6 +219,7 @@ export function FixedExpenses() {
         bank_account_id: bankAccountId || null,
         split_ratio: splitRatio,
         transfer_required: transferRequired,
+        kind,
       };
 
       if (editingId) {
@@ -331,10 +339,13 @@ export function FixedExpenses() {
         </button>
       </div>
 
-      {/* スコープ（共同 / 個人）*/}
+      {/* スコープ（共同 / 自分）*/}
       <div className="space-y-1">
         <Label className="text-xs text-gray-400">スコープ</Label>
-        <div className="grid grid-cols-3 gap-1.5">
+        <div
+          className="grid gap-1.5"
+          style={{ gridTemplateColumns: `repeat(${USER_TYPE_OPTIONS.length}, minmax(0, 1fr))` }}
+        >
           {USER_TYPE_OPTIONS.map((ut) => {
             const active = formUserType === ut;
             return (
@@ -353,6 +364,39 @@ export function FixedExpenses() {
               </button>
             );
           })}
+        </div>
+      </div>
+
+      {/* 種別: 固定費 (家計簿に自動登録) / 送金のみ (振込サマリーにだけ出す) */}
+      <div className="space-y-1">
+        <Label className="text-xs text-gray-400">種別</Label>
+        <div className="grid grid-cols-2 gap-1.5">
+          <button
+            type="button"
+            onClick={() => setKind("expense")}
+            className={`rounded-lg py-1.5 text-xs border transition-all text-left px-2.5 ${
+              kind === "expense"
+                ? "text-white font-semibold"
+                : "border-white/10 bg-white/5 text-white/60 hover:bg-white/10"
+            }`}
+            style={kind === "expense" ? { background: `${theme.primary}25`, borderColor: `${theme.primary}70` } : {}}
+          >
+            <div>固定費</div>
+            <div className="text-[9px] text-white/50">家計簿に自動登録</div>
+          </button>
+          <button
+            type="button"
+            onClick={() => setKind("budget_transfer")}
+            className={`rounded-lg py-1.5 text-xs border transition-all text-left px-2.5 ${
+              kind === "budget_transfer"
+                ? "text-white font-semibold"
+                : "border-white/10 bg-white/5 text-white/60 hover:bg-white/10"
+            }`}
+            style={kind === "budget_transfer" ? { background: `${theme.primary}25`, borderColor: `${theme.primary}70` } : {}}
+          >
+            <div>送金のみ</div>
+            <div className="text-[9px] text-white/50">食費・生活費など</div>
+          </button>
         </div>
       </div>
 
@@ -737,6 +781,12 @@ export function FixedExpenses() {
                             style={{ background: `${theme.primary}20`, borderColor: `${theme.primary}40` }}
                             aria-label="スコープ変更"
                           >
+                            {/* 自分のもの (共同 + displayName) 以外の値は既に選ばれている場合のみ表示。通常は表示されない */}
+                            {![...USER_TYPE_OPTIONS].includes(expense.user_type as (typeof USER_TYPE_OPTIONS)[number]) && (
+                              <option value={expense.user_type} className="bg-slate-800 text-white">
+                                {expense.user_type}
+                              </option>
+                            )}
                             {USER_TYPE_OPTIONS.map((ut) => (
                               <option key={ut} value={ut} className="bg-slate-800 text-white">
                                 {ut}
@@ -745,6 +795,14 @@ export function FixedExpenses() {
                           </select>
                           <span className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 text-[8px] text-white/50">▾</span>
                         </div>
+                        {expense.kind === "budget_transfer" && (
+                          <>
+                            <span>·</span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300">
+                              送金のみ
+                            </span>
+                          </>
+                        )}
                       </div>
                       <div className="flex items-center gap-1 text-[10px] text-white/40 mt-0.5 flex-wrap">
                         {expense.bank_account_id && bankAccountsMap[expense.bank_account_id] ? (

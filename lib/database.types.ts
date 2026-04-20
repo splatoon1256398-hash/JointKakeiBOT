@@ -194,6 +194,7 @@ export type Database = {
           end_date: string | null
           id: string
           is_active: boolean | null
+          kind: string | null
           memo: string | null
           payment_day: number
           split_ratio: Json | null
@@ -212,6 +213,7 @@ export type Database = {
           end_date?: string | null
           id?: string
           is_active?: boolean | null
+          kind?: string | null
           memo?: string | null
           payment_day: number
           split_ratio?: Json | null
@@ -230,6 +232,7 @@ export type Database = {
           end_date?: string | null
           id?: string
           is_active?: boolean | null
+          kind?: string | null
           memo?: string | null
           payment_day?: number
           split_ratio?: Json | null

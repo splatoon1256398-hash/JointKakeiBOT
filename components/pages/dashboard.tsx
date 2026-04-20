@@ -501,7 +501,7 @@ export function Dashboard({ onNavigateToAnalysis, onNavigateToHistory, onNavigat
         ) : (
           <>
             <p className="text-[11px] text-white/50">
-              {selectedUser === "共同" ? "家庭内 振込合計" : "あなたが振り込む合計"}
+              あなたが振り込む合計
             </p>
             <div className="flex items-baseline gap-2">
               <p className="text-2xl font-bold text-white tabular-nums">

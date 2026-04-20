@@ -46,6 +46,7 @@ const makeExpense = (
   bank_account_id: null,
   split_ratio: null,
   transfer_required: true,
+  kind: "expense",
   ...overrides,
 });
 

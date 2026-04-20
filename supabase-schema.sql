@@ -653,6 +653,21 @@ DO $$ BEGIN
   END IF;
 END $$;
 
+-- 2b. fixed_expenses: kind カラム (expense / budget_transfer)
+-- expense = 通常の固定費。cron で transactions に自動登録される
+-- budget_transfer = 予算送金 (食費等)。振込サマリーには出るが transactions には登録しない
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'fixed_expenses' AND column_name = 'kind'
+  ) THEN
+    ALTER TABLE fixed_expenses
+      ADD COLUMN kind TEXT DEFAULT 'expense' CHECK (kind IN ('expense', 'budget_transfer'));
+
+    COMMENT ON COLUMN fixed_expenses.kind IS '種別: expense (固定費、家計簿に自動登録) / budget_transfer (予算送金、家計簿には登録しない)';
+  END IF;
+END $$;
+
 CREATE INDEX IF NOT EXISTS idx_fixed_expenses_bank_account
   ON fixed_expenses(bank_account_id);
 

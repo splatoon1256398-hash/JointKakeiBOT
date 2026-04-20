@@ -18,7 +18,7 @@ export function getCurrentTargetMonth(): string {
 }
 
 export function useTransferSummary(targetMonth: string) {
-  const { user, selectedUser, bankAccounts, categoryIcons, refreshTrigger } = useApp();
+  const { user, displayName, bankAccounts, categoryIcons, refreshTrigger } = useApp();
   const [summary, setSummary] = useState<TransferSummary | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -51,7 +51,9 @@ export function useTransferSummary(targetMonth: string) {
       if (expensesRes.error) throw expensesRes.error;
       if (transfersRes.error) throw transfersRes.error;
 
-      const currentUser = isOwnerUserType(selectedUser) ? selectedUser : "共同";
+      // 振込サマリーは常に「自分視点」(共同モードでも自分 payer 分だけ表示)
+      // displayName が "れん"/"あかね" ならそれを currentUser に、それ以外はフォールバックで "共同" にする
+      const currentUser = isOwnerUserType(displayName) ? displayName : "共同";
       setSummary(
         computeTransferSummary({
           currentUser,
@@ -68,7 +70,7 @@ export function useTransferSummary(targetMonth: string) {
     } finally {
       setLoading(false);
     }
-  }, [user, selectedUser, bankAccounts, categoryIcons, targetMonth]);
+  }, [user, displayName, bankAccounts, categoryIcons, targetMonth]);
 
   useEffect(() => {
     fetchAll();
