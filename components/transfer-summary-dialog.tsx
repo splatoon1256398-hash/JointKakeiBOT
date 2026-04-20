@@ -150,15 +150,21 @@ export function TransferSummaryDialog({ open, onOpenChange }: TransferSummaryDia
                 </h3>
                 {summary.payableByMe.map((group) => (
                   <div
-                    key={group.payee}
+                    key={group.bankAccount.id}
                     className="rounded-xl bg-slate-800/40 border border-slate-700/50 overflow-hidden"
                   >
                     <div className="flex items-center justify-between px-3 py-2 bg-slate-800/60">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm text-white/70">→</span>
-                        <span className="text-sm font-semibold text-white">{group.payee} へ</span>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-base flex-shrink-0">{group.bankAccount.icon ?? "🏦"}</span>
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-white truncate">
+                            {group.bankAccount.account_name}
+                            <span className="text-[10px] text-white/40 ml-1">({group.payee})</span>
+                          </p>
+                          <p className="text-[10px] text-white/40">へ振込</p>
+                        </div>
                       </div>
-                      <div className="text-right">
+                      <div className="text-right flex-shrink-0">
                         <p className="text-sm font-bold text-white tabular-nums">
                           残 ¥{group.remainingAmount.toLocaleString()}
                         </p>
@@ -187,15 +193,14 @@ export function TransferSummaryDialog({ open, onOpenChange }: TransferSummaryDia
                             <div className="flex-1 min-w-0">
                               <p className="text-sm text-white truncate">{row.label}</p>
                               <p className="text-[10px] text-white/40 truncate">
-                                <Landmark className="inline h-2.5 w-2.5 mr-0.5" />
                                 {row.sourceBankAccount ? (
                                   <>
-                                    {row.sourceBankAccount.account_name}
-                                    <span className="text-white/30 mx-0.5">→</span>
+                                    <Landmark className="inline h-2.5 w-2.5 mr-0.5" />
+                                    {row.sourceBankAccount.account_name} から ·
+                                    {" "}
                                   </>
                                 ) : null}
-                                {row.bankAccount?.account_name ?? "—"} · 毎月
-                                {row.paymentDay}日
+                                毎月{row.paymentDay}日
                               </p>
                             </div>
                             <p className="text-sm font-semibold text-white tabular-nums mr-2">
@@ -234,14 +239,20 @@ export function TransferSummaryDialog({ open, onOpenChange }: TransferSummaryDia
                 </h3>
                 {summary.receivableByMe.map((group) => (
                   <div
-                    key={`rx-${group.payee}`}
+                    key={`rx-${group.bankAccount.id}`}
                     className="rounded-xl bg-slate-800/30 border border-slate-700/40 overflow-hidden"
                   >
                     <div className="flex items-center justify-between px-3 py-2 bg-slate-800/40">
-                      <span className="text-xs text-white/60">
-                        各メンバーから受け取り予定
-                      </span>
-                      <p className="text-sm font-bold text-white tabular-nums">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-base flex-shrink-0">{group.bankAccount.icon ?? "🏦"}</span>
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold text-white truncate">
+                            {group.bankAccount.account_name}
+                          </p>
+                          <p className="text-[10px] text-white/40">で受取予定</p>
+                        </div>
+                      </div>
+                      <p className="text-sm font-bold text-white tabular-nums flex-shrink-0">
                         残 ¥{group.remainingAmount.toLocaleString()}
                       </p>
                     </div>

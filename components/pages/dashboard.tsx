@@ -513,17 +513,20 @@ export function Dashboard({ onNavigateToAnalysis, onNavigateToHistory, onNavigat
             </div>
             {transferSummary.payableByMe.length > 0 && (
               <div className="mt-2 space-y-0.5">
-                {transferSummary.payableByMe.slice(0, 2).map((g) => (
-                  <div key={g.payee} className="flex justify-between text-[11px]">
-                    <span className="text-white/60">→ {g.payee} へ</span>
-                    <span className="text-white font-medium tabular-nums">
+                {transferSummary.payableByMe.slice(0, 3).map((g) => (
+                  <div key={g.bankAccount.id} className="flex justify-between text-[11px] gap-2">
+                    <span className="text-white/60 truncate">
+                      {g.bankAccount.icon ?? "🏦"} {g.bankAccount.account_name}
+                      <span className="text-white/30 ml-1">({g.payee})</span>
+                    </span>
+                    <span className="text-white font-medium tabular-nums flex-shrink-0">
                       ¥{g.remainingAmount.toLocaleString()}
                     </span>
                   </div>
                 ))}
-                {transferSummary.payableByMe.length > 2 && (
+                {transferSummary.payableByMe.length > 3 && (
                   <p className="text-[10px] text-white/40">
-                    ほか {transferSummary.payableByMe.length - 2} 件
+                    ほか {transferSummary.payableByMe.length - 3} 件
                   </p>
                 )}
               </div>

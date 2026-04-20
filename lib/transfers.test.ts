@@ -140,7 +140,7 @@ describe("computeTransferSummary", () => {
     expect(summaryRen.grandTotalReceivable).toBe(25000);
   });
 
-  it("個人持ち (akane 100% + akane口座) は振込不要", () => {
+  it("個人固定費 (akane 100% + akane口座) は source 未設定でも振込画面に出る (口座準備用)", () => {
     const phone = makeExpense({
       id: "fe-phone",
       user_type: "あかね",
@@ -155,7 +155,10 @@ describe("computeTransferSummary", () => {
       transfers: [],
       targetMonth,
     });
-    expect(summary.grandTotalPayable).toBe(0);
+    // 個人固定費は月初に口座へ入金する必要があるのでサマリーに出す
+    expect(summary.grandTotalPayable).toBe(5000);
+    expect(summary.payableByMe).toHaveLength(1);
+    expect(summary.payableByMe[0]?.bankAccount.id).toBe("acc-akane");
   });
 
   it("共同口座引落 50:50 → ren と akane どちらも共同に振込", () => {
@@ -329,23 +332,90 @@ describe("computeTransferSummary", () => {
     expect(summary.grandTotalPayable).toBe(0);
   });
 
-  it("source 未設定 + 個人持ち (akane→akane口座) は従来通り振込不要 (後方互換)", () => {
-    const phone = makeExpense({
-      id: "fe-phone-legacy",
-      user_type: "あかね",
-      amount: 5000,
-      bank_account_id: "acc-akane",
-      source_bank_account_id: null,
-      split_ratio: { "あかね": 100 },
+  it("共同 50:50 で payer===owner の自己振込分はスキップ (他方は表示)", () => {
+    const rent = makeExpense({
+      id: "fe-rent-own",
+      user_type: "共同",
+      amount: 60000,
+      bank_account_id: "acc-ren",
+      split_ratio: { "れん": 50, "あかね": 50 },
     });
-    const summary = computeTransferSummary({
-      currentUser: "あかね",
-      fixedExpenses: [phone],
+    const summaryRen = computeTransferSummary({
+      currentUser: "れん",
+      fixedExpenses: [rent],
       bankAccounts: accounts,
       transfers: [],
       targetMonth,
     });
-    expect(summary.grandTotalPayable).toBe(0);
+    // れん 50% + 自分の口座 → 自己振込なので表示しない
+    expect(summaryRen.grandTotalPayable).toBe(0);
+
+    const summaryAkane = computeTransferSummary({
+      currentUser: "あかね",
+      fixedExpenses: [rent],
+      bankAccounts: accounts,
+      transfers: [],
+      targetMonth,
+    });
+    // あかね 50% → れん口座 へ振込必要
+    expect(summaryAkane.grandTotalPayable).toBe(30000);
+  });
+
+  it("グループは bank_account ごとに分かれる", () => {
+    const rent = makeExpense({
+      id: "fe-rent",
+      user_type: "共同",
+      amount: 80000,
+      bank_account_id: "acc-joint",
+      split_ratio: { "れん": 50, "あかね": 50 },
+    });
+    const food = makeExpense({
+      id: "fe-food",
+      user_type: "共同",
+      amount: 40000,
+      bank_account_id: "acc-akane",
+      split_ratio: { "れん": 50, "あかね": 50 },
+      kind: "budget_transfer",
+    });
+    const summary = computeTransferSummary({
+      currentUser: "れん",
+      fixedExpenses: [rent, food],
+      bankAccounts: accounts,
+      transfers: [],
+      targetMonth,
+    });
+    // 2 グループ (共同口座、あかね口座) に分かれる
+    expect(summary.payableByMe).toHaveLength(2);
+    const jointGroup = summary.payableByMe.find((g) => g.bankAccount.id === "acc-joint");
+    const akaneGroup = summary.payableByMe.find((g) => g.bankAccount.id === "acc-akane");
+    expect(jointGroup?.totalAmount).toBe(40000);
+    expect(akaneGroup?.totalAmount).toBe(20000);
+  });
+
+  it("グループソート: 共同口座が先、個人口座が後", () => {
+    const rentJoint = makeExpense({
+      id: "fe-rent-joint",
+      user_type: "共同",
+      amount: 80000,
+      bank_account_id: "acc-joint",
+      split_ratio: { "れん": 50, "あかね": 50 },
+    });
+    const rentAkane = makeExpense({
+      id: "fe-rent-akane",
+      user_type: "共同",
+      amount: 30000,
+      bank_account_id: "acc-akane",
+      split_ratio: { "れん": 50, "あかね": 50 },
+    });
+    const summary = computeTransferSummary({
+      currentUser: "れん",
+      fixedExpenses: [rentAkane, rentJoint],
+      bankAccounts: accounts,
+      transfers: [],
+      targetMonth,
+    });
+    expect(summary.payableByMe[0]?.bankAccount.id).toBe("acc-joint");
+    expect(summary.payableByMe[1]?.bankAccount.id).toBe("acc-akane");
   });
 
   it("共同モードでは家庭内総額 (ren + akane) を合算", () => {

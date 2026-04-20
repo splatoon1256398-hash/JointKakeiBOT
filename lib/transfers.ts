@@ -40,6 +40,7 @@ export interface TransferSummaryRow {
 }
 
 export interface TransferSummaryGroup {
+  bankAccount: BankAccount;
   payee: OwnerUserType;
   rows: TransferSummaryRow[];
   totalAmount: number;
@@ -175,9 +176,11 @@ export function computeTransferSummary(input: ComputeTransferSummaryInput): Tran
     for (const payer of PAYER_USER_TYPES) {
       const payerPct = ratio[payer] ?? 0;
       if (payerPct <= 0) continue;
-      // source が設定されていない従来データ: 同一人物の口座なら振込不要とみなす
-      // source が設定されていれば「どの口座から → どの口座へ」が明示されているので同一オーナーでも表示する
-      if (!sourceAccount && payee === payer) continue;
+      // payer === payee (自分 → 自分の口座) の扱い:
+      // - source が設定されていれば「A口座 → B口座」の明示的振替として表示
+      // - expense.user_type === payer (= 個人固定費) なら、月初に口座へ確保する必要があるので表示
+      // - 上記以外 (共同で自分負担分など) は振込不要としてスキップ
+      if (!sourceAccount && payee === payer && expense.user_type !== payer) continue;
 
       const payerAmount = computePayerAmount(expense.amount, ratio, payer);
       if (payerAmount <= 0) continue;
@@ -203,26 +206,41 @@ export function computeTransferSummary(input: ComputeTransferSummaryInput): Tran
   }
 
   const groupBy = (rows: TransferSummaryRow[]): TransferSummaryGroup[] => {
-    const byPayee = new Map<OwnerUserType, TransferSummaryRow[]>();
+    const byAccount = new Map<string, TransferSummaryRow[]>();
     for (const r of rows) {
-      const arr = byPayee.get(r.payee) ?? [];
+      if (!r.bankAccount) continue;
+      const arr = byAccount.get(r.bankAccount.id) ?? [];
       arr.push(r);
-      byPayee.set(r.payee, arr);
+      byAccount.set(r.bankAccount.id, arr);
     }
     const groups: TransferSummaryGroup[] = [];
-    for (const [payee, groupRows] of byPayee) {
+    for (const [, groupRows] of byAccount) {
+      const bankAccount = groupRows[0]!.bankAccount!;
       const totalAmount = groupRows.reduce((s, r) => s + r.payerAmount, 0);
       const paidAmount = groupRows.reduce((s, r) => s + (r.isPaid ? r.payerAmount : 0), 0);
       groups.push({
-        payee,
+        bankAccount,
+        payee: r0PayeeOf(bankAccount),
         rows: groupRows.sort((a, b) => a.paymentDay - b.paymentDay),
         totalAmount,
         paidAmount,
         remainingAmount: totalAmount - paidAmount,
       });
     }
-    return groups.sort((a, b) => a.payee.localeCompare(b.payee));
+    // sort: 共同口座を先に、次に個人口座、口座内は sort_order → 口座名
+    return groups.sort((a, b) => {
+      const payeeOrder = (p: OwnerUserType) => (p === "共同" ? 0 : 1);
+      const po = payeeOrder(a.payee) - payeeOrder(b.payee);
+      if (po !== 0) return po;
+      const so = (a.bankAccount.sort_order ?? 0) - (b.bankAccount.sort_order ?? 0);
+      if (so !== 0) return so;
+      return a.bankAccount.account_name.localeCompare(b.bankAccount.account_name);
+    });
   };
+
+  function r0PayeeOf(account: BankAccount): OwnerUserType {
+    return isOwnerUserType(account.owner_user_type) ? account.owner_user_type : "共同";
+  }
 
   const payableRows = isPayerUserType(currentUser)
     ? allRows.filter((r) => r.payer === currentUser)
