@@ -14,6 +14,7 @@ import { Chat } from "@/components/pages/chat";
 import { RecordMenuDialog } from "@/components/record-menu-dialog";
 import { useCharacter } from "@/lib/use-character";
 import { CharacterImage } from "@/components/character-image";
+import { useSwipe } from "@/lib/use-swipe";
 const SettingsModal = dynamic(
   () => import("@/components/settings-modal").then((module) => module.SettingsModal),
   { loading: () => null }
@@ -35,14 +36,29 @@ const TransferSummaryDialog = dynamic(
   { loading: () => null }
 );
 
+const NAV_ORDER: NavPage[] = ["dashboard", "kakeibo", "savings", "chat"];
+const SETTINGS_TABS = new Set([
+  "fixed",
+  "transfers",
+  "budget",
+  "categories",
+  "accounts",
+  "home",
+  "gmail",
+  "push",
+  "other",
+]);
+
 function AppContent() {
   const {
     user,
     isAuthLoading,
     isSettingsOpen,
+    setIsSettingsOpen,
     selectedUser,
     theme,
     setKakeiboTab,
+    setSettingsTab,
   } = useApp();
   const { assets: charAssets, isActive: charActive } = useCharacter();
   const [currentPage, setCurrentPage] = useState<NavPage>("dashboard");
@@ -97,6 +113,40 @@ function AppContent() {
     setKakeiboTab('history');
     setCurrentPage("kakeibo");
   };
+
+  // AIチャットからの画面遷移。page="settings" は設定モーダルを開く。
+  const handleChatNavigate = (page: string, subTab?: string) => {
+    if (page === "settings") {
+      if (subTab && SETTINGS_TABS.has(subTab)) {
+        setSettingsTab(subTab);
+      }
+      setIsSettingsOpen(true);
+      return;
+    }
+    if (page === "kakeibo") {
+      if (subTab === "analysis" || subTab === "history") {
+        setKakeiboTab(subTab);
+      }
+      setCurrentPage("kakeibo");
+      return;
+    }
+    if (page === "dashboard" || page === "savings" || page === "chat") {
+      setCurrentPage(page);
+    }
+  };
+
+  // スワイプで 4 画面を左右に切り替える
+  const goToAdjacentPage = (dir: 1 | -1) => {
+    const idx = NAV_ORDER.indexOf(currentPage);
+    if (idx < 0) return;
+    const next = idx + dir;
+    if (next < 0 || next >= NAV_ORDER.length) return;
+    setCurrentPage(NAV_ORDER[next]);
+  };
+  const swipeHandlers = useSwipe({
+    onSwipeLeft: () => goToAdjacentPage(1),
+    onSwipeRight: () => goToAdjacentPage(-1),
+  });
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -174,7 +224,10 @@ function AppContent() {
       <CommonHeader />
 
       {/* メインコンテンツ */}
-      <main className="container mx-auto px-3 pt-0 pb-6 max-w-lg">
+      <main
+        className="container mx-auto px-3 pt-0 pb-6 max-w-lg"
+        {...swipeHandlers}
+      >
         <section className={currentPage === "dashboard" ? "block" : "hidden"} aria-hidden={currentPage !== "dashboard"}>
           {loadedPages.includes("dashboard") && (
             <Dashboard
@@ -191,7 +244,7 @@ function AppContent() {
           {loadedPages.includes("savings") && <Savings />}
         </section>
         <section className={currentPage === "chat" ? "block" : "hidden"} aria-hidden={currentPage !== "chat"}>
-          {loadedPages.includes("chat") && <Chat />}
+          {loadedPages.includes("chat") && <Chat onNavigate={handleChatNavigate} />}
         </section>
       </main>
 

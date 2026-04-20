@@ -247,6 +247,22 @@ ${categoryHints ? `\n${categoryHints}\n` : ""}
 - 「カテゴリに推し活を追加して」→ addCategory を呼ぶ
 - 更新後は確認メッセージを返す
 
+【コア機能5: 画面遷移 (コンシェルジュ)】
+- 「〇〇画面を開いて」「〇〇を見せて」「設定の□□開いて」等の要求で navigateTo を呼ぶ
+- page の値:
+  - dashboard … ホーム画面
+  - kakeibo … 家計簿 (sub_tab="analysis" で分析, "history" で履歴)
+  - savings … 貯金
+  - chat … このチャット (基本不要)
+  - settings … 設定モーダル (sub_tab で内部タブ指定)
+- settings の sub_tab:
+  - fixed(固定費) / transfers(送金) / budget(予算) / categories(カテゴリ)
+  - accounts(口座) / home(ホーム設定) / gmail / push(通知) / other(テーマ・着せ替え)
+- 遷移完了後は「〇〇を開きました」と一言で返す。記録系と違い冗長な説明は不要
+- 「予算画面」「予算の設定」→ settings + sub_tab=budget
+- 「分析見せて」「グラフ」→ kakeibo + sub_tab=analysis
+- 「履歴」「取引一覧」→ kakeibo + sub_tab=history
+
 【返信スタイル】
 - 簡潔で的確な日本語。冗長な説明は不要
 - 絵文字は最小限（✅❌📊💰等の機能的なもののみ）
@@ -415,9 +431,72 @@ ${categoryHints ? `\n${categoryHints}\n` : ""}
                 required: ["main_category"],
               },
             },
+            {
+              name: "navigateTo",
+              description:
+                '画面を遷移する。「分析画面を見せて」「設定の固定費開いて」等',
+              parameters: {
+                type: Type.OBJECT,
+                properties: {
+                  page: {
+                    type: Type.STRING,
+                    description:
+                      "遷移先: dashboard(ホーム) | kakeibo(家計簿) | savings(貯金) | chat | settings(設定モーダル)",
+                  },
+                  sub_tab: {
+                    type: Type.STRING,
+                    description:
+                      "サブタブ。kakeibo: analysis|history。settings: fixed|transfers|budget|categories|accounts|home|gmail|push|other",
+                  },
+                },
+                required: ["page"],
+              },
+            },
           ],
         },
       ];
+
+    const VALID_PAGES = new Set([
+      "dashboard",
+      "kakeibo",
+      "savings",
+      "chat",
+      "settings",
+    ]);
+    const VALID_SUB_TABS: Record<string, Set<string>> = {
+      kakeibo: new Set(["analysis", "history"]),
+      settings: new Set([
+        "fixed",
+        "transfers",
+        "budget",
+        "categories",
+        "accounts",
+        "home",
+        "gmail",
+        "push",
+        "other",
+      ]),
+    };
+    const PAGE_LABELS: Record<string, string> = {
+      dashboard: "ホーム",
+      kakeibo: "家計簿",
+      savings: "貯金",
+      chat: "チャット",
+      settings: "設定",
+    };
+    const SUB_TAB_LABELS: Record<string, string> = {
+      analysis: "分析",
+      history: "履歴",
+      fixed: "固定費",
+      transfers: "送金",
+      budget: "予算",
+      categories: "カテゴリ",
+      accounts: "口座",
+      home: "ホーム",
+      gmail: "Gmail",
+      push: "通知",
+      other: "その他",
+    };
 
     // ===== チャット履歴構築 =====
     const chatHistory: Content[] = [
@@ -685,6 +764,32 @@ ${categoryHints ? `\n${categoryHints}\n` : ""}
             functionResult = {
               success: true,
               message: `${args.category_main}の予算を¥${Number(args.monthly_budget).toLocaleString()}に設定しました。`,
+            };
+          }
+        }
+      } else if (functionCall.name === "navigateTo") {
+        const page = String(args.page ?? "");
+        const subTab = args.sub_tab ? String(args.sub_tab) : "";
+        if (!VALID_PAGES.has(page)) {
+          functionResult = {
+            success: false,
+            message: `不明な画面: ${page}`,
+          };
+        } else {
+          const allowed = VALID_SUB_TABS[page];
+          if (subTab && allowed && !allowed.has(subTab)) {
+            functionResult = {
+              success: false,
+              message: `${PAGE_LABELS[page]}に「${subTab}」タブはありません`,
+            };
+          } else {
+            const label =
+              subTab && SUB_TAB_LABELS[subTab]
+                ? `${PAGE_LABELS[page]}の${SUB_TAB_LABELS[subTab]}`
+                : PAGE_LABELS[page];
+            functionResult = {
+              success: true,
+              message: `${label}を開きました`,
             };
           }
         }

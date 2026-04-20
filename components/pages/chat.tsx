@@ -22,6 +22,13 @@ interface Message {
 // 録音の最長秒数 (保険)。手動停止 or この時間経過で自動停止する
 const MAX_RECORDING_MS = 60_000;
 
+// ナビゲーション反映までの遅延。ユーザーに ✅ メッセージを読む猶予を与える
+const NAVIGATE_DELAY_MS = 500;
+
+interface ChatProps {
+  onNavigate?: (page: string, subTab?: string) => void;
+}
+
 /**
  * MediaRecorder が吐ける mimeType をブラウザごとに探す。
  * - iOS Safari (PWA含む): audio/mp4 のみ
@@ -43,7 +50,7 @@ function pickRecorderMime(): string | undefined {
   return undefined;
 }
 
-export function Chat() {
+export function Chat({ onNavigate }: ChatProps = {}) {
   const { selectedUser, theme, triggerRefresh } = useApp();
   const { assets: charAssets, isActive: charActive, characterName } = useCharacter();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -288,6 +295,21 @@ export function Chat() {
         ...(data.functionCalls && { functionCalls: data.functionCalls }),
       };
       setMessages(prev => [...prev, assistantMessage]);
+
+      // navigateTo ツールが成功していたら、メッセージ表示後に画面遷移
+      if (onNavigate && Array.isArray(data.functionCalls)) {
+        const nav = data.functionCalls.find(
+          (fc: { name: string; args?: Record<string, unknown>; result?: { success?: boolean } }) =>
+            fc.name === "navigateTo" && fc.result?.success
+        );
+        if (nav?.args) {
+          const page = typeof nav.args.page === "string" ? nav.args.page : "";
+          const subTab = typeof nav.args.sub_tab === "string" ? nav.args.sub_tab : undefined;
+          if (page) {
+            setTimeout(() => onNavigate(page, subTab), NAVIGATE_DELAY_MS);
+          }
+        }
+      }
     } catch (error) {
       console.error("AI応答エラー:", error);
       const errText = error instanceof Error ? error.message : "不明なエラー";
