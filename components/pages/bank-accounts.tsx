@@ -5,28 +5,23 @@ import { Plus, Trash2, Loader2, Landmark, Pencil, X, Check } from "lucide-react"
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { supabase } from "@/lib/supabase";
 import { useApp } from "@/contexts/app-context";
 import type { BankAccount, OwnerUserType } from "@/lib/transfers";
-
-const OWNER_OPTIONS: OwnerUserType[] = ["れん", "あかね", "共同"];
+import { isOwnerUserType } from "@/lib/transfers";
 
 export function BankAccounts() {
-  const { user, theme, bankAccounts, refreshBankAccounts } = useApp();
+  const { user, theme, selectedUser, bankAccounts, refreshBankAccounts } = useApp();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
+  // 現在のスコープに該当する口座だけ表示（共同モード→共同、個人モード→その人）
+  const scopeOwner: OwnerUserType = isOwnerUserType(selectedUser) ? selectedUser : "共同";
+  const filteredAccounts = bankAccounts.filter((a) => a.owner_user_type === scopeOwner);
+
   const [accountName, setAccountName] = useState("");
-  const [ownerUserType, setOwnerUserType] = useState<OwnerUserType>("れん");
   const [bankName, setBankName] = useState("");
   const [branchName, setBranchName] = useState("");
   const [accountLast4, setAccountLast4] = useState("");
@@ -37,7 +32,6 @@ export function BankAccounts() {
 
   const resetForm = () => {
     setAccountName("");
-    setOwnerUserType("れん");
     setBankName("");
     setBranchName("");
     setAccountLast4("");
@@ -60,7 +54,6 @@ export function BankAccounts() {
   const handleEdit = (acc: BankAccount) => {
     setEditingId(acc.id);
     setAccountName(acc.account_name);
-    setOwnerUserType((acc.owner_user_type as OwnerUserType) ?? "れん");
     setBankName(acc.bank_name ?? "");
     setBranchName(acc.branch_name ?? "");
     setAccountLast4(acc.account_last4 ?? "");
@@ -78,12 +71,12 @@ export function BankAccounts() {
   };
 
   const handleSave = async () => {
-    if (!user || !accountName || !ownerUserType) return;
+    if (!user || !accountName) return;
     setSaving(true);
     try {
       const payload = {
         user_id: user.id,
-        owner_user_type: ownerUserType,
+        owner_user_type: scopeOwner,
         account_name: accountName,
         bank_name: bankName || null,
         branch_name: branchName || null,
@@ -145,21 +138,18 @@ export function BankAccounts() {
         </button>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-[1fr_auto] gap-3 items-end">
         <div>
           <Label className="text-xs text-gray-400">所有者</Label>
-          <Select value={ownerUserType} onValueChange={(v) => setOwnerUserType(v as OwnerUserType)}>
-            <SelectTrigger className="bg-slate-700 border-slate-600 text-white h-9">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent className="bg-slate-800 border-slate-700">
-              {OWNER_OPTIONS.map((o) => (
-                <SelectItem key={o} value={o} className="text-white">
-                  {o}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div
+            className="h-9 rounded-md border flex items-center px-3 text-sm font-semibold text-white"
+            style={{ background: `${theme.primary}20`, borderColor: `${theme.primary}40` }}
+          >
+            {scopeOwner}
+            <span className="text-[10px] text-white/40 ml-2">
+              （ヘッダーのタブで切替）
+            </span>
+          </div>
         </div>
         <div>
           <Label className="text-xs text-gray-400">アイコン</Label>
@@ -168,7 +158,7 @@ export function BankAccounts() {
             onChange={(e) => setIcon(e.target.value)}
             placeholder="🏦"
             maxLength={4}
-            className="bg-slate-700 border-slate-600 text-white h-9 text-center"
+            className="bg-slate-700 border-slate-600 text-white h-9 w-16 text-center"
           />
         </div>
       </div>
@@ -237,7 +227,7 @@ export function BankAccounts() {
         </Button>
         <Button
           onClick={handleSave}
-          disabled={saving || !accountName || !ownerUserType}
+          disabled={saving || !accountName}
           className="flex-1 text-white"
           style={{ background: theme.primary }}
         >
@@ -264,8 +254,10 @@ export function BankAccounts() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Landmark className="h-5 w-5" style={{ color: theme.primary }} />
-          <h2 className="text-base font-semibold text-white">銀行口座</h2>
-          <span className="text-xs text-white/40">({bankAccounts.length})</span>
+          <h2 className="text-base font-semibold text-white">
+            {scopeOwner} の口座
+          </h2>
+          <span className="text-xs text-white/40">({filteredAccounts.length})</span>
         </div>
         {!showAddForm && !editingId && (
           <Button
@@ -281,7 +273,7 @@ export function BankAccounts() {
       </div>
 
       <p className="text-[11px] text-white/40 leading-relaxed">
-        固定費の引落先として使う口座を登録します。共同口座も所有者「共同」で登録できます。
+        固定費の引落先として使う口座を登録します。共同口座はヘッダーで「共同」を選んだ状態で登録してください。
       </p>
 
       {showAddForm && (
@@ -292,13 +284,13 @@ export function BankAccounts() {
         <div className="flex justify-center py-8">
           <Loader2 className="h-6 w-6 animate-spin text-white/40" />
         </div>
-      ) : bankAccounts.length === 0 && !showAddForm ? (
+      ) : filteredAccounts.length === 0 && !showAddForm ? (
         <div className="text-center py-8 text-white/40 text-sm">
-          まだ口座が登録されていません
+          {scopeOwner} の口座はまだ登録されていません
         </div>
       ) : (
         <div className="space-y-2">
-          {bankAccounts.map((acc) =>
+          {filteredAccounts.map((acc) =>
             editingId === acc.id ? (
               <div key={acc.id}>{renderInlineForm(false)}</div>
             ) : (
