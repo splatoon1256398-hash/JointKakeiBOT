@@ -188,6 +188,12 @@ export function TransferSummaryDialog({ open, onOpenChange }: TransferSummaryDia
                               <p className="text-sm text-white truncate">{row.label}</p>
                               <p className="text-[10px] text-white/40 truncate">
                                 <Landmark className="inline h-2.5 w-2.5 mr-0.5" />
+                                {row.sourceBankAccount ? (
+                                  <>
+                                    {row.sourceBankAccount.account_name}
+                                    <span className="text-white/30 mx-0.5">→</span>
+                                  </>
+                                ) : null}
                                 {row.bankAccount?.account_name ?? "—"} · 毎月
                                 {row.paymentDay}日
                               </p>
@@ -251,7 +257,9 @@ export function TransferSummaryDialog({ open, onOpenChange }: TransferSummaryDia
                           <div className="flex-1 min-w-0">
                             <p className="text-sm text-white truncate">{row.label}</p>
                             <p className="text-[10px] text-white/40 truncate">
-                              {row.payer} から · 毎月{row.paymentDay}日
+                              {row.payer}
+                              {row.sourceBankAccount ? ` (${row.sourceBankAccount.account_name})` : ""}
+                              {" から · 毎月"}{row.paymentDay}日
                             </p>
                           </div>
                           <p className="text-sm font-semibold text-white tabular-nums">

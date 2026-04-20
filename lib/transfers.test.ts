@@ -44,6 +44,7 @@ const makeExpense = (
   created_at: null,
   updated_at: null,
   bank_account_id: null,
+  source_bank_account_id: null,
   split_ratio: null,
   transfer_required: true,
   kind: "expense",
@@ -276,6 +277,70 @@ describe("computeTransferSummary", () => {
     const summary = computeTransferSummary({
       currentUser: "あかね",
       fixedExpenses: [rent],
+      bankAccounts: accounts,
+      transfers: [],
+      targetMonth,
+    });
+    expect(summary.grandTotalPayable).toBe(0);
+  });
+
+  it("source_bank_account_id がセットされた同一オーナーの口座間振替はサマリーに出る", () => {
+    const renMainAccount = makeAccount("acc-ren-main", "れん", "れん メイン");
+    const renRentAccount = makeAccount("acc-ren-rent", "れん", "れん 家賃用");
+    const accountsWithExtra = [renMainAccount, renRentAccount, akaneAccount, jointAccount];
+    const personalRent = makeExpense({
+      id: "fe-personal-rent",
+      user_type: "れん",
+      amount: 60000,
+      bank_account_id: "acc-ren-rent",
+      source_bank_account_id: "acc-ren-main",
+      split_ratio: { "れん": 100 },
+    });
+    const summary = computeTransferSummary({
+      currentUser: "れん",
+      fixedExpenses: [personalRent],
+      bankAccounts: accountsWithExtra,
+      transfers: [],
+      targetMonth,
+    });
+    expect(summary.grandTotalPayable).toBe(60000);
+    const row = summary.payableByMe[0]?.rows[0];
+    expect(row?.sourceBankAccount?.id).toBe("acc-ren-main");
+    expect(row?.bankAccount?.id).toBe("acc-ren-rent");
+    expect(row?.payerAmount).toBe(60000);
+  });
+
+  it("source と dest が同じ口座なら除外 (無意味な振替)", () => {
+    const selfToSelf = makeExpense({
+      id: "fe-self",
+      user_type: "れん",
+      amount: 1000,
+      bank_account_id: "acc-ren",
+      source_bank_account_id: "acc-ren",
+      split_ratio: { "れん": 100 },
+    });
+    const summary = computeTransferSummary({
+      currentUser: "れん",
+      fixedExpenses: [selfToSelf],
+      bankAccounts: accounts,
+      transfers: [],
+      targetMonth,
+    });
+    expect(summary.grandTotalPayable).toBe(0);
+  });
+
+  it("source 未設定 + 個人持ち (akane→akane口座) は従来通り振込不要 (後方互換)", () => {
+    const phone = makeExpense({
+      id: "fe-phone-legacy",
+      user_type: "あかね",
+      amount: 5000,
+      bank_account_id: "acc-akane",
+      source_bank_account_id: null,
+      split_ratio: { "あかね": 100 },
+    });
+    const summary = computeTransferSummary({
+      currentUser: "あかね",
+      fixedExpenses: [phone],
       bankAccounts: accounts,
       transfers: [],
       targetMonth,

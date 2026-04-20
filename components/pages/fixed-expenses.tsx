@@ -38,6 +38,7 @@ interface FixedExpense {
   end_date: string | null;
   created_at: string;
   bank_account_id: string | null;
+  source_bank_account_id: string | null;
   split_ratio: Json | null;
   transfer_required: boolean | null;
   kind: string | null;
@@ -108,6 +109,7 @@ export function FixedExpenses({ kind: pageKind = "expense" }: FixedExpensesProps
   // Stage 7: 振込サマリー関連
   const [formUserType, setFormUserType] = useState<string>(selectedUser);
   const [bankAccountId, setBankAccountId] = useState<string>("");
+  const [sourceBankAccountId, setSourceBankAccountId] = useState<string>("");
   const [splitPreset, setSplitPreset] = useState<SplitPreset>("joint_5050");
   const [splitRen, setSplitRen] = useState<number>(50);
   const [splitAkane, setSplitAkane] = useState<number>(50);
@@ -151,6 +153,7 @@ export function FixedExpenses({ kind: pageKind = "expense" }: FixedExpensesProps
     setStartDate("");
     setEndDate("");
     setBankAccountId("");
+    setSourceBankAccountId("");
     setTransferRequired(true);
     setFormUserType(selectedUser);
     applyDefaultSplitForUserType(selectedUser);
@@ -205,6 +208,7 @@ export function FixedExpenses({ kind: pageKind = "expense" }: FixedExpensesProps
     setStartDate(expense.start_date || "");
     setEndDate(expense.end_date || "");
     setBankAccountId(expense.bank_account_id ?? "");
+    setSourceBankAccountId(expense.source_bank_account_id ?? "");
     setTransferRequired(expense.transfer_required !== false);
     setFormUserType(expense.user_type);
     const ratio = normalizeSplitRatio(expense.split_ratio, expense.user_type);
@@ -255,6 +259,7 @@ export function FixedExpenses({ kind: pageKind = "expense" }: FixedExpensesProps
         end_date: endDate || null,
         is_active: true,
         bank_account_id: bankAccountId || null,
+        source_bank_account_id: sourceBankAccountId || null,
         split_ratio: splitRatio,
         transfer_required: transferRequired,
         kind: pageKind,
@@ -468,6 +473,30 @@ export function FixedExpenses({ kind: pageKind = "expense" }: FixedExpensesProps
           placeholder={labels.memoPlaceholder}
           className="bg-slate-700 border-slate-600 text-white h-9"
         />
+      </div>
+
+      {/* 支払元口座（任意）*/}
+      <div>
+        <Label className="text-xs text-gray-400 flex items-center gap-1">
+          <Landmark className="h-3 w-3" />
+          支払元口座（任意）
+        </Label>
+        <Select value={sourceBankAccountId || "__none__"} onValueChange={(v) => setSourceBankAccountId(v === "__none__" ? "" : v)}>
+          <SelectTrigger className="bg-slate-700 border-slate-600 text-white h-9">
+            <SelectValue placeholder="どの口座から送るか" />
+          </SelectTrigger>
+          <SelectContent className="bg-slate-800 border-slate-700">
+            <SelectItem value="__none__" className="text-white/60">未設定</SelectItem>
+            {bankAccounts.map((acc) => (
+              <SelectItem key={acc.id} value={acc.id} className="text-white">
+                {acc.icon ?? "🏦"} {acc.account_name}（{acc.owner_user_type}）
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-[10px] text-white/40 mt-0.5">
+          同一オーナーの別口座間振替 (例: れんメイン→れん家賃用) もサマリーに出す
+        </p>
       </div>
 
       {/* 引落口座 or 送金先口座 */}
@@ -791,9 +820,18 @@ export function FixedExpenses({ kind: pageKind = "expense" }: FixedExpensesProps
                         </div>
                       </div>
                       <div className="flex items-center gap-1 text-[10px] text-white/40 mt-0.5 flex-wrap">
+                        {expense.source_bank_account_id && bankAccountsMap[expense.source_bank_account_id] && (
+                          <>
+                            <span className="flex items-center gap-0.5">
+                              <Landmark className="h-2.5 w-2.5" />
+                              {bankAccountsMap[expense.source_bank_account_id]?.account_name}
+                            </span>
+                            <span className="text-white/30">→</span>
+                          </>
+                        )}
                         {expense.bank_account_id && bankAccountsMap[expense.bank_account_id] ? (
                           <span className="flex items-center gap-0.5">
-                            <Landmark className="h-2.5 w-2.5" />
+                            {!expense.source_bank_account_id && <Landmark className="h-2.5 w-2.5" />}
                             {bankAccountsMap[expense.bank_account_id]?.account_name}
                             <span className="text-white/30">
                               ({bankAccountsMap[expense.bank_account_id]?.owner_user_type})

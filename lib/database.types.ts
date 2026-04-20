@@ -197,6 +197,7 @@ export type Database = {
           kind: string | null
           memo: string | null
           payment_day: number
+          source_bank_account_id: string | null
           split_ratio: Json | null
           start_date: string | null
           transfer_required: boolean | null
@@ -216,6 +217,7 @@ export type Database = {
           kind?: string | null
           memo?: string | null
           payment_day: number
+          source_bank_account_id?: string | null
           split_ratio?: Json | null
           start_date?: string | null
           transfer_required?: boolean | null
@@ -235,6 +237,7 @@ export type Database = {
           kind?: string | null
           memo?: string | null
           payment_day?: number
+          source_bank_account_id?: string | null
           split_ratio?: Json | null
           start_date?: string | null
           transfer_required?: boolean | null
@@ -246,6 +249,13 @@ export type Database = {
           {
             foreignKeyName: "fixed_expenses_bank_account_id_fkey"
             columns: ["bank_account_id"]
+            isOneToOne: false
+            referencedRelation: "bank_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fixed_expenses_source_bank_account_id_fkey"
+            columns: ["source_bank_account_id"]
             isOneToOne: false
             referencedRelation: "bank_accounts"
             referencedColumns: ["id"]

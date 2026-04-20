@@ -668,8 +668,25 @@ DO $$ BEGIN
   END IF;
 END $$;
 
+-- 2c. fixed_expenses: source_bank_account_id (支払元口座)
+-- bank_account_id は「受取/引落先」。source_bank_account_id は「どの口座から送るか」を示す。
+-- 同一オーナーの別口座間振替 (例: れんメイン → れん家賃用口座) を振込サマリーに表示するために使用
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'fixed_expenses' AND column_name = 'source_bank_account_id'
+  ) THEN
+    ALTER TABLE fixed_expenses
+      ADD COLUMN source_bank_account_id UUID REFERENCES bank_accounts(id) ON DELETE SET NULL;
+
+    COMMENT ON COLUMN fixed_expenses.source_bank_account_id IS '支払元口座 (bank_accounts.id)。NULL の場合は payer の main 口座を暗黙の source とみなす';
+  END IF;
+END $$;
+
 CREATE INDEX IF NOT EXISTS idx_fixed_expenses_bank_account
   ON fixed_expenses(bank_account_id);
+CREATE INDEX IF NOT EXISTS idx_fixed_expenses_source_bank_account
+  ON fixed_expenses(source_bank_account_id);
 
 -- 3. fixed_expense_transfers: 月次振込済みチェック
 CREATE TABLE IF NOT EXISTS fixed_expense_transfers (

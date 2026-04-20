@@ -16,6 +16,7 @@ interface FixedExpense {
   end_date: string | null;
   kind: string | null;
   split_ratio: Json | null;
+  bank_account_id: string | null;
 }
 
 /**
@@ -75,7 +76,7 @@ export async function processFixedExpenses(
       .eq("user_id", userId)
       .gte("date", monthStart)
       .lte("date", monthEnd)
-      .or("memo.like.【固定費】%,memo.like.【送金】%");
+      .or("memo.like.【固定費】%,memo.like.【送金】%,memo.like.【送金受取】%");
 
     if (txError) {
       result.errors.push(`取引取得エラー: ${txError.message}`);
@@ -93,13 +94,45 @@ export async function processFixedExpenses(
         .filter((t) => (t.memo ?? "").startsWith("【送金】"))
         .map((t) => `${t.user_type}::${t.memo}`),
     );
+    // 送金受取は dest owner の user_type で 1 件入れるので、同じ key 形式で dedup
+    const existingReceiptKeys = new Set(
+      (existingTransactions || [])
+        .filter((t) => (t.memo ?? "").startsWith("【送金受取】"))
+        .map((t) => `${t.user_type}::${t.memo}`),
+    );
+
+    // budget_transfer の受取側 user_type 決定用に bank_accounts.owner_user_type を引く
+    const transferBankIds = Array.from(
+      new Set(
+        (fixedExpenses as FixedExpense[])
+          .filter((e) => e.kind === "budget_transfer" && e.bank_account_id)
+          .map((e) => e.bank_account_id as string),
+      ),
+    );
+    let bankOwnerById = new Map<string, string>();
+    if (transferBankIds.length > 0) {
+      const { data: banks, error: banksError } = await client
+        .from("bank_accounts")
+        .select("id, owner_user_type")
+        .in("id", transferBankIds);
+      if (banksError) {
+        result.errors.push(`銀行口座取得エラー: ${banksError.message}`);
+      } else if (banks) {
+        bankOwnerById = new Map(
+          (banks as Array<{ id: string; owner_user_type: string }>).map((b) => [
+            b.id,
+            b.owner_user_type,
+          ]),
+        );
+      }
+    }
 
     // Phase 3-D: 単発 insert のループを bulk insert 1 回に置換
     const todayStr = `${currentYear}-${String(currentMonth).padStart(2, "0")}-${String(currentDay).padStart(2, "0")}`;
     const rowsToInsert: Array<{
       user_id: string;
       user_type: string;
-      type: "expense";
+      type: "expense" | "income";
       amount: number;
       category_main: string;
       category_sub: string;
@@ -130,14 +163,20 @@ export async function processFixedExpenses(
       const paymentDate = `${currentYear}-${String(currentMonth).padStart(2, "0")}-${String(actualPayDay).padStart(2, "0")}`;
 
       if (expense.kind === "budget_transfer") {
-        // 送金: 個人家計簿に折半分 (or 設定比率) を登録。共同家計簿には登録しない
+        // 送金: 個人家計簿に折半分 (or 設定比率) を expense として登録
         const ratio = normalizeSplitRatio(expense.split_ratio, expense.user_type);
+        const destOwner = expense.bank_account_id
+          ? bankOwnerById.get(expense.bank_account_id) ?? null
+          : null;
         const transferMemoBase = `【送金】${expense.memo || expense.category_sub}`;
+        let receiptTotal = 0;
         for (const payer of PAYER_USER_TYPES) {
           const pct = ratio[payer] ?? 0;
           if (pct <= 0) continue;
           const portion = Math.round((expense.amount * pct) / 100);
           if (portion <= 0) continue;
+          // 送金先が payer 本人の口座なら、同一人物内の口座間移動なので家計簿には記録しない
+          if (destOwner === payer) continue;
           const memoForPayer = `${transferMemoBase} (${payer}分)`;
           if (existingTransferKeys.has(`${payer}::${memoForPayer}`)) {
             result.skipped++;
@@ -154,6 +193,30 @@ export async function processFixedExpenses(
             date: paymentDate,
           });
           insertedLabels.push(`送金 ${payer} ${expense.category_sub} ¥${portion}`);
+          receiptTotal += portion;
+        }
+        // 受取側 (destOwner の家計簿) に income を 1 件登録
+        // same-person 分は除外済みなので receiptTotal は実際に受取側へ流入する合計
+        if (destOwner && receiptTotal > 0) {
+          const receiptMemo = `【送金受取】${expense.memo || expense.category_sub}`;
+          const receiptKey = `${destOwner}::${receiptMemo}`;
+          if (!existingReceiptKeys.has(receiptKey)) {
+            rowsToInsert.push({
+              user_id: expense.user_id,
+              user_type: destOwner,
+              type: "income",
+              amount: receiptTotal,
+              category_main: expense.category_main,
+              category_sub: expense.category_sub,
+              memo: receiptMemo,
+              date: paymentDate,
+            });
+            insertedLabels.push(
+              `送金受取 ${destOwner} ${expense.category_sub} ¥${receiptTotal}`,
+            );
+          } else {
+            result.skipped++;
+          }
         }
         continue;
       }

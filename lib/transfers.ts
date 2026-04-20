@@ -29,6 +29,7 @@ export interface TransferSummaryRow {
   categoryIcon: string;
   paymentDay: number;
   amountTotal: number;
+  sourceBankAccount: BankAccount | null;
   bankAccount: BankAccount | null;
   payer: PayerUserType;
   payee: OwnerUserType;
@@ -162,14 +163,21 @@ export function computeTransferSummary(input: ComputeTransferSummaryInput): Tran
     if (!account) continue;
     if (!isOwnerUserType(account.owner_user_type)) continue;
 
+    const sourceAccount = expense.source_bank_account_id
+      ? accountById.get(expense.source_bank_account_id) ?? null
+      : null;
+    // 同じ口座への振込は意味がないので除外
+    if (sourceAccount && sourceAccount.id === account.id) continue;
+
     const payee: OwnerUserType = account.owner_user_type;
     const ratio = normalizeSplitRatio(expense.split_ratio, expense.user_type);
 
     for (const payer of PAYER_USER_TYPES) {
       const payerPct = ratio[payer] ?? 0;
       if (payerPct <= 0) continue;
-      // 自分の口座なら振込不要（個人所有かつ所有者=payer のとき）
-      if (payee === payer) continue;
+      // source が設定されていない従来データ: 同一人物の口座なら振込不要とみなす
+      // source が設定されていれば「どの口座から → どの口座へ」が明示されているので同一オーナーでも表示する
+      if (!sourceAccount && payee === payer) continue;
 
       const payerAmount = computePayerAmount(expense.amount, ratio, payer);
       if (payerAmount <= 0) continue;
@@ -182,6 +190,7 @@ export function computeTransferSummary(input: ComputeTransferSummaryInput): Tran
         categoryIcon: categoryIcons?.[expense.category_main] ?? "📦",
         paymentDay: expense.payment_day,
         amountTotal: expense.amount,
+        sourceBankAccount: sourceAccount,
         bankAccount: account,
         payer,
         payee,
