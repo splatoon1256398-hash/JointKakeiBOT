@@ -247,6 +247,14 @@ ${categoryHints ? `\n${categoryHints}\n` : ""}
 - 「カテゴリに推し活を追加して」→ addCategory を呼ぶ
 - 更新後は確認メッセージを返す
 
+【コア機能4.5: 固定費・口座の追加】
+- 「Netflix 1490円 毎月12日 追加して」→ addFixedExpense を呼ぶ
+  - 「送金として」「月次送金」と明言されたら kind="budget_transfer"、それ以外は kind="expense"
+  - user_type は区分ルール準拠 (「共同」「れん」「あかね」)
+- 「楽天銀行を登録」「メイン口座に三井住友」→ addBankAccount を呼ぶ
+  - 「メイン」と明言されたら is_main=true
+- 銀行名/金額/支払日のいずれかが不足していたら一度だけ聞き返す
+
 【コア機能5: 画面遷移 (コンシェルジュ)】
 - 「〇〇画面を開いて」「〇〇を見せて」「設定の□□開いて」等の要求で navigateTo を呼ぶ
 - page の値:
@@ -450,6 +458,78 @@ ${categoryHints ? `\n${categoryHints}\n` : ""}
                   },
                 },
                 required: ["page"],
+              },
+            },
+            {
+              name: "addFixedExpense",
+              description:
+                '毎月の固定費 (or 月次送金) を追加する。「Netflix 1490円 毎月12日 追加して」等',
+              parameters: {
+                type: Type.OBJECT,
+                properties: {
+                  user_type: {
+                    type: Type.STRING,
+                    description: "区分（共同/れん/あかね）",
+                  },
+                  category_main: {
+                    type: Type.STRING,
+                    description: "大カテゴリー",
+                  },
+                  category_sub: {
+                    type: Type.STRING,
+                    description: "小カテゴリー。省略可（先頭のサブを使う）",
+                  },
+                  amount: {
+                    type: Type.NUMBER,
+                    description: "金額",
+                  },
+                  payment_day: {
+                    type: Type.NUMBER,
+                    description: "毎月の引き落とし日 (1-31)",
+                  },
+                  memo: {
+                    type: Type.STRING,
+                    description: "メモ (サービス名等)",
+                  },
+                  kind: {
+                    type: Type.STRING,
+                    description:
+                      "種別: expense(固定費, 既定) | budget_transfer(月次送金)",
+                  },
+                },
+                required: [
+                  "user_type",
+                  "category_main",
+                  "amount",
+                  "payment_day",
+                ],
+              },
+            },
+            {
+              name: "addBankAccount",
+              description:
+                '銀行口座をマスターに追加する。「楽天銀行を登録」「メインに三井住友銀行」等',
+              parameters: {
+                type: Type.OBJECT,
+                properties: {
+                  bank_name: {
+                    type: Type.STRING,
+                    description: "銀行名",
+                  },
+                  icon: {
+                    type: Type.STRING,
+                    description: "絵文字アイコン (省略時 🏦)",
+                  },
+                  is_main: {
+                    type: Type.BOOLEAN,
+                    description: "メイン口座フラグ (省略時 false)",
+                  },
+                  account_last4: {
+                    type: Type.STRING,
+                    description: "口座番号下4桁",
+                  },
+                },
+                required: ["bank_name"],
               },
             },
           ],
@@ -764,6 +844,114 @@ ${categoryHints ? `\n${categoryHints}\n` : ""}
             functionResult = {
               success: true,
               message: `${args.category_main}の予算を¥${Number(args.monthly_budget).toLocaleString()}に設定しました。`,
+            };
+          }
+        }
+      } else if (functionCall.name === "addFixedExpense") {
+        if (args.user_type === "自分" || args.user_type === "個人") {
+          args.user_type = authDisplayName || selectedUser;
+        }
+        const userType = String(args.user_type || selectedUser);
+        const catMain = String(args.category_main || "その他");
+        const catMap: Record<string, string[]> = {};
+        categories?.forEach((c: CategoryRow) => {
+          catMap[c.main_category] = c.subcategories || [];
+        });
+        const validSubs = catMap[catMain] || ["その他"];
+        let catSub = String(args.category_sub || "");
+        if (!catSub || !validSubs.includes(catSub)) catSub = validSubs[0] || "その他";
+        const amount = Number(args.amount || 0);
+        const paymentDay = Number(args.payment_day || 0);
+        const kind = String(args.kind || "expense");
+
+        if (amount <= 0 || paymentDay < 1 || paymentDay > 31) {
+          functionResult = {
+            success: false,
+            message: "金額と支払日 (1-31) を確認してください",
+          };
+        } else if (kind !== "expense" && kind !== "budget_transfer") {
+          functionResult = {
+            success: false,
+            message: `不明な種別: ${kind}`,
+          };
+        } else {
+          const splitRatio =
+            userType === "共同"
+              ? { れん: 50, あかね: 50 }
+              : userType === "れん"
+                ? { れん: 100 }
+                : userType === "あかね"
+                  ? { あかね: 100 }
+                  : {};
+          const { error } = await supabaseAdmin.from("fixed_expenses").insert({
+            user_id: user.id,
+            user_type: userType,
+            category_main: catMain,
+            category_sub: catSub,
+            amount,
+            payment_day: paymentDay,
+            memo: (args.memo as string) || null,
+            is_active: true,
+            kind,
+            split_ratio: splitRatio,
+            transfer_required: userType === "共同",
+          });
+          if (error) {
+            functionResult = {
+              success: false,
+              message: `固定費の追加に失敗: ${error.message}`,
+            };
+          } else {
+            shouldRefresh = true;
+            const label = kind === "budget_transfer" ? "月次送金" : "固定費";
+            functionResult = {
+              success: true,
+              message: `${label}を追加しました: ${catMain} ¥${amount.toLocaleString()} / 毎月${paymentDay}日 (${userType})`,
+            };
+          }
+        }
+      } else if (functionCall.name === "addBankAccount") {
+        const bankName = String(args.bank_name || "").trim();
+        if (!bankName) {
+          functionResult = {
+            success: false,
+            message: "銀行名が指定されていません",
+          };
+        } else {
+          const { data: existing } = await supabaseAdmin
+            .from("bank_accounts")
+            .select("sort_order")
+            .eq("is_active", true)
+            .order("sort_order", { ascending: false })
+            .limit(1);
+          const maxSort = existing?.[0]?.sort_order ?? 0;
+          const isMain = Boolean(args.is_main);
+          // メイン指定時は他のメインを下ろす
+          if (isMain) {
+            await supabaseAdmin
+              .from("bank_accounts")
+              .update({ is_main: false })
+              .eq("is_main", true);
+          }
+          const { error } = await supabaseAdmin.from("bank_accounts").insert({
+            bank_name: bankName,
+            icon: (args.icon as string) || "🏦",
+            color: "#60a5fa",
+            account_last4: (args.account_last4 as string) || null,
+            is_active: true,
+            is_main: isMain,
+            sort_order: maxSort + 10,
+          });
+          if (error) {
+            functionResult = {
+              success: false,
+              message: `口座の追加に失敗: ${error.message}`,
+            };
+          } else {
+            shouldRefresh = true;
+            functionResult = {
+              success: true,
+              message: `銀行口座「${bankName}」を追加しました${isMain ? " (メイン)" : ""}`,
             };
           }
         }

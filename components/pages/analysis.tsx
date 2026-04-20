@@ -10,6 +10,7 @@ import { EditTransactionDialog, TransactionForEdit } from "@/components/edit-tra
 import { type TransactionItem } from "@/lib/gemini";
 import { IncomeDetail } from "@/components/pages/income-detail";
 import { Input } from "@/components/ui/input";
+import { useBackHandler } from "@/contexts/back-stack";
 
 interface Transaction {
   id: string;
@@ -272,15 +273,20 @@ export function Analysis() {
     setDrillLevel('detail');
   };
 
-  const handleBack = () => {
+  const handleBack = useCallback(() => {
     if (drillLevel === 'detail') {
       setDrillLevel('subcategory');
       setSelectedSubCategory('');
     } else if (drillLevel === 'subcategory') {
       setDrillLevel('overview');
       setSelectedMainCategory('');
+    } else if (drillLevel === 'income') {
+      setDrillLevel('overview');
     }
-  };
+  }, [drillLevel]);
+
+  // ドリルダウン中は右スワイプで 1 段戻れるようにハンドラ登録
+  useBackHandler(handleBack, drillLevel !== 'overview');
 
   // 選択月のトランザクションをフィルタ（items対応）
   // renderDetail で 1 回しか使わないが、親の再描画ごとに再計算されると

@@ -15,6 +15,7 @@ import { RecordMenuDialog } from "@/components/record-menu-dialog";
 import { useCharacter } from "@/lib/use-character";
 import { CharacterImage } from "@/components/character-image";
 import { useSwipe } from "@/lib/use-swipe";
+import { BackStackProvider, useBackStack } from "@/contexts/back-stack";
 const SettingsModal = dynamic(
   () => import("@/components/settings-modal").then((module) => module.SettingsModal),
   { loading: () => null }
@@ -36,7 +37,6 @@ const TransferSummaryDialog = dynamic(
   { loading: () => null }
 );
 
-const NAV_ORDER: NavPage[] = ["dashboard", "kakeibo", "savings", "chat"];
 const SETTINGS_TABS = new Set([
   "fixed",
   "transfers",
@@ -135,17 +135,10 @@ function AppContent() {
     }
   };
 
-  // スワイプで 4 画面を左右に切り替える
-  const goToAdjacentPage = (dir: 1 | -1) => {
-    const idx = NAV_ORDER.indexOf(currentPage);
-    if (idx < 0) return;
-    const next = idx + dir;
-    if (next < 0 || next >= NAV_ORDER.length) return;
-    setCurrentPage(NAV_ORDER[next]);
-  };
+  // 右スワイプ = 戻る (BackStack 最上位のハンドラに責任を渡す)
+  const { goBack } = useBackStack();
   const swipeHandlers = useSwipe({
-    onSwipeLeft: () => goToAdjacentPage(1),
-    onSwipeRight: () => goToAdjacentPage(-1),
+    onSwipeRight: goBack,
   });
 
   useEffect(() => {
@@ -303,7 +296,9 @@ function AppContent() {
 export default function Home() {
   return (
     <AppProvider>
-      <AppContent />
+      <BackStackProvider>
+        <AppContent />
+      </BackStackProvider>
     </AppProvider>
   );
 }
