@@ -125,6 +125,21 @@ export async function POST(request: NextRequest) {
       })
     );
 
+    // PDF と宣言されているのに中身が %PDF- で始まらない場合、Gemini に投げても
+    // "The document has no pages." になるだけなので事前に弾く。
+    // 実例: 会社ポータルの認証切れ時に HTML が .pdf 拡張子で降ってくるケース。
+    if (source.mimeType === "application/pdf" && !head.startsWith("25504446")) {
+      await source.cleanup?.();
+      sourceCleanup = undefined;
+      return NextResponse.json(
+        {
+          error:
+            "このファイルはPDFとして開けませんでした。ポータルから再ダウンロードするか、スクリーンショットを画像として送ってください。",
+        },
+        { status: 400 }
+      );
+    }
+
     // 短縮プロンプト (responseMimeType=JSON で形式強制、要点のみ)
     const prompt = `給与明細/収入書類を解析し JSON のみで返答。
 
