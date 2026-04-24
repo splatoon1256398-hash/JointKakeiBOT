@@ -112,6 +112,19 @@ export async function POST(request: NextRequest) {
     sourceCleanup = source.cleanup;
     timer.mark("prepare");
 
+    const head = Buffer.from(
+      await source.blob.slice(0, 8).arrayBuffer()
+    ).toString("hex");
+    console.log(
+      "[income-scan] input:",
+      JSON.stringify({
+        size: source.blob.size,
+        mimeType: source.mimeType,
+        fileName: source.fileName,
+        head8: head,
+      })
+    );
+
     // 短縮プロンプト (responseMimeType=JSON で形式強制、要点のみ)
     const prompt = `給与明細/収入書類を解析し JSON のみで返答。
 
