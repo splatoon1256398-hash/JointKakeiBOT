@@ -131,9 +131,10 @@ export async function POST(request: NextRequest) {
 - 日付不明時は "${getJSTDateString()}"`;
 
     // === inline 優先経路 ===
-    const useInline =
-      source.blob.size <= INLINE_LIMIT_BYTES &&
-      source.mimeType !== "application/pdf";
+    // PDF も inline 可 (Gemini は 20MB まで base64 PDF 対応)。
+    // Files API は state=ACTIVE 直後の "document has no pages" レースが出るため、
+    // 4MB 以下の給与明細 PDF は inline に寄せて事故を避ける。
+    const useInline = source.blob.size <= INLINE_LIMIT_BYTES;
 
     let parts: Part[];
     if (useInline) {
@@ -166,7 +167,13 @@ export async function POST(request: NextRequest) {
 
     console.log("Income scan Gemini response length:", text.length, "finishReason:", finishReason);
 
-    const incomeData = JSON.parse(extractFirstJsonObject(text));
+    let incomeData;
+    try {
+      incomeData = JSON.parse(extractFirstJsonObject(text));
+    } catch (parseErr) {
+      console.error("[income-scan] JSON parse failed. text length:", text.length, "finishReason:", finishReason, "text tail:", text.slice(-500), "err:", (parseErr as Error).message);
+      throw new Error(`収入書類の解析結果が不正な形式でした (finish=${finishReason || "?"}, len=${text.length})`);
+    }
 
     // クリーンアップは after() でバックグラウンド
     const pendingCleanup = { sourceCleanup, geminiFileName };
