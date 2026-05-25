@@ -13,6 +13,9 @@ export interface CharacterAssets {
   navRecord: string;
   navSavings: string;
   navChat: string;
+  runner?: string;
+  peek?: string;
+  pattern?: string;
   menuExpense?: string;
   menuIncome?: string;
   menuSavings?: string;
@@ -34,6 +37,7 @@ export interface CharacterConfig {
   previewImage: string;
   assets: CharacterAssets;
   themeColors: CharacterThemeColors;
+  preloadAssetKeys?: Array<keyof CharacterAssets>;
   speeches: string[];   // キャラのセリフ集
 }
 
@@ -57,16 +61,40 @@ export const CHARACTER_REGISTRY: Record<CharacterId, CharacterConfig | null> = {
       navRecord: `${HACHIWARE_BASE}/nav-record.png`,
       navSavings: `${HACHIWARE_BASE}/nav-savings.png`,
       navChat: `${HACHIWARE_BASE}/nav-chat.png`,
+      runner: `${HACHIWARE_BASE}/runner.png`,
+      peek: `${HACHIWARE_BASE}/peek.png`,
+      success: `${HACHIWARE_BASE}/success.png`,
     },
     themeColors: {
-      primary: "#4A8FCA",
-      secondary: "#7DB5E8",
-      navBg: "rgba(74, 143, 202, 0.25)",
-      navGlow: "rgba(125, 181, 232, 0.3)",
-      cardAccent: "rgba(125, 181, 232, 0.15)",
+      primary: "#5EB1E5",
+      secondary: "#B8E7F8",
+      navBg: "rgba(201, 237, 250, 0.42)",
+      navGlow: "rgba(184, 231, 248, 0.58)",
+      cardAccent: "rgba(255, 248, 204, 0.18)",
     },
+    preloadAssetKeys: [
+      "splash",
+      "avatar",
+      "scanning",
+      "navHome",
+      "navKakeibo",
+      "navRecord",
+      "navSavings",
+      "navChat",
+      "runner",
+      "peek",
+      "success",
+    ],
     speeches: [
       "今日も節約がんばろ〜！",
+      "記録できたッ！",
+      "レシート読むね〜",
+      "予算、見守ってるよ",
+      "あと少しで黒字かも！",
+      "ムリなくいこ〜",
+      "外食メモした？",
+      "貯金、いい感じ！",
+      "明細チェックするね",
       "いい感じ！✨",
       "家計簿つけてえらい！",
       "一緒にがんばろ！💪",

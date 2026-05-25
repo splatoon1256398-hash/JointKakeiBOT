@@ -74,6 +74,7 @@ interface WidgetSlot {
 export function Dashboard({ onNavigateToAnalysis, onNavigateToHistory, onNavigateToTransfers }: DashboardProps) {
   const { selectedUser, theme, refreshTrigger, user, setIsSettingsOpen, setSettingsTab, categoryIcons } = useApp();
   const { assets: charAssets, isActive: charActive, themeColors: charColors } = useCharacter();
+  const hachiwarePeek = charAssets?.peek || charAssets?.avatar;
   const [isLoading, setIsLoading] = useState(true);
   const [monthlySpent, setMonthlySpent] = useState(0);
   const [income, setIncome] = useState(0);
@@ -425,14 +426,16 @@ export function Dashboard({ onNavigateToAnalysis, onNavigateToHistory, onNavigat
                 boxShadow: `inset 0 0 20px ${charColors.cardAccent}`,
               }}
             />
-            <div className="absolute -right-2 -bottom-2 opacity-20 pointer-events-none">
+            <div className="absolute -right-9 -bottom-10 opacity-[0.11] pointer-events-none">
               <CharacterImage
-                src={charAssets.avatar}
+                src={hachiwarePeek || charAssets.avatar}
                 alt=""
-                width={80}
-                height={80}
-                className="select-none"
+                width={104}
+                height={122}
+                className="select-none hachiware-card-peek"
                 fallback={null}
+                unoptimized={Boolean(hachiwarePeek)}
+                priority
               />
             </div>
           </>
@@ -484,6 +487,19 @@ export function Dashboard({ onNavigateToAnalysis, onNavigateToHistory, onNavigat
         className="card-solid w-full text-left relative overflow-hidden p-4 transition-transform active:scale-[0.99]"
         style={{ border: `1px solid ${theme.primary}25` }}
       >
+        {charActive && hachiwarePeek && (
+          <div className="absolute -right-20 -bottom-16 opacity-[0.055] pointer-events-none">
+            <CharacterImage
+              src={hachiwarePeek}
+              alt=""
+              width={138}
+              height={161}
+              className="select-none hachiware-card-peek"
+              fallback={null}
+              unoptimized
+            />
+          </div>
+        )}
         <div className="flex items-center justify-between mb-2">
           <h3 className="text-sm font-semibold text-white flex items-center gap-2">
             <Banknote className="w-4 h-4" style={{ color: theme.primary }} />
@@ -539,13 +555,28 @@ export function Dashboard({ onNavigateToAnalysis, onNavigateToHistory, onNavigat
       <div className="card-solid relative overflow-hidden">
         {/* キャラデコレーション */}
         {charActive && charAssets && charColors && (
-          <div
-            className="absolute inset-0 rounded-2xl pointer-events-none"
-            style={{
-              border: `1px solid ${charColors.navGlow}`,
-              boxShadow: `inset 0 0 20px ${charColors.cardAccent}`,
-            }}
-          />
+          <>
+            <div
+              className="absolute inset-0 rounded-2xl pointer-events-none"
+              style={{
+                border: `1px solid ${charColors.navGlow}`,
+                boxShadow: `inset 0 0 20px ${charColors.cardAccent}`,
+              }}
+            />
+            {hachiwarePeek && (
+              <div className="absolute -right-11 -top-10 opacity-[0.075] pointer-events-none rotate-[-10deg]">
+                <CharacterImage
+                  src={hachiwarePeek}
+                  alt=""
+                  width={124}
+                  height={145}
+                  className="select-none hachiware-card-peek"
+                  fallback={null}
+                  unoptimized
+                />
+              </div>
+            )}
+          </>
         )}
         <div className="p-4">
           <h3 className="text-lg font-semibold text-white flex items-center gap-2 mb-4">

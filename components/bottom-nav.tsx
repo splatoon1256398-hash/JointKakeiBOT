@@ -17,7 +17,8 @@ interface BottomNavProps {
 
 export function BottomNav({ currentPage, onPageChange, onRecordClick }: BottomNavProps) {
   const { theme } = useApp();
-  const { assets, isActive: charIsActive, themeColors } = useCharacter();
+  const { assets, isActive: charIsActive, themeColors, characterId } = useCharacter();
+  const isHachiwareTheme = characterId === "hachiware";
 
   const navItems: { id: NavPage | "record"; icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>; label: string; isCenter?: boolean; assetKey?: keyof CharacterAssets }[] = [
     { id: "dashboard" as NavPage, icon: Home, label: "ホーム", assetKey: "navHome" },
@@ -29,10 +30,12 @@ export function BottomNav({ currentPage, onPageChange, onRecordClick }: BottomNa
 
   // キャラ専用ナビバーカラー
   const navBgColor = charIsActive && themeColors
-    ? themeColors.navBg
+    ? isHachiwareTheme
+      ? "rgba(255, 255, 255, 0.24)"
+      : themeColors.navBg
     : "rgba(0,0,0,0.35)";
   const navBorderColor = charIsActive && themeColors
-    ? `1px solid ${themeColors.navGlow}`
+    ? `1px solid ${isHachiwareTheme ? "rgba(255, 255, 255, 0.46)" : themeColors.navGlow}`
     : "1px solid rgba(255,255,255,0.1)";
 
   return (
@@ -81,8 +84,10 @@ export function BottomNav({ currentPage, onPageChange, onRecordClick }: BottomNa
 
                   {/* メインボタン */}
                   <div
-                    className="relative w-[4.5rem] h-[4.5rem] rounded-full flex items-center justify-center shadow-2xl transform transition-all duration-300 group-hover:scale-110 group-active:scale-95 overflow-hidden"
-                    style={{ background: `linear-gradient(135deg, ${theme.primary}, ${theme.secondary})` }}
+                    className={`relative w-[4.5rem] h-[4.5rem] rounded-full flex items-center justify-center shadow-2xl transform transition-all duration-300 group-hover:scale-110 group-active:scale-95 overflow-hidden ${
+                      isHachiwareTheme ? "hachiware-nav-sticker" : ""
+                    }`}
+                    style={isHachiwareTheme ? {} : { background: `linear-gradient(135deg, ${theme.primary}, ${theme.secondary})` }}
                   >
                     {assets && item.assetKey && assets[item.assetKey] ? (
                       <CharacterImage
@@ -119,11 +124,18 @@ export function BottomNav({ currentPage, onPageChange, onRecordClick }: BottomNa
               >
                 <div
                   className="relative p-2 rounded-xl transition-all duration-300"
-                  style={isActive ? {
-                    background: charIsActive && themeColors
-                      ? themeColors.cardAccent
-                      : "rgba(255,255,255,0.15)"
-                  } : {}}
+                  style={isActive ? (
+                    isHachiwareTheme
+                      ? {
+                          background: "rgba(255, 255, 255, 0.28)",
+                          boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.42), 0 6px 14px rgba(5,38,72,0.18)",
+                        }
+                      : {
+                          background: charIsActive && themeColors
+                            ? themeColors.cardAccent
+                            : "rgba(255,255,255,0.15)"
+                        }
+                  ) : {}}
                 >
                   {assets && item.assetKey && assets[item.assetKey] ? (
                     <CharacterImage

@@ -31,7 +31,7 @@ const CONFETTI_COUNT = 18;
  */
 export function SuccessOverlay({
   open,
-  title = "記録できた！",
+  title = "記録できたッ！",
   subtitle = "ナイス家計管理！",
 }: SuccessOverlayProps) {
   const { assets: charAssets, isActive: charActive } = useCharacter();
@@ -50,6 +50,7 @@ export function SuccessOverlay({
           height={140}
           className="mx-auto drop-shadow-2xl"
           fallback={null}
+          unoptimized
         />
         <p className="text-2xl font-bold text-white">{title}</p>
         <p className="text-base text-white/60">{subtitle}</p>

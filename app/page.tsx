@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useState, useEffect } from "react";
+import { useState, useEffect, type CSSProperties } from "react";
 import { AppProvider, useApp } from "@/contexts/app-context";
 import { Login } from "@/components/auth/login";
 import { SplashScreen } from "@/components/splash-screen";
@@ -60,7 +60,18 @@ function AppContent() {
     setKakeiboTab,
     setSettingsTab,
   } = useApp();
-  const { assets: charAssets, isActive: charActive } = useCharacter();
+  const { assets: charAssets, isActive: charActive, characterId } = useCharacter();
+  const isHachiwareTheme = characterId === "hachiware";
+  const appBackgroundStyle = {
+    backgroundColor: theme.background,
+    ...(isHachiwareTheme
+      ? {
+          "--hachiware-bg-start": theme.secondary,
+          "--hachiware-bg-mid": theme.primary,
+          "--hachiware-bg-end": theme.primary,
+        }
+      : {}),
+  } as CSSProperties;
   const [currentPage, setCurrentPage] = useState<NavPage>("dashboard");
   const [isRecordMenuOpen, setIsRecordMenuOpen] = useState(false);
   const [isAddExpenseOpen, setIsAddExpenseOpen] = useState(false);
@@ -196,19 +207,27 @@ function AppContent() {
   // メインUI
   return (
     <div
-      className="min-h-screen min-h-[100dvh] transition-colors duration-500"
-      style={{ backgroundColor: theme.background }}
+      className={`min-h-screen min-h-[100dvh] transition-colors duration-500 ${
+        isHachiwareTheme ? "character-theme-hachiware" : ""
+      }`}
+      data-character={characterId}
+      style={appBackgroundStyle}
     >
+      {isHachiwareTheme && (
+        <div className="hachiware-soft-pattern fixed inset-0 pointer-events-none z-0" />
+      )}
+
       {/* 背景ウォーターマーク（キャラ着せ替え時） */}
       {charActive && charAssets && (
-        <div className="fixed inset-0 pointer-events-none z-0 flex items-end justify-end opacity-[0.12] pr-4 pb-28">
+        <div className="fixed inset-0 pointer-events-none z-0 flex items-end justify-end opacity-[0.09] -right-3 pb-28">
           <CharacterImage
-            src={charAssets.watermark}
+            src={charAssets.peek || charAssets.watermark}
             alt=""
             width={200}
-            height={200}
-            className="select-none"
+            height={234}
+            className="select-none hachiware-watermark"
             fallback={null}
+            unoptimized={isHachiwareTheme}
           />
         </div>
       )}

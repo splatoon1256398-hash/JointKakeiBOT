@@ -8,7 +8,8 @@ import { CharacterImage } from "@/components/character-image";
 
 export function CommonHeader() {
   const { selectedUser, setSelectedUser, setIsSettingsOpen, displayName, theme } = useApp();
-  const { assets: charAssets, isActive: charActive, speeches } = useCharacter();
+  const { assets: charAssets, isActive: charActive, speeches, characterId } = useCharacter();
+  const isHachiwareTheme = characterId === "hachiware";
   const [showSpeech, setShowSpeech] = useState(false);
   const [speechText, setSpeechText] = useState("");
 
@@ -33,7 +34,9 @@ export function CommonHeader() {
     <header
       className="sticky top-0 z-40 w-full shadow-lg"
       style={{
-        background: `linear-gradient(135deg, ${theme.primary}, ${theme.secondary})`
+        background: isHachiwareTheme
+          ? `linear-gradient(135deg, ${theme.primary}, ${theme.secondary} 58%, rgba(255,248,204,0.9))`
+          : `linear-gradient(135deg, ${theme.primary}, ${theme.secondary})`
       }}
     >
       <div className="container mx-auto px-4 py-3 max-w-lg">
@@ -43,7 +46,11 @@ export function CommonHeader() {
             <div className="relative">
               <button
                 onClick={handleAvatarTap}
-                className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center border-2 border-white/30 hover:scale-110 active:scale-95 transition-transform overflow-hidden"
+                className={`w-10 h-10 rounded-full flex items-center justify-center border-2 hover:scale-110 active:scale-95 transition-transform overflow-hidden ${
+                  isHachiwareTheme
+                    ? "bg-white/80 border-white/80 shadow-lg"
+                    : "bg-white/20 border-white/30"
+                }`}
               >
                 <CharacterImage
                   src={charAssets.avatar}
@@ -60,8 +67,8 @@ export function CommonHeader() {
               {/* セリフ吹き出し */}
               {showSpeech && (
                 <div className="absolute left-12 top-1/2 -translate-y-1/2 z-50 animate-speech-pop">
-                  <div className="relative bg-white rounded-xl px-3 py-1.5 shadow-lg whitespace-nowrap">
-                    <div className="absolute -left-1.5 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rotate-45" />
+                  <div className={`relative rounded-2xl px-3.5 py-2 shadow-lg whitespace-nowrap ${isHachiwareTheme ? "hachiware-speech" : "bg-white"}`}>
+                    <div className={`absolute -left-1.5 top-1/2 -translate-y-1/2 w-3 h-3 rotate-45 ${isHachiwareTheme ? "bg-[#eefaff] border-l border-b border-sky-200/50" : "bg-white"}`} />
                     <span className="relative text-xs font-bold text-gray-800">{speechText}</span>
                   </div>
                 </div>

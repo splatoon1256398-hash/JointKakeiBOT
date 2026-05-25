@@ -13,6 +13,7 @@ interface CharacterImageProps {
   priority?: boolean;
   loading?: "eager" | "lazy";
   sizes?: string;
+  unoptimized?: boolean;
 }
 
 export function CharacterImage({
@@ -25,6 +26,7 @@ export function CharacterImage({
   priority = false,
   loading,
   sizes,
+  unoptimized = false,
 }: CharacterImageProps) {
   const [error, setError] = useState(false);
 
@@ -44,6 +46,7 @@ export function CharacterImage({
       priority={priority}
       loading={loading}
       sizes={sizes}
+      unoptimized={unoptimized}
       onError={() => setError(true)}
     />
   );

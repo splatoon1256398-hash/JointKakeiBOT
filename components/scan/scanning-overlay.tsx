@@ -52,20 +52,36 @@ export function ScanningOverlay({
       <div className="text-center space-y-6 px-8">
         {charActive && charAssets ? (
           <>
-            <div className="relative mx-auto w-40 h-40">
+            <div className="relative mx-auto h-48 w-48">
               <div className="absolute inset-0 rounded-full border-4 border-white/10" />
               <div
-                className={`absolute inset-0 rounded-full border-4 border-transparent ${classes.border} animate-spin`}
+                className={`absolute inset-0 rounded-full border-4 border-transparent ${classes.border} animate-scan-ring`}
                 style={{ animationDuration: "1.2s" }}
               />
+              <div className="absolute inset-0 animate-scan-orbit" aria-hidden="true">
+                <div className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2">
+                  <CharacterImage
+                    key={`${charAssets.runner || charAssets.navHome}-orbit`}
+                    src={charAssets.runner || charAssets.navHome}
+                    alt=""
+                    width={56}
+                    height={38}
+                    className="h-auto w-14 object-contain drop-shadow-[0_4px_10px_rgba(0,0,0,0.45)]"
+                    fallback={null}
+                    unoptimized
+                  />
+                </div>
+              </div>
               <div className="absolute inset-0 flex items-center justify-center">
                 <CharacterImage
+                  key={`${charAssets.scanning}-center`}
                   src={charAssets.scanning}
                   alt="解析中"
                   width={100}
                   height={100}
                   className="animate-bounce"
                   fallback={<Sparkles className={`h-10 w-10 ${classes.icon}`} />}
+                  unoptimized
                 />
               </div>
             </div>

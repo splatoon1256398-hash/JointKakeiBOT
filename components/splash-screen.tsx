@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Wallet } from "lucide-react";
 import { CharacterId, isValidCharacterId, getCharacterAssets } from "@/lib/characters";
 import { CharacterImage } from "@/components/character-image";
@@ -11,11 +11,12 @@ interface SplashScreenProps {
 }
 
 export function SplashScreen({ fadeOut = false, onFadeOutEnd }: SplashScreenProps) {
-  const [charId] = useState<CharacterId>(() => {
-    if (typeof window === "undefined") return "none";
+  const [charId, setCharId] = useState<CharacterId>("none");
+
+  useEffect(() => {
     const cached = localStorage.getItem("characterId");
-    return isValidCharacterId(cached) ? cached : "none";
-  });
+    setCharId(isValidCharacterId(cached) ? cached : "none");
+  }, []);
 
   const charAssets = getCharacterAssets(charId);
 
